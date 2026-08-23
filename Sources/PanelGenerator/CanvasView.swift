@@ -308,6 +308,36 @@ final class CanvasView: NSView {
                 ctx.stroke(r.insetBy(dx: -hs / 2, dy: -hs / 2))
             }
         }
+
+        // Rotation + mirror badges (single selection).
+        if let p = primaryElement {
+            if let rp = rotateHandlePoint {
+                ctx.setStrokeColor(ColorSpec.hex("#4FC3F7").nsColor.cgColor)
+                ctx.setLineWidth(1.2 / zoom)
+                ctx.move(to: CGPoint(x: p.frame.midX, y: p.frame.minY))
+                ctx.addLine(to: rp)
+                ctx.strokePath()
+                drawOverlayBadge(ctx, at: rp, glyph: "↻", color: ColorSpec.hex("#4FC3F7"))
+            }
+            if let m = mirrorHandlePoints {
+                drawOverlayBadge(ctx, at: m.x, glyph: "⇄", color: ColorSpec.hex("#FFB74D"))
+                drawOverlayBadge(ctx, at: m.y, glyph: "⇅", color: ColorSpec.hex("#FFB74D"))
+            }
+        }
+    }
+
+    private func drawOverlayBadge(_ ctx: CGContext, at c: CGPoint, glyph: String, color: ColorSpec) {
+        let r = badgeRect(at: c)
+        ctx.setFillColor(color.nsColor.cgColor)
+        ctx.fillEllipse(in: r)
+        ctx.setStrokeColor(NSColor.black.withAlphaComponent(0.75).cgColor)
+        ctx.setLineWidth(1 / zoom)
+        ctx.strokeEllipse(in: r)
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.boldSystemFont(ofSize: 8), .foregroundColor: NSColor.black]
+        let size = (glyph as NSString).size(withAttributes: attrs)
+        (glyph as NSString).draw(at: CGPoint(x: c.x - size.width / 2, y: c.y - size.height / 2),
+                                 withAttributes: attrs)
     }
 
     private var marqueeRect: CGRect?
@@ -360,14 +390,53 @@ final class CanvasView: NSView {
         return nil
     }
 
+    // MARK: Rotation & mirror overlay handles
+
+    private var overlayHandleSize: CGFloat { 11 / zoom }
+    private var overlayHandleOffset: CGFloat { 18 / zoom }
+
+    private var rotateHandlePoint: CGPoint? {
+        guard let f = primaryElement?.frame else { return nil }
+        return CGPoint(x: f.midX, y: f.minY - overlayHandleOffset)
+    }
+
+    /// Mirror handles only for kinds whose renderer honours flipX / flipY (elbow).
+    private var mirrorHandlePoints: (x: CGPoint, y: CGPoint)? {
+        guard let el = primaryElement, el.kind == .elbow else { return nil }
+        let f = el.frame
+        return (CGPoint(x: f.minX - overlayHandleOffset, y: f.midY),
+                CGPoint(x: f.midX, y: f.maxY + overlayHandleOffset))
+    }
+
+    private func badgeRect(at c: CGPoint) -> CGRect {
+        CGRect(x: c.x - overlayHandleSize / 2, y: c.y - overlayHandleSize / 2,
+               width: overlayHandleSize, height: overlayHandleSize)
+    }
+
+    private func overlayHandle(at p: CGPoint) -> OverlayHandle? {
+        guard primaryElement != nil else { return nil }
+        if let rp = rotateHandlePoint, badgeRect(at: rp).contains(p) { return .rotate }
+        if let m = mirrorHandlePoints {
+            if badgeRect(at: m.x).contains(p) { return .mirrorX }
+            if badgeRect(at: m.y).contains(p) { return .mirrorY }
+        }
+        return nil
+    }
+
     // MARK: Mouse interaction
 
     private enum DragMode {
         case idle
         case moving(origFrames: [UUID: CGRect])
         case resizing(dir: HandleDir, orig: CGRect)
+        case rotating(origRotation: CGFloat, center: CGPoint, startAngle: CGFloat)
+        case mirroring(axis: MirrorAxis, orig: Bool)
         case marquee(start: CGPoint, baseSelection: Set<UUID>)
     }
+
+    /// Mirror axis controlled by an overlay handle.
+    enum MirrorAxis { case x, y }
+    private enum OverlayHandle { case rotate, mirrorX, mirrorY }
 
     private var dragMode: DragMode = .idle
     private var downPanelPoint = CGPoint.zero
@@ -379,6 +448,23 @@ final class CanvasView: NSView {
 
         if event.clickCount == 2, let el = element(at: p), selection == [el.id] {
             // Double-click cycles nothing for now; keep selection.
+        }
+
+        // 0. Rotation / mirror handles (single selection).
+        if let h = overlayHandle(at: p), let prim = primaryElement {
+            switch h {
+            case .rotate:
+                dragMode = .rotating(origRotation: prim.rotation, center: prim.center,
+                                     startAngle: atan2(p.y - prim.center.y, p.x - prim.center.x))
+                beginGestureUndo("Rotate")
+            case .mirrorX:
+                dragMode = .mirroring(axis: .x, orig: prim.params.flipX)
+            case .mirrorY:
+                dragMode = .mirroring(axis: .y, orig: prim.params.flipY)
+            }
+            downPanelPoint = p
+            didDrag = false
+            return
         }
 
         // 1. Handles first (single, unrotated selection).
@@ -480,6 +566,19 @@ final class CanvasView: NSView {
             selection = base.union(hit)
             needsDisplay = true
 
+        case .rotating(let origRotation, let center, let startAngle):
+            let a = atan2(p.y - center.y, p.x - center.x)
+            var deg = origRotation + (a - startAngle) * 180 / .pi
+            if event.modifierFlags.contains(.shift) { deg = (deg / 15).rounded() * 15 }
+            updatePrimaryRotation(max(-180, min(180, deg)))
+
+        case .mirroring(let axis, let orig):
+            let c = primaryElement?.center ?? downPanelPoint
+            let crossed = axis == .x
+                ? (p.x < c.x) != (downPanelPoint.x < c.x)
+                : (p.y < c.y) != (downPanelPoint.y < c.y)
+            updatePrimaryFlip(axis, orig != crossed)
+
         case .idle:
             break
         }
@@ -513,6 +612,26 @@ final class CanvasView: NSView {
         notifyChange()
     }
 
+    private func updatePrimaryRotation(_ deg: CGFloat) {
+        var els = document.elements
+        if let i = els.firstIndex(where: { $0.id == primaryElement?.id }) {
+            els[i].rotation = deg
+        }
+        document.elements = els   // gesture path: no extra undo registration
+        needsDisplay = true
+        notifyChange()
+    }
+
+    private func updatePrimaryFlip(_ axis: MirrorAxis, _ on: Bool) {
+        var els = document.elements
+        if let i = els.firstIndex(where: { $0.id == primaryElement?.id }) {
+            if axis == .x { els[i].params.flipX = on } else { els[i].params.flipY = on }
+        }
+        document.elements = els   // gesture path: no extra undo registration
+        needsDisplay = true
+        notifyChange()
+    }
+
     override func mouseUp(with event: NSEvent) {
         switch dragMode {
         case .marquee:
@@ -525,6 +644,13 @@ final class CanvasView: NSView {
                let p = element(at: panelPoint(from: event)) {
                 setSelection([p.id])
             }
+            onSelectionChange?()
+        case .rotating:
+            endGesture()
+            onSelectionChange?()
+        case .mirroring(let axis, let orig):
+            endGesture()
+            if !didDrag { updatePrimaryFlip(axis, !orig) }   // plain click toggles
             onSelectionChange?()
         case .idle:
             break

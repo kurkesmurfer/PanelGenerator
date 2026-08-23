@@ -249,6 +249,8 @@ final class MainWindowController: NSWindowController, NSMenuItemValidation {
 
         • Click to select · Shift-click to multi-select · drag empty space to marquee
         • Drag handles to resize — small elements show corner handles only
+        • Blue ↻ badge above the selection: drag to rotate (⇧ snaps 15°)
+        • Orange ⇄ / ⇅ badges: click, or drag across the shape, to mirror (elbows)
         • ⌫ or ⌦ deletes the selection · arrow keys nudge (⇧ = grid step)
         • ⌘D duplicate
         • Snap-to-grid aligns to the HP grid (⇧⌘G toggles)

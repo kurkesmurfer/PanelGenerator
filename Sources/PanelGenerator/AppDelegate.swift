@@ -4,6 +4,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var windowController: MainWindowController!
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // The whole chrome is dark; force dark appearance so native controls
+        // (labels, fields, checkboxes, sliders) stay legible on it.
+        NSApp.appearance = NSAppearance(named: .darkAqua)
         windowController = MainWindowController()
         windowController.showWindow(nil)
         windowController.window?.makeKeyAndOrderFront(nil)
