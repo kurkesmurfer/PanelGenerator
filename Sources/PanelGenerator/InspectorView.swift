@@ -404,6 +404,24 @@ final class InspectorView: NSView {
                     weakCanvas?.mutateSelection("Elbow Flip") { $0.params.flipY = b.state == .on }
                 }
                 cursorY += rowH + gap
+            case .pushButton, .buttonGroup:
+                if el.kind == .buttonGroup {
+                    label("Count")
+                    let n = makeSlider(min: 2, max: 12, value: Double(el.params.segments))
+                    addControl(n)
+                    let weakCanvas = canvas
+                    handlers.append { sender in
+                        guard let sl = sender as? NSSlider else { return }
+                        weakCanvas?.mutateSelection("Button Count") { $0.params.segments = CGFloat(sl.doubleValue) }
+                    }
+                    label("Layout 0 col · 1 row · 2 cross · 3 circ")
+                    let lo = makeSlider(min: 0, max: 3, value: Double(el.params.layout))
+                    addControl(lo)
+                    handlers.append { sender in
+                        guard let sl = sender as? NSSlider else { return }
+                        weakCanvas?.mutateSelection("Button Layout") { $0.params.layout = CGFloat(sl.doubleValue) }
+                    }
+                }
             case .ringSector:
                 label("Start °")
                 let s0 = makeSlider(min: -180, max: 180, value: Double(el.params.startAngle))

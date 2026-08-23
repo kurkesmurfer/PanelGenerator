@@ -437,8 +437,8 @@ final class CanvasView: NSView {
 
     // MARK: Rotation & mirror overlay handles
 
-    private var overlayHandleSize: CGFloat { 11 / zoom }
-    private var overlayHandleOffset: CGFloat { 18 / zoom }
+    private var overlayHandleSize: CGFloat { 14 / zoom }
+    private var overlayHandleOffset: CGFloat { 20 / zoom }
 
     private var rotateHandlePoint: CGPoint? {
         guard let f = primaryElement?.frame else { return nil }

@@ -50,7 +50,7 @@ final class PaletteView: NSView {
 
         header("Primitives")
         section([.jack, .knobLarge, .knobMedium, .knobSmall,
-                 .faderVertical, .faderHorizontal, .led, .screw])
+                 .faderVertical, .faderHorizontal, .led, .screw, .pushButton, .buttonGroup])
         header("Shapes · Backdrop")
         section([.box, .ellipse, .triangle, .elbow, .ringSector])
         header("Text")

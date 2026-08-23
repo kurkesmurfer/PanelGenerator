@@ -190,6 +190,52 @@ enum Renderer {
                           fill: ColorSpec.hex("#111318")),
             ]
 
+        case .pushButton:
+            let cap = f.insetBy(dx: f.width * 0.18, dy: f.height * 0.18)
+            var ps: [ShapePart] = [
+                ShapePart(path: roundedRectPath(f, tl: 2, tr: 2, br: 2, bl: 2),
+                          fill: el.fill.darkened(0.6), stroke: ColorSpec.hex("#0B0C10")),
+                ShapePart(path: roundedRectPath(cap, tl: 1.5, tr: 1.5, br: 1.5, bl: 1.5), fill: el.fill),
+                ShapePart(path: roundedRectPath(
+                    CGRect(x: cap.minX + cap.width * 0.2, y: cap.minY + cap.height * 0.14,
+                           width: cap.width * 0.6, height: cap.height * 0.3),
+                    tl: 1, tr: 1, br: 1, bl: 1), fill: el.fill.lightened(0.35)),
+            ]
+            _ = ps
+            return ps
+        case .buttonGroup:
+            let n = max(2, min(12, Int(el.params.segments.rounded())))
+            let r = min(f.width, f.height) * 0.16 + 2.5
+            let c = CGPoint(x: f.midX, y: f.midY)
+            let positions: [CGPoint]
+            switch Int(el.params.layout) {
+            case 1:
+                positions = (0..<n).map { CGPoint(x: f.minX + f.width * CGFloat($0) / CGFloat(n - 1), y: c.y) }
+            case 2:
+                positions = [CGPoint(x: c.x, y: f.minY + r + 2), CGPoint(x: c.x, y: f.maxY - r - 2),
+                             CGPoint(x: f.minX + r + 2, y: c.y), CGPoint(x: f.maxX - r - 2, y: c.y)]
+            case 3:
+                positions = (0..<n).map { i in
+                    let a = CGFloat(i) / CGFloat(n) * 2 * .pi - .pi / 2
+                    let rad = min(f.width, f.height) / 2 - r - 2
+                    return CGPoint(x: c.x + rad * cos(a), y: c.y + rad * sin(a))
+                }
+            default:
+                positions = (0..<n).map { CGPoint(x: c.x, y: f.minY + f.height * CGFloat($0) / CGFloat(n - 1)) }
+            }
+            var gs: [ShapePart] = []
+            for p in positions {
+                let outer = CGRect(x: p.x - r, y: p.y - r, width: r * 2, height: r * 2)
+                let capR = r * 0.74
+                let cap = CGRect(x: p.x - capR, y: p.y - capR, width: capR * 2, height: capR * 2)
+                let glint = CGRect(x: p.x - r * 0.34, y: p.y - r * 0.5, width: r * 0.68, height: r * 0.52)
+                gs.append(ShapePart(path: CGPath(ellipseIn: outer, transform: nil),
+                                    fill: el.fill.darkened(0.55), stroke: ColorSpec.hex("#0B0C10")))
+                gs.append(ShapePart(path: CGPath(ellipseIn: cap, transform: nil), fill: el.fill))
+                gs.append(ShapePart(path: CGPath(ellipseIn: glint, transform: nil),
+                                    fill: el.fill.lightened(0.35)))
+            }
+            return gs
         case .led:
             let haloW = max(1.2, f.width * 0.11)
             let core = f.insetBy(dx: f.width * 0.28, dy: f.height * 0.28)

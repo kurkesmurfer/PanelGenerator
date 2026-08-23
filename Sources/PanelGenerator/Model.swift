@@ -87,6 +87,8 @@ enum ElementKind: String, Codable, CaseIterable {
     case knobLarge, knobMedium, knobSmall
     case faderVertical, faderHorizontal
     case led
+    case pushButton
+    case buttonGroup     // n buttons: column / row / cross / circular
     case screw
     // Shapes (backdrop)
     case box            // rounded rect with per-corner radii → pills/capsules too
@@ -116,6 +118,8 @@ enum ElementKind: String, Codable, CaseIterable {
         case .faderVertical: return "Fader · Vertical"
         case .faderHorizontal: return "Fader · Horizontal"
         case .led: return "LED"
+        case .pushButton: return "Push Button"
+        case .buttonGroup: return "Button Group"
         case .screw: return "Screw"
         case .box: return "Box / Rounded Rect"
         case .ellipse: return "Ellipse"
@@ -143,6 +147,10 @@ enum ElementKind: String, Codable, CaseIterable {
             e.w = 64; e.h = 17; e.fill = .hex("#CC99CC")
         case .led:
             e.w = 8; e.h = 8; e.fill = .hex("#EE4444")
+        case .pushButton:
+            e.w = 14; e.h = 14; e.fill = .hex("#DD4444")
+        case .buttonGroup:
+            e.w = 24; e.h = 88; e.fill = .hex("#FF9C00")
         case .screw:
             e.w = 11; e.h = 11; e.fill = .hex("#B9BEC8")
         case .box:
@@ -192,6 +200,9 @@ struct ElementParams: Codable, Hashable {
     var pointerAngle: CGFloat = 45       // degrees, 0 = pointing up
     // Faders
     var value: CGFloat = 0.5             // 0..1
+    // Button groups
+    var segments: CGFloat = 4            // buttons in the group (2…12)
+    var layout: CGFloat = 0              // 0 column, 1 row, 2 cross, 3 circular
     // Text
     var text: String = "LABEL"
     var fontSize: CGFloat = 12
