@@ -514,6 +514,7 @@ final class CanvasView: NSView {
 
         // 1. Handles first (single, unrotated selection).
         if let dir = handle(at: p), let prim = primaryElement {
+            downPanelPoint = p   // must anchor THIS click — stale anchor made resizes explode
             dragMode = .resizing(dir: dir, orig: prim.frame)
             beginGestureUndo("Resize")
             didDrag = false
