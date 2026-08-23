@@ -205,7 +205,13 @@ enum Renderer {
             return ps
         case .buttonGroup:
             let n = max(2, min(12, Int(el.params.segments.rounded())))
-            let r = min(f.width, f.height) * 0.16 + 2.5
+            // Radius hugs the frame so the selection outline matches the art.
+            let r: CGFloat
+            switch Int(el.params.layout) {
+            case 1:   r = min(f.height / 2 - 1.5, f.width / CGFloat(2 * n) - 1)      // row
+            case 2,3: r = min(f.width, f.height) * 0.16 + 2.5                        // cross / ring
+            default:  r = min(f.width / 2 - 1.5, f.height / CGFloat(2 * n) - 1.5)    // column
+            }
             let c = CGPoint(x: f.midX, y: f.midY)
             let positions: [CGPoint]
             switch Int(el.params.layout) {
