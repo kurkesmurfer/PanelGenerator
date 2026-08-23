@@ -544,13 +544,10 @@ final class CanvasView: NSView {
             return
         }
 
-        // 3. Empty area → marquee (or plain deselect).
-        if event.modifierFlags.contains(.shift) {
-            dragMode = .idle
-        } else {
-            dragMode = .marquee(start: p, baseSelection: [])
-            marqueeRect = CGRect(origin: p, size: .zero)
-        }
+        // 3. Empty area → marquee (⇧ extends the current selection).
+        let base = event.modifierFlags.contains(.shift) ? selection : []
+        dragMode = .marquee(start: p, baseSelection: base)
+        marqueeRect = CGRect(origin: p, size: .zero)
     }
 
     private func origFrames(for ids: Set<UUID>) -> [UUID: CGRect] {
