@@ -70,6 +70,10 @@ enum MenuBuilder {
         edit.addItem(item("Undo", #selector(MainWindowController.pgUndo(_:)), key: "z", target: wc))
         edit.addItem(item("Redo", #selector(MainWindowController.pgRedo(_:)), key: "Z", target: wc))
         edit.addItem(.separator())
+        edit.addItem(item("Cut", #selector(MainWindowController.pgCut(_:)), key: "x", target: wc))
+        edit.addItem(item("Copy", #selector(MainWindowController.pgCopy(_:)), key: "c", target: wc))
+        edit.addItem(item("Paste", #selector(MainWindowController.pgPaste(_:)), key: "v", target: wc))
+        edit.addItem(.separator())
         edit.addItem(item("Duplicate", #selector(MainWindowController.pgDuplicate(_:)), key: "d", target: wc))
         // Plain Backspace (no ⌘) deletes the selection. The empty modifier mask
         // is safe because validateMenuItem gates the item to canvas focus.

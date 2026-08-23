@@ -209,6 +209,9 @@ final class MainWindowController: NSWindowController, NSMenuItemValidation {
     }
 
     @objc func pgDuplicate(_ sender: Any?) { canvas.duplicateSelection() }
+    @objc func pgCopy(_ sender: Any?) { canvas.copySelection() }
+    @objc func pgCut(_ sender: Any?) { canvas.cutSelection() }
+    @objc func pgPaste(_ sender: Any?) { canvas.paste() }
 
     @objc func pgDelete(_ sender: Any?) { canvas.deleteSelection() }
 
@@ -280,6 +283,11 @@ final class MainWindowController: NSWindowController, NSMenuItemValidation {
             // Only claim plain ⌫ when the canvas has focus, so typing in
             // inspector text fields is never hijacked.
             return window?.firstResponder === canvas
+        case #selector(pgCopy(_:)), #selector(pgCut(_:)):
+            // ⌘C / ⌘X keep their text-editing meaning inside inspector fields.
+            return window?.firstResponder === canvas && !canvas.selection.isEmpty
+        case #selector(pgPaste(_:)):
+            return window?.firstResponder === canvas && canvas.canPaste
         case #selector(pgDuplicate(_:)), #selector(pgFront(_:)), #selector(pgBack(_:)):
             return !canvas.selection.isEmpty
         default:

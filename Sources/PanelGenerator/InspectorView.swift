@@ -462,19 +462,31 @@ final class InspectorView: NSView {
         }
     }
 
+    /// Frame-based button rows — this view is frame-managed; NSStackView's
+    /// Auto Layout sizing leaves its arranged buttons invisible here.
+    private func buttonRow(_ titles: [String], handlers actions: [() -> Void], columns: Int) {
+        let w = (contentW - CGFloat(columns - 1) * 6) / CGFloat(columns)
+        for (i, t) in titles.enumerated() {
+            let b = makeButton(t, handler: actions[i])
+            b.frame = CGRect(x: pad + CGFloat(i) * (w + 6), y: cursorY, width: w, height: 22)
+            addSubview(b)
+        }
+        cursorY += 28
+    }
+
     private func buildLayerSection() {
         section("Arrange")
-        let row = NSStackView()
-        row.orientation = .horizontal
-        row.spacing = 6
-        row.alignment = .centerY
-        row.addArrangedSubview(makeButton("Front") { [weak self] in self?.canvas?.bringToFront() })
-        row.addArrangedSubview(makeButton("Back") { [weak self] in self?.canvas?.sendToBack() })
-        row.addArrangedSubview(makeButton("Duplicate") { [weak self] in self?.canvas?.duplicateSelection() })
-        row.addArrangedSubview(makeButton("Delete") { [weak self] in self?.canvas?.deleteSelection() })
-        row.frame = CGRect(x: pad, y: cursorY, width: contentW, height: 24)
-        addSubview(row)
-        cursorY += 32
+        buttonRow(["Front", "Back", "Duplicate", "Delete"], handlers: [
+            { [weak self] in self?.canvas?.bringToFront() },
+            { [weak self] in self?.canvas?.sendToBack() },
+            { [weak self] in self?.canvas?.duplicateSelection() },
+            { [weak self] in self?.canvas?.deleteSelection() },
+        ], columns: 4)
+        buttonRow(["Copy", "Cut", "Paste"], handlers: [
+            { [weak self] in self?.canvas?.copySelection() },
+            { [weak self] in self?.canvas?.cutSelection() },
+            { [weak self] in self?.canvas?.paste() },
+        ], columns: 3)
     }
 }
 

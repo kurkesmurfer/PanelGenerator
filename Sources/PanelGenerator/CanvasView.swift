@@ -124,6 +124,51 @@ final class CanvasView: NSView {
         setSelection(Set(newElements.map(\.id)))
     }
 
+    // MARK: Copy / paste
+
+    private static let pasteType = NSPasteboard.PasteboardType("dev.peet.PanelGenerator.elements")
+
+    private var clipboardElements: [PanelElement] {
+        get {
+            guard let data = NSPasteboard.general.data(forType: Self.pasteType),
+                  let els = try? JSONDecoder().decode([PanelElement].self, from: data) else { return [] }
+            return els
+        }
+        set {
+            guard let data = try? JSONEncoder().encode(newValue) else { return }
+            let pb = NSPasteboard.general
+            pb.clearContents()
+            pb.setData(data, forType: Self.pasteType)
+        }
+    }
+
+    var canPaste: Bool { !clipboardElements.isEmpty }
+
+    func copySelection() {
+        let els = document.elements.filter { selection.contains($0.id) }
+        guard !els.isEmpty else { return }
+        clipboardElements = els
+    }
+
+    func cutSelection() {
+        copySelection()
+        deleteSelection()
+    }
+
+    func paste() {
+        let els = clipboardElements
+        guard !els.isEmpty else { return }
+        var pasted: [PanelElement] = []
+        for var e in els {
+            e.id = UUID()
+            e.x += PanelMetrics.pixelsPerHP
+            e.y += PanelMetrics.pixelsPerHP
+            pasted.append(e)
+        }
+        insert(pasted, name: "Paste")
+        setSelection(Set(pasted.map(\.id)))
+    }
+
     func insertAtCenter(_ kind: ElementKind) {
         var el = kind.defaultElement(at: .zero)
         el.frame.origin = CGPoint(
