@@ -248,7 +248,9 @@ final class MainWindowController: NSWindowController, NSMenuItemValidation {
         Double-click a repo item to drop it in the centre.
 
         • Click to select · Shift-click to multi-select · drag empty space to marquee
-        • Drag handles to resize · ⌘D duplicate · ⌫ delete
+        • Drag handles to resize — small elements show corner handles only
+        • ⌫ or ⌦ deletes the selection · arrow keys nudge (⇧ = grid step)
+        • ⌘D duplicate
         • Snap-to-grid aligns to the HP grid (⇧⌘G toggles)
         • The Fill control uses the native macOS colour picker; the swatch
           bank below it is a curated LCARS / TNG palette.
@@ -271,8 +273,12 @@ final class MainWindowController: NSWindowController, NSMenuItemValidation {
             return canvas.edits.canUndo
         case #selector(pgRedo(_:)):
             return canvas.edits.canRedo
-        case #selector(pgDelete(_:)), #selector(pgDuplicate(_:)),
-             #selector(pgFront(_:)), #selector(pgBack(_:)):
+        case #selector(pgDelete(_:)):
+            guard !canvas.selection.isEmpty else { return false }
+            // Only claim plain ⌫ when the canvas has focus, so typing in
+            // inspector text fields is never hijacked.
+            return window?.firstResponder === canvas
+        case #selector(pgDuplicate(_:)), #selector(pgFront(_:)), #selector(pgBack(_:)):
             return !canvas.selection.isEmpty
         default:
             break

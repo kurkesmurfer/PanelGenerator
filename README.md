@@ -61,7 +61,8 @@ Or plain SPM: `swift build && .build/debug/PanelGenerator`.
 | Action | Keys |
 |---|---|
 | Undo / Redo | ⌘Z / ⇧⌘Z |
-| Duplicate / Delete | ⌘D / ⌫ |
+| Duplicate / Delete | ⌘D / ⌫ or ⌦ |
+| Nudge selection | Arrow keys (⇧ + arrows = grid step) |
 | Select all | ⌘A |
 | Zoom in / out / actual / fit | ⌘= / ⌘− / ⌘0 / ⌘9 |
 | Toggle snap-to-grid | ⇧⌘G |

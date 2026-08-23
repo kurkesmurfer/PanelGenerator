@@ -185,6 +185,36 @@ final class CanvasView: NSView {
         apply(elements: picked + rest, name: "Reorder")
     }
 
+    // MARK: Keyboard
+
+    override func keyDown(with event: NSEvent) {
+        let chars = event.charactersIgnoringModifiers ?? ""
+
+        // ⌫ (backspace) and ⌦ (forward delete) both delete the selection.
+        if chars == "\u{7F}" || chars == "\u{F728}" || event.keyCode == 51 || event.keyCode == 117 {
+            deleteSelection()
+            return
+        }
+
+        // Arrow keys nudge the selection (⇧ nudges by the snap-grid step).
+        let step: CGFloat = event.modifierFlags.contains(.shift) ? Geo.defaultSnap : 1
+        let delta: CGVector
+        switch chars {
+        case "\u{F700}": delta = CGVector(dx: 0, dy: -step)  // up
+        case "\u{F701}": delta = CGVector(dx: 0, dy: step)   // down
+        case "\u{F702}": delta = CGVector(dx: -step, dy: 0)  // left
+        case "\u{F703}": delta = CGVector(dx: step, dy: 0)   // right
+        default:
+            super.keyDown(with: event)
+            return
+        }
+        guard !selection.isEmpty else { return }
+        mutateSelection("Nudge") {
+            $0.frame.origin.x += delta.dx
+            $0.frame.origin.y += delta.dy
+        }
+    }
+
     // MARK: Drawing
 
     override func draw(_ dirtyRect: NSRect) {
@@ -270,7 +300,7 @@ final class CanvasView: NSView {
         // Resize handles only make sense unrotated, single-selection.
         if let p = primaryElement, p.rotation == 0 {
             let hs = handleSize
-            for (_, r) in handleRects(for: p.frame) {
+            for (_, r) in activeHandles(for: p.frame) {
                 ctx.setFillColor(NSColor.white.cgColor)
                 ctx.fill(r.insetBy(dx: -hs / 2, dy: -hs / 2))
                 ctx.setStrokeColor(NSColor.black.cgColor)
@@ -308,9 +338,23 @@ final class CanvasView: NSView {
         return pts.map { ($0.0, CGRect(x: $0.1.x - hs / 2, y: $0.1.y - hs / 2, width: hs, height: hs)) }
     }
 
+    /// Handles that are actually usable for this frame. Edge-mid handles need
+    /// perpendicular room — otherwise they carpet small elements (sliders!)
+    /// and every grab turns into a resize instead of a move.
+    private func activeHandles(for f: CGRect) -> [(HandleDir, CGRect)] {
+        let hs = handleSize
+        return handleRects(for: f).filter { (dir, _) in
+            switch dir {
+            case .nw, .ne, .se, .sw: return f.width >= hs * 2 || f.height >= hs * 2
+            case .e, .w:             return f.height >= hs * 4
+            case .n, .s:             return f.width  >= hs * 4
+            }
+        }
+    }
+
     private func handle(at p: CGPoint) -> HandleDir? {
         guard let prim = primaryElement, prim.rotation == 0 else { return nil }
-        for (dir, r) in handleRects(for: prim.frame) where r.contains(p) {
+        for (dir, r) in activeHandles(for: prim.frame) where r.contains(p) {
             return dir
         }
         return nil
