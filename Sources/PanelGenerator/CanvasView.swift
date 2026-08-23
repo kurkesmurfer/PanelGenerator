@@ -549,6 +549,7 @@ final class CanvasView: NSView {
         let base = !event.modifierFlags.isDisjoint(with: [.shift, .command]) ? selection : []
         dragMode = .marquee(start: p, baseSelection: base)
         marqueeRect = CGRect(origin: p, size: .zero)
+        downPanelPoint = p
     }
 
     private func origFrames(for ids: Set<UUID>) -> [UUID: CGRect] {
@@ -603,7 +604,7 @@ final class CanvasView: NSView {
 
         case .marquee(let start, let base):
             let rect = CGRect(x: min(start.x, p.x), y: min(start.y, p.y),
-                              width: abs(dx), height: abs(dy))
+                              width: abs(p.x - start.x), height: abs(p.y - start.y))
             marqueeRect = rect
             let hit = Set(document.elements.filter { $0.frame.intersects(rect) }.map(\.id))
             selection = base.union(hit)
