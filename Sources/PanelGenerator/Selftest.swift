@@ -40,6 +40,7 @@ enum Selftest {
         add(.knobMedium, 112, 126)
         add(.knobLarge, 20, 168)
         add(.faderVertical, 62, 160)
+        add(.faderHorizontal, 92, 204)
         add(.led, 100, 172, fill: .hex("#EE4444"))
         add(.led, 100, 188, fill: .hex("#44DD66"))
         add(.knobSmall, 116, 170)

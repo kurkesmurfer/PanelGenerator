@@ -156,7 +156,7 @@ enum Renderer {
 
         case .faderVertical:
             let trackW = min(7, f.width * 0.45)
-            let track = CGRect(x: f.midX - trackW / 2, y: f.height * 0.05,
+            let track = CGRect(x: f.midX - trackW / 2, y: f.minY + f.height * 0.05,
                                width: trackW, height: f.height * 0.9)
             let hh = max(9, f.height * 0.14)
             let hy = f.maxY - hh - el.params.value * (f.height - hh)
@@ -174,7 +174,7 @@ enum Renderer {
 
         case .faderHorizontal:
             let trackH = min(7, f.height * 0.45)
-            let track = CGRect(x: f.width * 0.05, y: f.midY - trackH / 2,
+            let track = CGRect(x: f.minX + f.width * 0.05, y: f.midY - trackH / 2,
                                width: f.width * 0.9, height: trackH)
             let hw = max(9, f.width * 0.14)
             let hx = f.minX + el.params.value * (f.width - hw)
