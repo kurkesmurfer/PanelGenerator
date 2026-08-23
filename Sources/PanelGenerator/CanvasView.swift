@@ -522,7 +522,7 @@ final class CanvasView: NSView {
 
         // 2. Hit test elements (topmost first).
         if let el = element(at: p) {
-            if event.modifierFlags.contains(.shift) {
+            if !event.modifierFlags.isDisjoint(with: [.shift, .command]) {
                 var sel = selection
                 if sel.contains(el.id) { sel.remove(el.id) } else { sel.insert(el.id) }
                 setSelection(sel)
@@ -545,7 +545,7 @@ final class CanvasView: NSView {
         }
 
         // 3. Empty area → marquee (⇧ extends the current selection).
-        let base = event.modifierFlags.contains(.shift) ? selection : []
+        let base = !event.modifierFlags.isDisjoint(with: [.shift, .command]) ? selection : []
         dragMode = .marquee(start: p, baseSelection: base)
         marqueeRect = CGRect(origin: p, size: .zero)
     }
@@ -682,7 +682,7 @@ final class CanvasView: NSView {
             onSelectionChange?()
         case .moving, .resizing:
             endGesture()
-            if !didDrag, case .moving = dragMode, !event.modifierFlags.contains(.shift),
+            if !didDrag, case .moving = dragMode, event.modifierFlags.isDisjoint(with: [.shift, .command]),
                let p = element(at: panelPoint(from: event)) {
                 setSelection([p.id])
             }
