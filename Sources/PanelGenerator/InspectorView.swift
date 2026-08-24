@@ -493,6 +493,16 @@ final class InspectorView: NSView {
     }
 
     private func buildLayerSection() {
+        if canvas?.selection.count ?? 0 > 1, let cv = canvas {
+            section("Align / Distribute")
+            buttonRow(["L", "CX", "R", "T", "M", "B"], handlers: [
+                { cv.alignSelection("L") }, { cv.alignSelection("CX") }, { cv.alignSelection("R") },
+                { cv.alignSelection("T") }, { cv.alignSelection("CY") }, { cv.alignSelection("B") },
+            ], columns: 6)
+            buttonRow(["Dist X", "Dist Y"], handlers: [
+                { cv.distributeSelection("X") }, { cv.distributeSelection("Y") },
+            ], columns: 2)
+        }
         section("Arrange")
         buttonRow(["Front", "Back", "Duplicate", "Delete"], handlers: [
             { [weak self] in self?.canvas?.bringToFront() },

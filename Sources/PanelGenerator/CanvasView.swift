@@ -329,6 +329,22 @@ final class CanvasView: NSView {
     }
 
     private func drawSelectionOverlay(in ctx: CGContext) {
+        // Multi-selection: group bounds + corner handles + rotate badge.
+        if selection.count > 1, let b = selectionBounds {
+            ctx.setStrokeColor(ColorSpec.hex("#4FC3F7").nsColor.cgColor)
+            ctx.setLineWidth(1 / zoom)
+            ctx.stroke(b)
+            for (dir, r) in activeHandles(for: b)
+            where dir == .nw || dir == .ne || dir == .sw || dir == .se {
+                ctx.setFillColor(NSColor.white.cgColor)
+                let hr = r.insetBy(dx: -handleSize / 2, dy: -handleSize / 2)
+                ctx.fill(hr)
+                ctx.setStrokeColor(NSColor.black.cgColor)
+                ctx.stroke(hr)
+            }
+            drawOverlayBadge(ctx, at: CGPoint(x: b.midX, y: b.minY - overlayHandleOffset),
+                             glyph: "↻", color: ColorSpec.hex("#4FC3F7"))
+        }
         let ids = selection
         guard !ids.isEmpty else { return }
 
@@ -476,6 +492,8 @@ final class CanvasView: NSView {
         case resizing(dir: HandleDir, orig: CGRect)
         case rotating(origRotation: CGFloat, center: CGPoint, startAngle: CGFloat)
         case mirroring(axis: MirrorAxis, orig: Bool)
+        case groupResizing(orig: CGRect, origFrames: [UUID: CGRect])
+        case groupRotating(center: CGPoint, startAngle: CGFloat, origFrames: [UUID: CGRect], origRotations: [UUID: CGFloat])
         case marquee(start: CGPoint, baseSelection: Set<UUID>)
     }
 
@@ -493,6 +511,28 @@ final class CanvasView: NSView {
 
         if event.clickCount == 2, let el = element(at: p), selection == [el.id] {
             // Double-click cycles nothing for now; keep selection.
+        }
+
+        // -1. Multi-selection: group resize / rotate handles.
+        if selection.count > 1, let b = selectionBounds {
+            let corner = activeHandles(for: b).contains { d, r in
+                (d == .nw || d == .ne || d == .sw || d == .se) && r.contains(p)
+            }
+            let rp = CGPoint(x: b.midX, y: b.minY - overlayHandleOffset)
+            if corner {
+                downPanelPoint = p; didDrag = false
+                dragMode = .groupResizing(orig: b, origFrames: frameMap())
+                beginGestureUndo("Group Resize")
+                return
+            }
+            if badgeRect(at: rp).contains(p) {
+                downPanelPoint = p; didDrag = false
+                dragMode = .groupRotating(center: CGPoint(x: b.midX, y: b.midY),
+                                          startAngle: atan2(p.y - b.midY, p.x - b.midX),
+                                          origFrames: frameMap(), origRotations: rotationMap())
+                beginGestureUndo("Group Rotate")
+                return
+            }
         }
 
         // 0. Rotation / mirror handles (single selection).
@@ -610,6 +650,36 @@ final class CanvasView: NSView {
             selection = base.union(hit)
             needsDisplay = true
 
+        case .groupResizing(let orig, let origFrames):
+            let sx = orig.width > 0 ? max(0.05, (p.x - orig.minX) / orig.width) : 1
+            let sy = orig.height > 0 ? max(0.05, (p.y - orig.minY) / orig.height) : 1
+            var els = document.elements
+            for i in els.indices where origFrames[els[i].id] != nil {
+                let f = origFrames[els[i].id]!
+                els[i].x = orig.minX + (f.minX - orig.minX) * sx
+                els[i].y = orig.minY + (f.minY - orig.minY) * sy
+                els[i].w = max(minSize, f.width * sx)
+                els[i].h = max(minSize, f.height * sy)
+            }
+            document.elements = els
+            needsDisplay = true
+            notifyChange()
+
+        case .groupRotating(let center, let startAngle, let origFrames, let origRotations):
+            var delta = (atan2(p.y - center.y, p.x - center.x) - startAngle) * 180 / .pi
+            if event.modifierFlags.contains(.shift) { delta = (delta / 15).rounded() * 15 }
+            var els = document.elements
+            for i in els.indices where origFrames[els[i].id] != nil {
+                let f = origFrames[els[i].id]!
+                let rc = Geo.rotate(CGPoint(x: f.midX, y: f.midY), around: center, degrees: delta)
+                els[i].x = rc.x - f.width / 2
+                els[i].y = rc.y - f.height / 2
+                els[i].rotation = max(-180, min(180, (origRotations[els[i].id] ?? 0) + delta))
+            }
+            document.elements = els
+            needsDisplay = true
+            notifyChange()
+
         case .rotating(let origRotation, let center, let startAngle):
             let a = atan2(p.y - center.y, p.x - center.x)
             var deg = origRotation + (a - startAngle) * 180 / .pi
@@ -656,6 +726,66 @@ final class CanvasView: NSView {
         notifyChange()
     }
 
+    private var selectionBounds: CGRect? {
+        let sel = document.elements.filter { selection.contains($0.id) }
+        guard let first = sel.first else { return nil }
+        var b = first.frame
+        for el in sel.dropFirst() { b = b.union(el.frame) }
+        return b
+    }
+    private func frameMap() -> [UUID: CGRect] {
+        var d: [UUID: CGRect] = [:]
+        for el in document.elements where selection.contains(el.id) { d[el.id] = el.frame }
+        return d
+    }
+    private func rotationMap() -> [UUID: CGFloat] {
+        var d: [UUID: CGFloat] = [:]
+        for el in document.elements where selection.contains(el.id) { d[el.id] = el.rotation }
+        return d
+    }
+
+    /// Align every selected element to the group bounding box (L/CX/R/T/CY/B).
+    func alignSelection(_ mode: String) {
+        guard selection.count > 1, let b = selectionBounds else { return }
+        var els = document.elements
+        for i in els.indices where selection.contains(els[i].id) {
+            switch mode {
+            case "L":  els[i].x = b.minX
+            case "R":  els[i].x = b.maxX - els[i].w
+            case "CX": els[i].x = b.midX - els[i].w / 2
+            case "T":  els[i].y = b.minY
+            case "B":  els[i].y = b.maxY - els[i].h
+            case "CY": els[i].y = b.midY - els[i].h / 2
+            default: break
+            }
+        }
+        apply(elements: els, name: "Align")
+    }
+
+    /// Evenly distribute 3+ selected elements along an axis (first/last stay put).
+    func distributeSelection(_ axis: String) {
+        let idxs = document.elements.indices.filter { selection.contains(document.elements[$0].id) }
+        guard idxs.count > 2 else { return }
+        var els = document.elements
+        let sorted = idxs.sorted {
+            axis == "X" ? els[$0].frame.minX < els[$1].frame.minX
+                        : els[$0].frame.minY < els[$1].frame.minY
+        }
+        let first = els[sorted.first!], last = els[sorted.last!]
+        let span = axis == "X" ? last.frame.maxX - first.frame.minX
+                               : last.frame.maxY - first.frame.minY
+        let total = sorted.reduce(CGFloat(0)) {
+            axis == "X" ? $0 + els[$1].w : $0 + els[$1].h
+        }
+        let gap = (span - total) / CGFloat(sorted.count - 1)
+        var cursor = axis == "X" ? first.frame.minX : first.frame.minY
+        for i in sorted {
+            if axis == "X" { els[i].x = cursor; cursor += els[i].w + gap }
+            else { els[i].y = cursor; cursor += els[i].h + gap }
+        }
+        apply(elements: els, name: "Distribute")
+    }
+
     private func updatePrimaryRotation(_ deg: CGFloat) {
         var els = document.elements
         if let i = els.firstIndex(where: { $0.id == primaryElement?.id }) {
@@ -688,6 +818,9 @@ final class CanvasView: NSView {
                let p = element(at: panelPoint(from: event)) {
                 setSelection([p.id])
             }
+            onSelectionChange?()
+        case .groupResizing, .groupRotating:
+            endGesture()
             onSelectionChange?()
         case .rotating:
             endGesture()
