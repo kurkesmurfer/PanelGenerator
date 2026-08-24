@@ -314,6 +314,17 @@ final class MainWindowController: NSWindowController, NSMenuItemValidation {
 
     @objc func pgScrews(_ sender: Any?) { canvas.insertCornerScrews() }
 
+    @objc func pgBindPrimitives(_ sender: Any?) {
+        let bound = canvas.bindPrimitives()
+        reloadInspector()
+        guard bound == 0 else { return }
+        let alert = NSAlert()
+        alert.messageText = "Nothing left to bind."
+        alert.informativeText = "Every jack, knob, fader, button and LED already has a role. "
+            + "Shapes, text and screws stay as artwork on purpose — set those by hand if you want them bound."
+        alert.runModal()
+    }
+
     // MARK: View commands
 
     @objc func pgZoomIn(_ sender: Any?)   { canvas.zoom *= 1.25 }
@@ -328,6 +339,15 @@ final class MainWindowController: NSWindowController, NSMenuItemValidation {
         canvas.zoom = min(visible.width / size.width, visible.height / size.height) * 0.92
         sv.documentView?.scroll(NSPoint(x: 0, y: 0))
     }
+
+    @objc func pgSetSnapStep(_ sender: Any?) {
+        guard let mi = sender as? NSMenuItem else { return }
+        canvas.snapStep = CGFloat(mi.tag) / 100
+        canvas.snapEnabled = true
+        canvas.needsDisplay = true
+    }
+
+    @objc func pgDeselectAll(_ sender: Any?) { canvas.setSelection([]) }
 
     @objc func pgToggleSnap(_ sender: Any?) {
         canvas.snapEnabled.toggle()
@@ -365,6 +385,10 @@ final class MainWindowController: NSWindowController, NSMenuItemValidation {
         switch menuItem.action {
         case #selector(pgToggleSnap(_:)):
             menuItem.state = canvas.snapEnabled ? .on : .off
+        case #selector(pgSetSnapStep(_:)):
+            menuItem.state = Int((canvas.snapStep * 100).rounded()) == menuItem.tag ? .on : .off
+        case #selector(pgDeselectAll(_:)):
+            return !canvas.selection.isEmpty
         case #selector(pgUndo(_:)):
             return canvas.edits.canUndo
         case #selector(pgRedo(_:)):

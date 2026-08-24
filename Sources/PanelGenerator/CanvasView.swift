@@ -21,6 +21,10 @@ final class CanvasView: NSView {
 
     private(set) var selection: Set<UUID> = []
     var snapEnabled = true
+    /// Grid step in panel pixels. 15 px is 1 HP (5.08 mm); the default is a
+    /// quarter of that, fine enough not to fight hand placement but still a
+    /// grid. Change it in View ▸ Snap Step.
+    var snapStep: CGFloat = PanelMetrics.pixelsPerHP / 4
     var zoom: CGFloat = 1 {
         didSet { zoom = min(max(zoom, 0.25), 8); resizeToFitDocument(); needsDisplay = true }
     }
@@ -55,25 +59,61 @@ final class CanvasView: NSView {
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { true }
 
+    /// Where the panel's top-left corner sits inside the canvas.
+    ///
+    /// The canvas is never smaller than the scroll view's visible area, so the
+    /// panel ends up centred in the window and every visible pixel belongs to
+    /// this view. That is what lets a click anywhere outside the panel reach
+    /// the canvas at all — previously the surrounding dead space belonged to
+    /// the scroll view, which swallows clicks, and only the 48 pt margin was
+    /// live.
+    var contentOrigin: CGPoint {
+        let s = document.pixelSize
+        return CGPoint(x: max(Self.margin, (bounds.width  - s.width  * zoom) / 2),
+                       y: max(Self.margin, (bounds.height - s.height * zoom) / 2))
+    }
+
     func resizeToFitDocument() {
         let s = document.pixelSize
-        let newSize = CGSize(width: s.width * zoom + Self.margin * 2,
+        var newSize = CGSize(width: s.width * zoom + Self.margin * 2,
                              height: s.height * zoom + Self.margin * 2)
+        if let visible = enclosingScrollView?.contentView.bounds.size {
+            newSize.width = max(newSize.width, visible.width)
+            newSize.height = max(newSize.height, visible.height)
+        }
         if frame.size != newSize {
             frame.size = newSize
         }
     }
 
+    override func viewDidMoveToSuperview() {
+        super.viewDidMoveToSuperview()
+        NotificationCenter.default.removeObserver(self, name: NSView.frameDidChangeNotification, object: nil)
+        if let clip = enclosingScrollView?.contentView {
+            clip.postsFrameChangedNotifications = true
+            NotificationCenter.default.addObserver(self, selector: #selector(visibleAreaChanged),
+                                                   name: NSView.frameDidChangeNotification, object: clip)
+        }
+        resizeToFitDocument()
+    }
+
+    @objc private func visibleAreaChanged() {
+        resizeToFitDocument()
+        needsDisplay = true
+    }
+
+    deinit { NotificationCenter.default.removeObserver(self) }
+
     /// Convert a window event location into panel pixel coordinates.
     func panelPoint(from event: NSEvent) -> CGPoint {
-        let loc = convert(event.locationInWindow, from: nil)
-        return CGPoint(x: (loc.x - Self.margin) / zoom,
-                       y: (loc.y - Self.margin) / zoom)
+        panelPoint(fromViewPoint: convert(event.locationInWindow, from: nil))
     }
     func panelPoint(fromWindowLocation loc: NSPoint) -> CGPoint {
-        let p = convert(loc, from: nil)
-        return CGPoint(x: (p.x - Self.margin) / zoom,
-                       y: (p.y - Self.margin) / zoom)
+        panelPoint(fromViewPoint: convert(loc, from: nil))
+    }
+    private func panelPoint(fromViewPoint p: CGPoint) -> CGPoint {
+        let o = contentOrigin
+        return CGPoint(x: (p.x - o.x) / zoom, y: (p.y - o.y) / zoom)
     }
 
     private func notifyChange() {
@@ -240,6 +280,16 @@ final class CanvasView: NSView {
         insert(withRemappedGroups(copies), name: "Duplicate")
     }
 
+    /// Undoable wrapper around `PanelDocument.bindPrimitives()`.
+    @discardableResult
+    func bindPrimitives() -> Int {
+        var doc = document
+        let bound = doc.bindPrimitives()
+        guard bound > 0 else { return 0 }
+        apply(elements: doc.elements, name: "Bind Primitives")
+        return bound
+    }
+
     func selectAllElements() {
         setSelection(Set(document.elements.map(\.id)))
     }
@@ -263,6 +313,12 @@ final class CanvasView: NSView {
     override func keyDown(with event: NSEvent) {
         let chars = event.charactersIgnoringModifiers ?? ""
 
+        // Escape clears the selection wherever the pointer happens to be.
+        if event.keyCode == 53 {
+            setSelection([])
+            return
+        }
+
         // ⌫ (backspace) and ⌦ (forward delete) both delete the selection.
         if chars == "\u{7F}" || chars == "\u{F728}" || event.keyCode == 51 || event.keyCode == 117 {
             deleteSelection()
@@ -270,7 +326,7 @@ final class CanvasView: NSView {
         }
 
         // Arrow keys nudge the selection (⇧ nudges by the snap-grid step).
-        let step: CGFloat = event.modifierFlags.contains(.shift) ? Geo.defaultSnap : 1
+        let step: CGFloat = event.modifierFlags.contains(.shift) ? snapStep : 1
         let delta: CGVector
         switch chars {
         case "\u{F700}": delta = CGVector(dx: 0, dy: -step)  // up
@@ -298,7 +354,8 @@ final class CanvasView: NSView {
         ctx.fill(bounds)
 
         ctx.saveGState()
-        ctx.translateBy(x: Self.margin, y: Self.margin)
+        let origin = contentOrigin
+        ctx.translateBy(x: origin.x, y: origin.y)
         ctx.scaleBy(x: zoom, y: zoom)
 
         // Panel shadow
@@ -530,6 +587,9 @@ final class CanvasView: NSView {
     private enum OverlayHandle { case rotate, mirrorX, mirrorY }
 
     private var dragMode: DragMode = .idle
+    /// The element under the cursor when a move began. It is the one that lands
+    /// on the grid; everything else keeps its offset from it.
+    private var moveAnchor: UUID?
 
     /// True from mouseDown until mouseUp. Views that care about the document's
     /// *shape* rather than its coordinates — the layer list — can skip work
@@ -602,6 +662,7 @@ final class CanvasView: NSView {
         //    only at mouseUp let a click-drag move a lone member out of its
         //    group, silently splitting it.)
         if let el = element(at: p) {
+            moveAnchor = el.id
             let members = groupMembers(el.id)
             if !event.modifierFlags.isDisjoint(with: [.shift, .command]) {
                 var sel = selection
@@ -661,10 +722,21 @@ final class CanvasView: NSView {
         switch dragMode {
 
         case .moving(let orig):
+            // Snap the gesture once, from the element under the cursor, then
+            // move everything by that same delta. Snapping each origin
+            // independently pulls elements onto different grid points, so a
+            // multi-selection drag silently destroyed any alignment between
+            // them — which is exactly what "snap is messing up my alignment"
+            // looks like from the outside.
+            var sdx = dx, sdy = dy
+            if let anchor = moveAnchor.flatMap({ orig[$0] }) ?? orig.values.first {
+                sdx = snapVal(anchor.minX + dx) - anchor.minX
+                sdy = snapVal(anchor.minY + dy) - anchor.minY
+            }
             mutateFrames(orig) { frame in
                 var nf = frame
-                nf.origin.x = snapVal(frame.minX + dx)
-                nf.origin.y = snapVal(frame.minY + dy)
+                nf.origin.x = frame.minX + sdx
+                nf.origin.y = frame.minY + sdy
                 return nf
             }
 
@@ -710,8 +782,10 @@ final class CanvasView: NSView {
             notifyChange()
 
         case .groupRotating(let center, let startAngle, let origFrames, let origRotations):
+            guard hypot(dx, dy) * zoom > rotateDeadZone else { break }
             var delta = (atan2(p.y - center.y, p.x - center.x) - startAngle) * 180 / .pi
             if event.modifierFlags.contains(.shift) { delta = (delta / 15).rounded() * 15 }
+            if abs(delta) < rotateSnapToZero { delta = 0 }
             var els = document.elements
             for i in els.indices where origFrames[els[i].id] != nil {
                 let f = origFrames[els[i].id]!
@@ -725,9 +799,14 @@ final class CanvasView: NSView {
             notifyChange()
 
         case .rotating(let origRotation, let center, let startAngle):
+            // Dead zone. A click on the badge that drifts a pixel or two must
+            // not impart a rotation too small to see but large enough to land
+            // in the export as <g transform="rotate(-0.07 …)">.
+            guard hypot(dx, dy) * zoom > rotateDeadZone else { break }
             let a = atan2(p.y - center.y, p.x - center.x)
             var deg = origRotation + (a - startAngle) * 180 / .pi
             if event.modifierFlags.contains(.shift) { deg = (deg / 15).rounded() * 15 }
+            if abs(deg) < rotateSnapToZero { deg = 0 }   // let it pass cleanly through upright
             updatePrimaryRotation(max(-180, min(180, deg)))
 
         case .mirroring(let axis, let orig):
@@ -743,9 +822,13 @@ final class CanvasView: NSView {
     }
 
     private let minSize: CGFloat = 6
+    /// Screen pixels of travel before a rotate gesture engages at all.
+    private let rotateDeadZone: CGFloat = 3
+    /// Degrees within which rotation collapses to exactly upright.
+    private let rotateSnapToZero: CGFloat = 0.25
 
     private func snapVal(_ v: CGFloat) -> CGFloat {
-        snapEnabled ? Geo.snap(v, to: Geo.defaultSnap) : v.rounded(.toNearestOrAwayFromZero)
+        snapEnabled ? Geo.snap(v, to: snapStep) : v.rounded(.toNearestOrAwayFromZero)
     }
 
     private func mutateFrames(_ orig: [UUID: CGRect], _ mapper: (CGRect) -> CGRect) {
@@ -792,29 +875,13 @@ final class CanvasView: NSView {
     /// Align the selection. `to: "sel"` lines elements up with the selection's
     /// own bounding box (needs 2+ selected). `to: "panel"` aligns to the panel
     /// edges / center line and works with any selection size, even one element.
+    /// Undoable wrapper around `PanelDocument.align`.
     func alignSelection(_ mode: String, to target: String = "sel") {
-        let b: CGRect
-        switch target {
-        case "panel":
-            guard !selection.isEmpty else { return }
-            b = CGRect(origin: .zero, size: document.pixelSize)
-        default:
-            guard selection.count > 1, let sb = selectionBounds else { return }
-            b = sb
-        }
-        var els = document.elements
-        for i in els.indices where selection.contains(els[i].id) {
-            switch mode {
-            case "L":  els[i].x = b.minX
-            case "R":  els[i].x = b.maxX - els[i].w
-            case "CX": els[i].x = b.midX - els[i].w / 2
-            case "T":  els[i].y = b.minY
-            case "B":  els[i].y = b.maxY - els[i].h
-            case "CY": els[i].y = b.midY - els[i].h / 2
-            default: break
-            }
-        }
-        apply(elements: els, name: target == "panel" ? "Align to Panel" : "Align")
+        let toPanel = target == "panel"
+        var doc = document
+        doc.align(mode, ids: selection, toPanel: toPanel)
+        guard doc.elements != document.elements else { return }   // no empty undo steps
+        apply(elements: doc.elements, name: toPanel ? "Align to Panel" : "Align")
     }
 
     /// Evenly distribute 3+ selected elements along an axis (first/last stay put).
@@ -908,6 +975,11 @@ final class CanvasView: NSView {
         isGestureActive = false   // before the switch: the notifications below flush the layer list
         switch dragMode {
         case .marquee:
+            // A click on empty canvas with no drag clears the selection.
+            // Previously nothing happened unless the mouse moved far enough to
+            // start a rubber band, so deselecting meant finding a blank patch
+            // and twitching.
+            if !didDrag { setSelection([]) }
             marqueeRect = nil
             needsDisplay = true
             onSelectionChange?()

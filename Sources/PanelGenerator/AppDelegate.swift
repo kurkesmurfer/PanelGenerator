@@ -85,11 +85,13 @@ enum MenuBuilder {
         edit.addItem(deleteItem)
         edit.addItem(.separator())
         edit.addItem(item("Select All", #selector(MainWindowController.pgSelectAll(_:)), key: "a", target: wc))
+        edit.addItem(item("Deselect All", #selector(MainWindowController.pgDeselectAll(_:)), key: "A", target: wc))
         edit.addItem(.separator())
         edit.addItem(item("Bring to Front", #selector(MainWindowController.pgFront(_:)), target: wc))
         edit.addItem(item("Send to Back", #selector(MainWindowController.pgBack(_:)), target: wc))
         edit.addItem(.separator())
         edit.addItem(item("Insert Corner Screws", #selector(MainWindowController.pgScrews(_:)), target: wc))
+        edit.addItem(item("Bind Primitives as Components", #selector(MainWindowController.pgBindPrimitives(_:)), target: wc))
         editItem.submenu = edit
 
         // View
@@ -104,6 +106,24 @@ enum MenuBuilder {
         let snap = item("Snap to Grid", #selector(MainWindowController.pgToggleSnap(_:)), key: "G", target: wc)
         snap.state = wc.canvas.snapEnabled ? .on : .off
         view.addItem(snap)
+
+        let stepItem = NSMenuItem(title: "Snap Step", action: nil, keyEquivalent: "")
+        let stepMenu = NSMenu(title: "Snap Step")
+        // 15 px is 1 HP. Tags carry the step in hundredths of a pixel.
+        let steps: [(String, CGFloat)] = [
+            ("1 px — 0.34 mm", 1),
+            ("⅛ HP — 0.64 mm", 15.0 / 8),
+            ("¼ HP — 1.27 mm", 15.0 / 4),
+            ("½ HP — 2.54 mm", 15.0 / 2),
+            ("1 HP — 5.08 mm", 15),
+        ]
+        for (title, value) in steps {
+            let mi = item(title, #selector(MainWindowController.pgSetSnapStep(_:)), target: wc)
+            mi.tag = Int((value * 100).rounded())
+            stepMenu.addItem(mi)
+        }
+        stepItem.submenu = stepMenu
+        view.addItem(stepItem)
         viewItem.submenu = view
 
         // Window

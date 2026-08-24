@@ -15,6 +15,9 @@ final class InspectorView: NSView {
     private let rowH: CGFloat = 22
     private let gap: CGFloat = 7
     private var cursorY: CGFloat = 12
+    /// "sel" or "panel". Lives on the view, not the document: it is how you are
+    /// working right now, not a property of the panel. Survives rebuilds.
+    private var alignTarget: String = "sel"
     private var handlers: [(NSControl) -> Void] = []
 
     private var contentW: CGFloat { max(bounds.width - pad * 2 - 14, 120) }
@@ -296,7 +299,9 @@ final class InspectorView: NSView {
         addControl(rot)
         handlers.append { [weak self] sender in
             guard let self, let s = sender as? NSSlider else { return }
-            self.canvas?.mutateSelection("Rotate") { $0.rotation = CGFloat(s.doubleValue) }
+            var v = CGFloat(s.doubleValue)
+            if abs(v) < 0.5 { v = 0 }   // the slider can otherwise never quite land on upright
+            self.canvas?.mutateSelection("Rotate") { $0.rotation = v }
         }
 
         label("Fill")
@@ -642,33 +647,53 @@ final class InspectorView: NSView {
         cursorY += 44
     }
 
+    /// One element cannot be aligned to itself, so it always falls back to the
+    /// panel however the scope is set.
+    private func applyAlign(_ mode: String) {
+        guard let cv = canvas else { return }
+        cv.alignSelection(mode, to: cv.selection.count > 1 ? alignTarget : "panel")
+    }
+
     private func buildLayerSection() {
         guard let cv = canvas, !cv.selection.isEmpty else { return }
 
-        // Multi-selection: align/distribute relative to the selection's own bounds.
-        if cv.selection.count > 1 {
-            section("Align Selection")
-            buttonRow(["L", "CX", "R", "T", "M", "B"], handlers: [
-                { cv.alignSelection("L") }, { cv.alignSelection("CX") }, { cv.alignSelection("R") },
-                { cv.alignSelection("T") }, { cv.alignSelection("CY") }, { cv.alignSelection("B") },
-            ], columns: 6)
+        // One set of align buttons with an explicit scope. Two separate rows
+        // labelled identically (L/CX/R/T/M/B for the selection, and again for
+        // the panel) meant reaching for "top" and getting the panel's top edge.
+        section("Align")
+        let multi = cv.selection.count > 1
+
+        label("Relative to")
+        let scope = NSPopUpButton(frame: .zero, pullsDown: false)
+        scope.addItems(withTitles: ["Selection", "Panel"])
+        scope.selectItem(at: (multi && alignTarget == "sel") ? 0 : 1)
+        scope.isEnabled = multi
+        scope.font = NSFont.systemFont(ofSize: 11)
+        scope.toolTip = multi
+            ? "Selection: T moves everything to the topmost selected edge, L to the leftmost, and so on. Panel: to the panel's own edges and centre lines."
+            : "Only one element is selected, so there is nothing to align it to but the panel."
+        addControl(scope, width: 120)
+        handlers.append { [weak self] sender in
+            guard let self, let p = sender as? NSPopUpButton else { return }
+            self.alignTarget = p.indexOfSelectedItem == 1 ? "panel" : "sel"
+        }
+
+        // The buttons read alignTarget when clicked, so changing the scope does
+        // not have to rebuild the inspector out from under the popup.
+        buttonRow(["L", "CX", "R", "T", "M", "B"], handlers: [
+            { [weak self] in self?.applyAlign("L") },
+            { [weak self] in self?.applyAlign("CX") },
+            { [weak self] in self?.applyAlign("R") },
+            { [weak self] in self?.applyAlign("T") },
+            { [weak self] in self?.applyAlign("CY") },
+            { [weak self] in self?.applyAlign("B") },
+        ], columns: 6)
+
+        if multi {
             buttonRow(["Dist X", "Dist Y"], handlers: [
                 { cv.distributeSelection("X") }, { cv.distributeSelection("Y") },
             ], columns: 2)
         }
-
-        // Any selection size: align to the panel edges / center lines.
-        section("Align to Panel")
-        buttonRow(["L", "CX", "R"], handlers: [
-            { cv.alignSelection("L", to: "panel") },
-            { cv.alignSelection("CX", to: "panel") },
-            { cv.alignSelection("R", to: "panel") },
-        ], columns: 3)
-        buttonRow(["T", "M", "B"], handlers: [
-            { cv.alignSelection("T", to: "panel") },
-            { cv.alignSelection("CY", to: "panel") },
-            { cv.alignSelection("B", to: "panel") },
-        ], columns: 3)
 
         section("Arrange")
         buttonRow(["Front", "Back", "Duplicate", "Delete"], handlers: [

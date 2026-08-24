@@ -78,6 +78,8 @@ enum Selftest {
             if failures.isEmpty {
                 print("  persist  : round-trip · legacy decode · unknown-kind guard OK")
                 print("  export   : text outlines · binding · components layer · codegen OK")
+                print("  bulk     : bind primitives · hand-set roles preserved OK")
+                print("  align    : selection bounds vs panel bounds OK")
             } else {
                 for f in failures { print("  ✗ \(f)") }
             }
@@ -220,6 +222,57 @@ enum Selftest {
             failures.append("components layer: data-name should carry NAME#WidgetClass")
         }
 
+
+        // Align must use the selection's own bounds unless the panel is asked
+        // for. Y grows downward, so "top" is the smallest y among the selected.
+        var al = PanelDocument()
+        let a1 = ElementKind.knobSmall.defaultElement(at: CGPoint(x: 20, y: 100))
+        let a2 = ElementKind.knobSmall.defaultElement(at: CGPoint(x: 60, y: 160))
+        al.elements = [a1, a2]
+        let alIDs = Set(al.elements.map(\.id))
+
+        var toSel = al
+        toSel.align("T", ids: alIDs, toPanel: false)
+        if toSel.elements[0].y != 100 || toSel.elements[1].y != 100 {
+            failures.append("align: T should move both to the topmost selected edge (100), got \(toSel.elements[0].y) / \(toSel.elements[1].y)")
+        }
+        var toPanel = al
+        toPanel.align("T", ids: alIDs, toPanel: true)
+        if toPanel.elements[0].y != 0 || toPanel.elements[1].y != 0 {
+            failures.append("align: T to the panel should move both to y = 0")
+        }
+        var leftSel = al
+        leftSel.align("L", ids: alIDs, toPanel: false)
+        if leftSel.elements[0].x != 20 || leftSel.elements[1].x != 20 {
+            failures.append("align: L should move both to the leftmost selected edge (20)")
+        }
+        var single = al
+        single.align("T", ids: [a1.id], toPanel: false)
+        if single.elements[0].y != 100 {
+            failures.append("align: a single element has no selection bounds to align to; it must not move")
+        }
+
+        // Bulk binding: a primitive takes the role its kind implies, artwork
+        // stays artwork, and a role set by hand is never overwritten.
+        var bulk = PanelDocument()
+        var legacyKnob = ElementKind.knobLarge.defaultElement(at: CGPoint(x: 10, y: 10))
+        legacyKnob.role = .decoration          // how a pre-binding file decodes
+        legacyKnob.stockWidget = ""
+        var legacyBox = ElementKind.box.defaultElement(at: CGPoint(x: 10, y: 60))
+        legacyBox.role = .decoration
+        var handSet = ElementKind.jack.defaultElement(at: CGPoint(x: 10, y: 110))
+        handSet.role = .output                 // deliberate; must survive
+        bulk.elements = [legacyKnob, legacyBox, handSet]
+
+        let bound = bulk.bindPrimitives()
+        if bound != 1 { failures.append("bind: expected 1 newly bound primitive, got \(bound)") }
+        if bulk.elements[0].role != .param { failures.append("bind: a knob should become .param") }
+        if bulk.elements[0].stockWidget != "RoundLargeBlackKnob" {
+            failures.append("bind: a knob should pick up its default Rack type")
+        }
+        if bulk.elements[1].role != .decoration { failures.append("bind: a box must stay artwork") }
+        if bulk.elements[2].role != .output { failures.append("bind: a hand-set role was overwritten") }
+        if bulk.bindPrimitives() != 0 { failures.append("bind: a second pass should be a no-op") }
 
         // Generated C++ must namespace the enum to the module, position by
         // centre, and convert px to the millimetres mm2px() expects.

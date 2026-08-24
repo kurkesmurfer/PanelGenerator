@@ -450,6 +450,60 @@ struct PanelDocument: Codable, Hashable {
 
     var pixelSize: CGSize { PanelMetrics.size(hp: widthHP, format: format) }
 
+    /// Give every still-unbound primitive the role its kind implies, returning
+    /// how many changed.
+    ///
+    /// A panel made before component binding existed opens with everything as
+    /// decoration — correct, because it keeps old exports byte-identical, but
+    /// it means one trip through the inspector per control. This is the escape
+    /// hatch. Only elements still sitting at `.decoration` whose kind actually
+    /// implies a component are touched, so a role set by hand is never
+    /// overwritten, and shapes, text and screws stay as artwork.
+    /// Align the given elements, either to their own collective bounds or to
+    /// the panel.
+    ///
+    /// Y grows downward here, so "top" is the smallest y: aligning to top puts
+    /// every selected element at the topmost edge *present in the selection*.
+    /// The panel's own top edge is a different operation and has to be asked
+    /// for — conflating the two is the whole reason this takes a flag.
+    mutating func align(_ mode: String, ids: Set<UUID>, toPanel: Bool) {
+        let bounds: CGRect
+        if toPanel {
+            guard !ids.isEmpty else { return }
+            bounds = CGRect(origin: .zero, size: pixelSize)
+        } else {
+            let sel = elements.filter { ids.contains($0.id) }
+            guard let first = sel.first, sel.count > 1 else { return }
+            var b = first.frame
+            for el in sel.dropFirst() { b = b.union(el.frame) }
+            bounds = b
+        }
+        for i in elements.indices where ids.contains(elements[i].id) {
+            switch mode {
+            case "L":  elements[i].x = bounds.minX
+            case "R":  elements[i].x = bounds.maxX - elements[i].w
+            case "CX": elements[i].x = bounds.midX - elements[i].w / 2
+            case "T":  elements[i].y = bounds.minY
+            case "B":  elements[i].y = bounds.maxY - elements[i].h
+            case "CY": elements[i].y = bounds.midY - elements[i].h / 2
+            default: break
+            }
+        }
+    }
+
+    @discardableResult
+    mutating func bindPrimitives() -> Int {
+        var bound = 0
+        for i in elements.indices {
+            let kind = elements[i].kind
+            guard elements[i].role == .decoration, kind.defaultRole != .decoration else { continue }
+            elements[i].role = kind.defaultRole
+            if elements[i].stockWidget.isEmpty { elements[i].stockWidget = kind.defaultStockWidget }
+            bound += 1
+        }
+        return bound
+    }
+
     mutating func addCornerScrews() {
         let inset: CGFloat = 7, side: CGFloat = 11
         let sz = pixelSize
