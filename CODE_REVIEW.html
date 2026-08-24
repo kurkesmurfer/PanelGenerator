@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PanelGenerator — Code Review</title>
+<style>
+  :root{
+    --bg:#0f1015; --panel:#171922; --panel2:#1d2029; --line:#2b3040;
+    --fg:#dfe3ec; --dim:#8f97ab; --accent:#FF9C00; --accent2:#99CCFF;
+    --violet:#CC99CC; --red:#DD4444; --green:#7BC96F; --gold:#FFCC66;
+    --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);
+    font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;}
+  .wrap{max-width:980px;margin:0 auto;padding:40px 28px 80px}
+
+  header{border-left:14px solid var(--accent);padding:4px 0 4px 20px;margin-bottom:8px}
+  h1{margin:0;font-size:30px;letter-spacing:.5px;font-weight:600}
+  header .sub{color:var(--dim);font-size:14px;margin-top:4px}
+
+  h2{margin:44px 0 14px;font-size:12px;letter-spacing:2.2px;text-transform:uppercase;
+     color:var(--accent);border-bottom:1px solid var(--line);padding-bottom:8px}
+  h3{margin:26px 0 8px;font-size:16px;font-weight:600;color:var(--gold)}
+  p{margin:10px 0}
+  code,kbd{font-family:var(--mono);font-size:12.5px;background:#242835;padding:1.5px 5px;
+    border-radius:4px;color:var(--accent2)}
+  pre{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:14px 16px;
+    overflow-x:auto;font-family:var(--mono);font-size:12.5px;line-height:1.5;color:#c9d1e0}
+  a{color:var(--accent2)}
+
+  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin:22px 0}
+  .stat{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+  .stat b{display:block;font-size:20px;color:var(--gold);font-weight:600}
+  .stat span{font-size:11px;letter-spacing:1.2px;text-transform:uppercase;color:var(--dim)}
+
+  table{width:100%;border-collapse:collapse;margin:14px 0;font-size:14px}
+  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{font-size:11px;letter-spacing:1.4px;text-transform:uppercase;color:var(--dim);font-weight:600}
+  tbody tr:hover{background:#1a1d26}
+
+  .find{background:var(--panel);border:1px solid var(--line);border-left-width:5px;
+    border-radius:8px;padding:14px 18px;margin:14px 0}
+  .find.crit{border-left-color:var(--red)}
+  .find.high{border-left-color:var(--accent)}
+  .find.med{border-left-color:var(--gold)}
+  .find.low{border-left-color:var(--dim)}
+  .find h4{margin:0 0 6px;font-size:15px;font-weight:600}
+  .find .loc{font-family:var(--mono);font-size:11.5px;color:var(--dim);margin-bottom:8px}
+  .find p{margin:6px 0}
+  .tag{display:inline-block;font-size:10px;letter-spacing:1.3px;text-transform:uppercase;
+    padding:2px 7px;border-radius:20px;margin-left:8px;vertical-align:2px;font-weight:600}
+  .t-crit{background:#4a1c1c;color:#ff9b9b}
+  .t-high{background:#4a3210;color:#ffc46b}
+  .t-med{background:#3d3a18;color:#e8dc8a}
+  .t-low{background:#252a36;color:#9aa4ba}
+  .t-verify{background:#1e3548;color:#8fc6f0}
+
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  @media(max-width:720px){.cols{grid-template-columns:1fr}}
+  .box{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px 18px}
+  .box h3{margin-top:0}
+  ul{margin:8px 0;padding-left:20px} li{margin:5px 0}
+  .good::marker{color:var(--green)}
+  footer{margin-top:60px;padding-top:16px;border-top:1px solid var(--line);
+    color:var(--dim);font-size:12.5px}
+  .pill{display:inline-block;background:var(--panel2);border:1px solid var(--line);
+    border-radius:20px;padding:3px 12px;font-size:12px;color:var(--dim);margin:0 6px 6px 0}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>PanelGenerator — code review &amp; handover</h1>
+  <div class="sub">Native macOS editor for VCV Rack / MetaModule front panels · LCARS aesthetic · Swift 5.9 + AppKit, no third-party dependencies<br>Reviewed 24 Aug 2026 · HEAD <code>1198a24</code> + 1 uncommitted file</div>
+</header>
+
+<div class="stats">
+  <div class="stat"><b>3 224</b><span>lines of Swift</span></div>
+  <div class="stat"><b>13</b><span>source files</span></div>
+  <div class="stat"><b>20</b><span>commits</span></div>
+  <div class="stat"><b>16</b><span>element kinds</span></div>
+  <div class="stat"><b>0</b><span>unit tests</span></div>
+</div>
+
+<h2>1 · What it is</h2>
+<p>A single-window AppKit editor. A <code>PanelDocument</code> (pure value types, JSON-persisted as
+<code>.panelgen</code>) holds a list of <code>PanelElement</code>s. <code>Renderer.parts(for:)</code> turns each element
+into an array of <code>ShapePart(CGPath, fill, stroke, lineWidth)</code>, and <em>every</em> consumer — the
+interactive canvas, the PNG rasteriser, the SVG writer — draws from that same array. That single
+design decision is the strongest thing in the codebase: the exports genuinely cannot drift from
+what is on screen, and it costs almost nothing in complexity.</p>
+
+<pre>Model.swift        value types, JSON, element catalogue &amp; defaults
+Geometry.swift     PanelMetrics (15 px/HP, 380 px 3U, 127 px 1U) + rotate/snap helpers
+Renderer.swift     parts(for:) → [ShapePart]  ← single source of truth
+  ├─ CanvasView.swift        909 L · editing surface, undo, selection, drag modes
+  ├─ Exporters.swift         SVGExporter (via PathSVG) + PNGExporter (4×)
+  └─ PaletteView / InspectorView / LayerListView / MainWindowController / AppDelegate
+Selftest.swift     headless --selftest → Docs/pg_demo.{svg,png}, no window server needed</pre>
+
+<div class="cols">
+  <div class="box">
+    <h3>Holds up well</h3>
+    <ul>
+      <li class="good">One vector path per element, shared by canvas/PNG/SVG.</li>
+      <li class="good">Fill rule is non-zero on both sides, so the annulus and elbow holes survive export correctly. Line caps/joins also match CG↔SVG defaults.</li>
+      <li class="good">Value-type model + <code>apply(elements:name:)</code> as the single mutation funnel makes undo cheap and correct for element edits.</li>
+      <li class="good">Headless self-test is a real CI smoke test, not decoration.</li>
+      <li class="good">Zero dependencies; <code>make app</code> produces a runnable bundle.</li>
+      <li class="good">Commit hygiene is good — the log reads as a proper phase history.</li>
+    </ul>
+  </div>
+  <div class="box">
+    <h3>The two structural gaps</h3>
+    <ul>
+      <li><b>No test target.</b> <code>Package.swift</code> declares one <code>executableTarget</code>, so nothing is importable by XCTest. The path maths (elbow, ring sector, rounded rect), the JSON round-trip and the SVG numeric output are all pure functions begging to be tested.</li>
+      <li><b>No bridge to the C++ side.</b> The document already knows every component centre; nothing emits <code>mm2px(Vec(x,y))</code> lines or a Rack-<code>helper.py</code> components layer. See §4 — this is where the tool stops short of paying for itself.</li>
+    </ul>
+  </div>
+</div>
+
+<h2>2 · Correctness findings</h2>
+
+<div class="find crit">
+  <h4>SVG <code>&lt;text&gt;</code> will not render in VCV Rack<span class="tag t-crit">critical</span></h4>
+  <div class="loc">Exporters.swift:47–60 · confirmed in Docs/pg_demo.svg lines 10, 11, 22</div>
+  <p>Rack renders panel SVGs through <b>nanosvg</b>, which has no text support at all — <code>&lt;text&gt;</code> elements are silently dropped. Every label you place disappears the moment the panel is loaded in Rack. The <code>font-family="-apple-system, …"</code> stack compounds it: even in renderers that do handle text, that stack resolves nowhere outside macOS.</p>
+  <p><b>Fix:</b> convert text to outlines at export. <code>CTFontCreatePathForGlyph</code> over a <code>CTLine</code>'s runs gives you a <code>CGPath</code>, which feeds straight into the existing <code>PathSVG.d()</code> walker — so this lands as one more <code>ShapePart</code> and nothing else changes. Keep the live <code>&lt;text&gt;</code> path behind an "editable text" export option for when the SVG is going into Illustrator/Inkscape instead.</p>
+  <p>MetaModule rasterises panel assets through its own SDK pipeline rather than nanosvg, so behaviour there may differ — worth verifying, but text-as-paths is correct for both targets regardless.</p>
+</div>
+
+<div class="find crit">
+  <h4>Panel art draws the components Rack draws on top<span class="tag t-crit">workflow</span></h4>
+  <div class="loc">Renderer.swift:130–260 · conceptual</div>
+  <p>A VCV panel SVG is <em>background only</em>: Rack composites the real knob, jack and fader widgets over it at runtime. PanelGenerator paints jacks, knobs, faders, LEDs and screws into the exported artwork, so a straight export gives you painted knobs with live knobs sitting on top of them.</p>
+  <p><b>Fix:</b> the primitives are exactly right as <em>placement guides</em> — keep them on canvas, exclude them from the panel export, and emit their centres separately (§4). A per-element "export: artwork / guide only" flag plus a kind-level default gets you there with a one-line change in <code>SVGExporter.documentSVG</code>.</p>
+</div>
+
+<div class="find high">
+  <h4>Documents saved before commit <code>7b73f71</code> can no longer be opened<span class="tag t-high">data loss</span></h4>
+  <div class="loc">Model.swift:186–210 (ElementParams.segments, .layout)</div>
+  <p>Swift's synthesised <code>Codable</code> does <b>not</b> fall back to property default values for missing keys — it throws <code>keyNotFound</code>. <code>isHidden</code> and <code>groupID</code> are safe because they are <code>Optional</code> (you noted that intent in the comment), but <code>segments</code> and <code>layout</code> were added to <code>ElementParams</code> as non-optional <code>CGFloat</code>. Any <code>.panelgen</code> written before the button-group commit now fails to decode, and <code>pgOpen</code> just reports the error.</p>
+  <p><b>Fix:</b> hand-write <code>ElementParams.init(from:)</code> using <code>decodeIfPresent(_:) ?? default</code> for every field, and add a <code>schemaVersion</code> to <code>PanelDocument</code> now, before there are files in the wild you care about.</p>
+</div>
+
+<div class="find high">
+  <h4>Any panel-level edit wipes the entire undo stack<span class="tag t-high">high</span></h4>
+  <div class="loc">InspectorView.swift:545–552 → CanvasView.swift:86–93</div>
+  <p><code>mutateDocument</code> routes through <code>beginLoad()/endLoad()</code>, and <code>endLoad()</code> calls
+  <code>edits.removeAllActions()</code> and clears the selection — that path was written for "load a file
+  from disk", not "the user nudged a slider". So changing panel name, HP width, 1U/3U or background
+  colour discards all undo history and deselects. The background <code>NSColorWell</code> is the worst case:
+  it sends its action continuously while the picker is open, so dragging in the colour wheel wipes
+  the stack dozens of times per second. Panel-level changes are also not themselves undoable.</p>
+  <p><b>Fix:</b> give <code>mutateDocument</code> its own undo registration (same coalescing logic as
+  <code>apply</code>) and stop reusing the load path. Changing HP width should also either clamp
+  elements into the new bounds or flag the ones now off-panel.</p>
+</div>
+
+<div class="find high">
+  <h4>Button-group parameters are unreachable in the inspector<span class="tag t-high">high</span></h4>
+  <div class="loc">Model.swift:104–110 vs InspectorView.swift:316, 407–425</div>
+  <p><code>ElementKind.category</code> sends <code>.pushButton</code> and <code>.buttonGroup</code> to
+  <code>.primitive</code> (they fall through <code>default:</code>), but <code>buildParamsSection</code>
+  handles <code>case .pushButton, .buttonGroup:</code> inside the <code>.shape</code> branch. The Count and
+  Layout sliders are therefore dead code — a button group can never be configured from the UI, only
+  by hand-editing the JSON.</p>
+  <p><b>Fix:</b> move that inner <code>case</code> into the <code>.primitive</code> branch. One-line move; the handlers are already correct.</p>
+</div>
+
+<div class="find high">
+  <h4>Palette drag-and-drop looks broken — verify<span class="tag t-verify">verify first</span></h4>
+  <div class="loc">PaletteView.swift:170–182 vs CanvasView.swift:51, 894</div>
+  <p><code>mouseDown</code> creates a private <code>NSPasteboard(name:)</code>, writes the element kind to it
+  under <code>Paste.elementType</code> — and then never uses it. The actual drag is started with
+  <code>NSDraggingItem(pasteboardWriter: entry.kind.rawValue as NSString)</code>, and <code>NSString</code>'s
+  writable types are just <code>.string</code>. The canvas registers only
+  <code>registerForDraggedTypes([Paste.elementType])</code> and <code>performDragOperation</code> reads only that
+  type, so the destination should never accept the drop. If dragging from the repo has in fact been
+  silently doing nothing (and only double-click-to-insert works), this is why.</p>
+  <p><b>Fix:</b> build an <code>NSPasteboardItem</code>, <code>setString(kind.rawValue, forType: Paste.elementType)</code>, and pass that as the <code>pasteboardWriter</code>. Please confirm the current behaviour on-device before changing anything — I could not build here (no Swift toolchain in the bridge VM).</p>
+</div>
+
+<div class="find med">
+  <h4>Elbow geometry is not dimensionally true<span class="tag t-med">fidelity</span></h4>
+  <div class="loc">Renderer.swift:63–96 (<code>sx = f.width / W</code>, <code>sy = f.height / H</code>)</div>
+  <p>The elbow is built in a canonical <code>W × H</code> box from thickness / inner radius / arm lengths, then
+  non-uniformly scaled into the element frame. So "Thickness = 16" only means 16 px when the frame
+  happens to equal the canonical size; resize the element and the corner radius goes elliptical and the
+  arm thickness changes with it. For decorative backdrops that is arguably fine — for a tool whose whole
+  point is that px map to millimetres, it is a trap.</p>
+  <p><b>Fix:</b> either drive the frame <em>from</em> the parameters (resize handles edit <code>armH</code>/<code>armV</code>
+  directly), or keep the scaling but show the effective post-scale thickness in the inspector.
+  Same class of issue in <code>ringSectorPath</code> (Renderer.swift:104): <code>R = min(w,h)/2</code>, so a non-square
+  frame leaves the art not filling — and not matching — its own selection rectangle.</p>
+</div>
+
+<div class="find med">
+  <h4>Layer list shows ~7 rows and does not scroll<span class="tag t-med">medium</span></h4>
+  <div class="loc">MainWindowController.swift:97 · LayerListView.swift:12–35</div>
+  <p>Fixed 190 pt height, rows laid out at <code>22 + i·22</code>, no enclosing <code>NSScrollView</code>. Everything
+  below the eighth element is drawn outside the view and is unreachable. A realistic 3U panel has 30–60
+  elements.</p>
+</div>
+
+<div class="find med">
+  <h4>The layer list is rebuilt on every mouse-drag frame<span class="tag t-med">performance</span></h4>
+  <div class="loc">MainWindowController.swift:28–31 → LayerListView.rebuild()</div>
+  <p><code>canvas.onChange</code> fires from the <code>document</code> <code>didSet</code>, which the gesture paths
+  (<code>mutateFrames</code>, <code>updatePrimaryFrame</code>, group resize/rotate) hit on every
+  <code>mouseDragged</code>. <code>rebuild()</code> tears down and re-creates an <code>NSTextField</code> and three
+  <code>NSButton</code>s per row each time. Dragging a selection across a busy panel is doing hundreds of view
+  allocations per second.</p>
+  <p><b>Fix:</b> coalesce — set a <code>needsLayerRebuild</code> flag and flush on the next runloop pass, or
+  rebuild only on <code>mouseUp</code>. An <code>NSTableView</code> would be the proper answer and would fix the
+  scrolling item above at the same time.</p>
+</div>
+
+<div class="find low">
+  <h4>Smaller items<span class="tag t-low">low</span></h4>
+  <div class="loc">various</div>
+  <ul>
+    <li><b>Button-group art overflows its frame.</b> Row/column layouts place the first and last cap centres exactly on the frame edge, so half of each end cap sits outside — despite the comment at Renderer.swift:212 claiming the radius hugs the frame. The <code>cross</code> layout also ignores <code>segments</code> and always draws 4.</li>
+    <li><b>PNG and SVG text will not line up.</b> The rasteriser centres on measured <code>NSFont</code> metrics; the SVG writer uses a hardcoded <code>baselineY = midY + fontSize·0.35</code>. Moot once text becomes paths.</li>
+    <li><b>Undo does not restore selection</b>, and <code>pgUndo</code> calls <code>markDirty()</code> unconditionally — undoing back to the saved state still shows the dirty bullet.</li>
+    <li><b><code>canPaste</code> JSON-decodes the whole clipboard</b> on every <code>validateMenuItem</code> call (CanvasView.swift:145). Cheap fix: check <code>availableType(from:)</code> instead.</li>
+    <li><b>Dead code:</b> empty double-click branch (CanvasView.swift:512–514), <code>_ = ps</code> (Renderer.swift:204), <code>_ = rowViews</code> and the unused <code>built</code> array (InspectorView.swift:208–228).</li>
+    <li><b>Zoom does not preserve an anchor point</b> — <kbd>⌘=</kbd> jumps the viewport rather than zooming about the centre or the cursor.</li>
+    <li><b>README drift:</b> "Copy/paste of elements deferred" in PLAN.md is stale (shipped in <code>af1ddd2</code>), and PLAN's "Rotation edited via inspector (no on-canvas rotate handle yet)" is stale too (<code>9f695e5</code>).</li>
+    <li><b>Uncommitted work:</b> <code>CanvasView.swift</code> has the group-selection semantics change (click/marquee expands to whole group at mouse-<em>down</em>) sitting in the working tree. It looks correct and deliberate — commit it before touching anything else.</li>
+  </ul>
+</div>
+
+<h2>3 · Metrics — the numbers are right, the assumptions should be documented</h2>
+<table>
+  <thead><tr><th>Constant</th><th>Value</th><th>Verdict</th></tr></thead>
+  <tbody>
+    <tr><td><code>pixelsPerHP</code></td><td>15 px</td><td>Exactly Rack's <code>RACK_GRID_WIDTH</code>. 5.08 mm at Rack's 75 dpi SVG convention. Correct.</td></tr>
+    <tr><td><code>height3U</code></td><td>380 px</td><td>Exactly Rack's <code>RACK_GRID_HEIGHT</code>. (128.5 mm is 379.4 px; Rack itself uses the round 380, so match Rack, not the spec sheet.) Correct.</td></tr>
+    <tr><td><code>height1U</code></td><td>127 px</td><td>= 43.0 mm — this is <b>PulpLogic</b>-style 1U (1.7″ / 43.18 mm). Intellijel 1U is 39.65 mm ≈ 117 px and will not fit. Worth making the 1U height a preference rather than a constant, and saying which standard the current one is in the README.</td></tr>
+    <tr><td>SVG output space</td><td>px, <code>viewBox="0 0 W 380"</code></td><td>Loads correctly in Rack. But most community tooling and the Rack docs author panels in <b>mm</b> space (<code>viewBox="0 0 60.96 128.5"</code>, <code>width="60.96mm"</code>). An mm-space export option would improve interop with Inkscape workflows and anything downstream that assumes mm.</td></tr>
+  </tbody>
+</table>
+<p>The inspector works exclusively in px. For panel work, a mm readout beside every X/Y/W/H field
+(<code>mm = px · 25.4 / 75</code>) would save constant mental arithmetic — and would make the 10 mm
+jack / 12 mm knob minimum-spacing rules checkable by eye.</p>
+
+<h2>4 · The missing half: from panel to plugin</h2>
+<p>Right now the tool ends at "pretty SVG". The document already contains every component centre, kind
+and size — the expensive information. Two exports would turn it from an illustrator into part of the
+build chain, and both are small:</p>
+
+<h3>a. A Rack <code>helper.py</code> components layer</h3>
+<p><code>helper.py createmodule</code> reads a layer named <code>components</code> and infers widget positions from
+shape fill colour: <code>#ff0000</code> params, <code>#00ff00</code> inputs, <code>#0000ff</code> outputs,
+<code>#ff00ff</code> lights, <code>#ffff00</code> custom. Emitting that layer (and stripping it from the visible
+artwork) means Rack generates the <code>ModuleWidget</code> constructor for you. Needs one new field on
+<code>PanelElement</code> — the port/param role — and roughly 20 lines in <code>SVGExporter</code>.</p>
+
+<h3>b. Direct C++ emission</h3>
+<pre>addParam(createParamCentered&lt;RoundLargeBlackKnob&gt;(
+    mm2px(Vec(15.24f, 30.48f)), module, MyModule::CUTOFF_PARAM));
+addInput(createInputCentered&lt;PJ301MPort&gt;(
+    mm2px(Vec(10.16f, 101.60f)), module, MyModule::IN_INPUT));</pre>
+<p>Element centre in px → mm is one multiply. Add an editable <code>enumName</code> and a widget-class
+string per element and the whole constructor body falls out of the document. Generating the SVG and the
+C++ from one source is the single most effective defence against the coordinate drift that eats time on
+every panel.</p>
+<p><span class="pill">nice-to-have</span> a spacing validator: flag jack centres closer than 10 mm and knob
+centres closer than 12 mm, and flag anything whose bounds fall outside the panel after an HP change.</p>
+
+<h2>5 · Suggested order of work</h2>
+<table>
+  <thead><tr><th>#</th><th>Task</th><th>Why now</th></tr></thead>
+  <tbody>
+    <tr><td>0</td><td>Commit the working-tree group-selection change</td><td>Clean base before anything else</td></tr>
+    <tr><td>1</td><td>Custom <code>init(from:)</code> for <code>ElementParams</code> + <code>schemaVersion</code></td><td>Stops silent data loss; every day it waits the exposure grows</td></tr>
+    <tr><td>2</td><td>Confirm the palette drag bug, then fix the pasteboard writer</td><td>Cheap; a headline feature may currently be inert</td></tr>
+    <tr><td>3</td><td>Give <code>mutateDocument</code> real undo; stop reusing the load path</td><td>Most damaging everyday bug</td></tr>
+    <tr><td>4</td><td>Move the button-group case into <code>.primitive</code></td><td>One line, unlocks a shipped feature</td></tr>
+    <tr><td>5</td><td>Split a <code>PanelKit</code> library target out of the executable; add XCTest</td><td>Prerequisite for touching the path maths with any confidence</td></tr>
+    <tr><td>6</td><td>Text → <code>CGPath</code> at export</td><td>Without it no exported panel is usable in Rack</td></tr>
+    <tr><td>7</td><td>Export roles: guide-only primitives + components layer + C++ emission</td><td>Where the tool starts saving real time</td></tr>
+    <tr><td>8</td><td><code>NSTableView</code> layer list, coalesced rebuilds, mm readouts</td><td>Usability at realistic element counts</td></tr>
+    <tr><td>9</td><td>Elbow/ring dimensional truth, or honest post-scale readouts</td><td>Precision work; do it once tests exist</td></tr>
+  </tbody>
+</table>
+
+<footer>
+  Static review only — no build was run (the desktop bridge VM has no Swift toolchain, so nothing here
+  is compiler-verified). Line numbers are against the working tree as of 24 Aug 2026, HEAD
+  <code>1198a24</code> with <code>Sources/PanelGenerator/CanvasView.swift</code> modified.
+</footer>
+
+</div>
+</body>
+</html>

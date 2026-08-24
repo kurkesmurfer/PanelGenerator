@@ -30,12 +30,13 @@ final class LayerListView: NSView {
 
     func select(_ id: UUID, additive: Bool) {
         guard let cv = canvas else { return }
+        let members = cv.groupMembers(id)   // groups select/toggle as one unit
         if additive {
             var s = cv.selection
-            if !s.insert(id).inserted { s.remove(id) }
+            if s.contains(id) { s.subtract(members) } else { s.formUnion(members) }
             cv.setSelection(s)
         } else {
-            cv.setSelection([id])
+            cv.setSelection(members)
         }
     }
 

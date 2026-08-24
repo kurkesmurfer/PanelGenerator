@@ -165,8 +165,11 @@ final class CanvasView: NSView {
             e.y += PanelMetrics.pixelsPerHP
             pasted.append(e)
         }
-        insert(pasted, name: "Paste")
-        setSelection(Set(pasted.map(\.id)))
+        // Fresh group IDs here too, or pasting a group would select/move the
+        // originals along with the paste.
+        let remapped = withRemappedGroups(pasted)
+        insert(remapped, name: "Paste")
+        setSelection(Set(remapped.map(\.id)))
     }
 
     func insertAtCenter(_ kind: ElementKind) {
@@ -209,7 +212,8 @@ final class CanvasView: NSView {
                 c.y += Geo.defaultSnap * 2
                 return c
             }
-        insert(copies, name: "Duplicate")
+        // Fresh group IDs: a duplicated group must not stay glued to the original.
+        insert(withRemappedGroups(copies), name: "Duplicate")
     }
 
     func selectAllElements() {
@@ -561,11 +565,16 @@ final class CanvasView: NSView {
             return
         }
 
-        // 2. Hit test elements (topmost first).
+        // 2. Hit test elements (topmost first). Groups are selected and moved
+        //    as a unit: a click on any member expands to the whole group HERE,
+        //    so the drag that follows carries every member with it. (Expanding
+        //    only at mouseUp let a click-drag move a lone member out of its
+        //    group, silently splitting it.)
         if let el = element(at: p) {
+            let members = groupMembers(el.id)
             if !event.modifierFlags.isDisjoint(with: [.shift, .command]) {
                 var sel = selection
-                if sel.contains(el.id) { sel.remove(el.id) } else { sel.insert(el.id) }
+                if sel.contains(el.id) { sel.subtract(members) } else { sel.formUnion(members) }
                 setSelection(sel)
                 if sel.contains(el.id) {
                     dragMode = .moving(origFrames: origFrames(for: sel))
@@ -575,7 +584,7 @@ final class CanvasView: NSView {
                 }
             } else {
                 if !selection.contains(el.id) {
-                    setSelection([el.id])
+                    setSelection(members)
                 }
                 dragMode = .moving(origFrames: origFrames(for: selection))
                 beginGestureUndo("Move")
@@ -646,7 +655,11 @@ final class CanvasView: NSView {
             let rect = CGRect(x: min(start.x, p.x), y: min(start.y, p.y),
                               width: abs(p.x - start.x), height: abs(p.y - start.y))
             marqueeRect = rect
-            let hit = Set(document.elements.filter { $0.isHidden != true && $0.frame.intersects(rect) }.map(\.id))
+            // Rubber-band hits expand to whole groups, so a marquee over part
+            // of a group selects (and later moves) the group as one unit.
+            let hitIDs = document.elements.filter { $0.isHidden != true && $0.frame.intersects(rect) }.map(\.id)
+            var hit = Set<UUID>()
+            for id in hitIDs { hit.formUnion(groupMembers(id)) }
             selection = base.union(hit)
             needsDisplay = true
 
@@ -818,10 +831,26 @@ final class CanvasView: NSView {
         apply(elements: els, name: "Ungroup")
     }
 
-    private func groupMembers(_ id: UUID) -> Set<UUID> {
+    /// (internal: the layer list expands row clicks to whole groups too)
+    func groupMembers(_ id: UUID) -> Set<UUID> {
         guard let el = document.elements.first(where: { $0.id == id }),
               let gid = el.groupID else { return [id] }
         return Set(document.elements.filter { $0.groupID == gid }.map(\.id))
+    }
+
+    /// Fresh group IDs for copied elements so duplicates and pastes never share
+    /// membership with the elements they were copied from. Members of the same
+    /// source group stay grouped together under one new ID.
+    private func withRemappedGroups(_ els: [PanelElement]) -> [PanelElement] {
+        var map: [UUID: UUID] = [:]
+        return els.map { el in
+            var e = el
+            if let g = el.groupID {
+                if map[g] == nil { map[g] = UUID() }
+                e.groupID = map[g]
+            }
+            return e
+        }
     }
 
     private func updatePrimaryRotation(_ deg: CGFloat) {
