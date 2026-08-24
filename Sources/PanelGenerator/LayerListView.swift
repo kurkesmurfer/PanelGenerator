@@ -2,43 +2,133 @@ import AppKit
 
 /// Bottom of the left sidebar: z-ordered element list, top layer first.
 /// Click selects · ⇧/⌘-click extends · ◉/○ toggles visibility · ▲▼ reorder.
+///
+/// An NSTableView rather than hand-placed rows. The previous version laid rows
+/// out at fixed offsets inside a 190 pt frame with no scroller, so everything
+/// past the seventh element was drawn outside the view and unreachable — and it
+/// tore down and recreated four views per row on every mouse-drag frame,
+/// because `onChange` fires from the document's didSet.
+///
+/// Two things keep it cheap now: reloads are skipped while a canvas gesture is
+/// in flight (a drag changes coordinates, not the list), and even then the
+/// table only reloads when the list's *shape* actually changed.
 final class LayerListView: NSView {
 
-    weak var canvas: CanvasView?
-    private let rowH: CGFloat = 22
+    weak var canvas: CanvasView? {
+        didSet { rebuild() }
+    }
+
+    private let scroll = NSScrollView()
+    private let table = NSTableView()
+    private let header = NSTextField(labelWithString: "LAYERS")
+
+    /// Top layer first, i.e. `document.elements` reversed.
+    private var rows: [PanelElement] = []
+    private var signature: [String] = []
+    private var didBuild = false
+    private var pending = false
+    private var flushScheduled = false
+    private var syncingSelection = false
 
     override var isFlipped: Bool { true }
 
-    func rebuild() {
-        for sub in subviews { sub.removeFromSuperview() }
-        guard let cv = canvas else { return }
-        let doc = cv.document
+    // MARK: Construction
 
-        let header = NSTextField(labelWithString: "LAYERS — \(doc.elements.count)")
+    private func buildIfNeeded() {
+        guard !didBuild else { return }
+        didBuild = true
+
         header.font = NSFont.boldSystemFont(ofSize: 9)
         header.textColor = .secondaryLabelColor
-        header.frame = CGRect(x: 10, y: 5, width: max(bounds.width - 20, 160), height: 13)
+        header.translatesAutoresizingMaskIntoConstraints = false
         addSubview(header)
 
-        for (i, el) in doc.elements.reversed().enumerated() {
-            let row = LayerRowView(frame: CGRect(x: 0, y: 22 + CGFloat(i) * rowH,
-                                                 width: bounds.width, height: rowH))
-            row.configure(element: el, selected: cv.selection.contains(el.id), list: self)
-            addSubview(row)
+        table.headerView = nil
+        table.style = .plain
+        table.rowHeight = 22
+        table.gridStyleMask = []
+        table.intercellSpacing = NSSize(width: 0, height: 0)
+        table.allowsMultipleSelection = true
+        table.allowsEmptySelection = true
+        table.backgroundColor = ColorSpec.hex("#2B2B33").nsColor
+        let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("layer"))
+        column.resizingMask = .autoresizingMask
+        table.addTableColumn(column)
+        table.dataSource = self
+        table.delegate = self
+
+        scroll.translatesAutoresizingMaskIntoConstraints = false
+        scroll.documentView = table
+        scroll.hasVerticalScroller = true
+        scroll.autohidesScrollers = true
+        scroll.drawsBackground = true
+        scroll.backgroundColor = ColorSpec.hex("#2B2B33").nsColor
+        addSubview(scroll)
+
+        NSLayoutConstraint.activate([
+            header.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 10),
+            header.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -10),
+            header.topAnchor.constraint(equalTo: topAnchor, constant: 5),
+            header.heightAnchor.constraint(equalToConstant: 13),
+
+            scroll.leadingAnchor.constraint(equalTo: leadingAnchor),
+            scroll.trailingAnchor.constraint(equalTo: trailingAnchor),
+            scroll.topAnchor.constraint(equalTo: header.bottomAnchor, constant: 4),
+            scroll.bottomAnchor.constraint(equalTo: bottomAnchor),
+        ])
+    }
+
+    // MARK: Refresh
+
+    /// Kept as `rebuild()` so the window controller's calls are unchanged, but
+    /// it no longer rebuilds anything directly — it marks the list dirty and
+    /// lets the flush decide when there is something worth doing.
+    func rebuild() {
+        buildIfNeeded()
+        pending = true
+        scheduleFlush()
+    }
+
+    private func scheduleFlush() {
+        guard pending, !flushScheduled else { return }
+        // A drag moves elements; it does not change the layer list. Wait for
+        // mouseUp, which fires onSelectionChange and brings us back here.
+        guard canvas?.isGestureActive != true else { return }
+        flushScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.flushScheduled = false
+            self.pending = false
+            self.flush()
         }
     }
 
-    func select(_ id: UUID, additive: Bool) {
+    private func flush() {
         guard let cv = canvas else { return }
-        let members = cv.groupMembers(id)   // groups select/toggle as one unit
-        if additive {
-            var s = cv.selection
-            if s.contains(id) { s.subtract(members) } else { s.formUnion(members) }
-            cv.setSelection(s)
-        } else {
-            cv.setSelection(members)
+        let newRows = Array(cv.document.elements.reversed())
+        let newSignature = newRows.map {
+            "\($0.id.uuidString)|\($0.name)|\($0.isHidden == true)|\($0.groupID?.uuidString ?? "")|\($0.kind.rawValue)"
         }
+        rows = newRows
+        if newSignature != signature {
+            signature = newSignature
+            header.stringValue = "LAYERS — \(rows.count)"
+            table.reloadData()
+        }
+        syncSelection(from: cv)
     }
+
+    private func syncSelection(from cv: CanvasView) {
+        var wanted = IndexSet()
+        for (i, el) in rows.enumerated() where cv.selection.contains(el.id) { wanted.insert(i) }
+        guard wanted != table.selectedRowIndexes else { return }
+        syncingSelection = true
+        table.selectRowIndexes(wanted, byExtendingSelection: false)
+        syncingSelection = false
+        if let first = wanted.first { table.scrollRowToVisible(first) }
+    }
+
+    // MARK: Row actions
 
     func toggleHidden(_ id: UUID) {
         guard let cv = canvas else { return }
@@ -49,6 +139,8 @@ final class LayerListView: NSView {
         cv.apply(elements: els, name: hiding ? "Hide Element" : "Show Element")
     }
 
+    /// `delta` is in list terms: +1 moves the element one row up the list,
+    /// which means one step later in `elements` — later is drawn on top.
     func move(_ id: UUID, delta: Int) {
         guard let cv = canvas else { return }
         var els = cv.document.elements
@@ -60,50 +152,114 @@ final class LayerListView: NSView {
     }
 }
 
-/// One row: visibility toggle, name, up/down reorder buttons.
+// MARK: - Table data & delegate
+
+extension LayerListView: NSTableViewDataSource, NSTableViewDelegate {
+
+    func numberOfRows(in tableView: NSTableView) -> Int { rows.count }
+
+    func tableView(_ tableView: NSTableView,
+                   viewFor tableColumn: NSTableColumn?,
+                   row: Int) -> NSView? {
+        guard rows.indices.contains(row) else { return nil }
+        let id = NSUserInterfaceItemIdentifier("LayerRow")
+        let view = tableView.makeView(withIdentifier: id, owner: self) as? LayerRowView
+            ?? {
+                let v = LayerRowView()
+                v.identifier = id
+                return v
+            }()
+        view.configure(element: rows[row], list: self)
+        return view
+    }
+
+    func tableViewSelectionDidChange(_ notification: Notification) {
+        guard !syncingSelection, let cv = canvas else { return }
+        var ids = Set<UUID>()
+        for i in table.selectedRowIndexes where rows.indices.contains(i) {
+            ids.formUnion(cv.groupMembers(rows[i].id))   // groups select as one unit
+        }
+        cv.setSelection(ids)
+    }
+}
+
+// MARK: - One row
+
+/// Visibility toggle, name, up/down reorder. Built once and reconfigured on
+/// reuse — the table recycles these.
 final class LayerRowView: NSView {
+
+    private let eye = NSButton()
+    private let label = NSTextField(labelWithString: "")
+    private let up = NSButton()
+    private let down = NSButton()
 
     private var elementID: UUID?
     private weak var list: LayerListView?
-    private var hiddenState = false
+    private var didBuild = false
 
-    func configure(element: PanelElement, selected: Bool, list: LayerListView) {
-        self.elementID = element.id
-        self.list = list
-        hiddenState = element.isHidden == true
-        wantsLayer = true
-        layer?.backgroundColor = selected
-            ? NSColor.selectedContentBackgroundColor.withAlphaComponent(0.55).cgColor
-            : NSColor.clear.cgColor
+    private func buildIfNeeded() {
+        guard !didBuild else { return }
+        didBuild = true
 
-        let base = element.name.isEmpty ? element.kind.displayName : element.name
-        let title = element.groupID != nil ? "▸ " + base : base
-        let label = NSTextField(labelWithString: title)
+        func style(_ b: NSButton, _ title: String, _ action: Selector) {
+            b.title = title
+            b.target = self
+            b.action = action
+            b.isBordered = false
+            b.font = NSFont.systemFont(ofSize: 9)
+            b.translatesAutoresizingMaskIntoConstraints = false
+            addSubview(b)
+        }
+        style(eye, "◉", #selector(eyeTapped))
+        style(up, "▲", #selector(upTapped))
+        style(down, "▼", #selector(downTapped))
+
         label.font = NSFont.systemFont(ofSize: 11)
-        label.textColor = hiddenState ? .secondaryLabelColor : .labelColor
         label.lineBreakMode = .byTruncatingTail
-        label.frame = CGRect(x: 26, y: 4, width: max(bounds.width - 84, 60), height: 14)
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         addSubview(label)
 
-        makeButton(hiddenState ? "○" : "◉", x: 6, action: #selector(eyeTapped))
-        makeButton("▲", x: bounds.width - 40, action: #selector(upTapped))
-        makeButton("▼", x: bounds.width - 22, action: #selector(downTapped))
+        NSLayoutConstraint.activate([
+            eye.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 6),
+            eye.centerYAnchor.constraint(equalTo: centerYAnchor),
+            eye.widthAnchor.constraint(equalToConstant: 18),
+
+            label.leadingAnchor.constraint(equalTo: eye.trailingAnchor, constant: 2),
+            label.centerYAnchor.constraint(equalTo: centerYAnchor),
+            label.trailingAnchor.constraint(lessThanOrEqualTo: up.leadingAnchor, constant: -4),
+
+            up.trailingAnchor.constraint(equalTo: down.leadingAnchor),
+            up.centerYAnchor.constraint(equalTo: centerYAnchor),
+            up.widthAnchor.constraint(equalToConstant: 18),
+
+            down.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -4),
+            down.centerYAnchor.constraint(equalTo: centerYAnchor),
+            down.widthAnchor.constraint(equalToConstant: 18),
+        ])
     }
 
-    private func makeButton(_ title: String, x: CGFloat, action: Selector) {
-        let b = NSButton(title: title, target: self, action: action)
-        b.isBordered = false
-        b.font = NSFont.systemFont(ofSize: 9)
-        b.frame = CGRect(x: x, y: 2, width: 18, height: 18)
-        addSubview(b)
-    }
+    func configure(element: PanelElement, list: LayerListView) {
+        buildIfNeeded()
+        self.elementID = element.id
+        self.list = list
 
-    override func mouseDown(with event: NSEvent) {
-        guard let id = elementID else { return }
-        list?.select(id, additive: !event.modifierFlags.isDisjoint(with: [.shift, .command]))
+        let hidden = element.isHidden == true
+        eye.title = hidden ? "○" : "◉"
+        let base = element.name.isEmpty ? element.kind.displayName : element.name
+        label.stringValue = element.groupID != nil ? "▸ " + base : base
+        label.textColor = hidden ? .secondaryLabelColor : .labelColor
+        // A bound component is not artwork; mark it so the two are tellable
+        // apart in a list where everything otherwise looks the same.
+        if element.role.isComponent {
+            label.toolTip = "\(element.role.displayName) · \(element.identifierStem)\(element.role.enumSuffix)"
+        } else {
+            label.toolTip = nil
+        }
     }
 
     @objc private func eyeTapped()  { if let id = elementID { list?.toggleHidden(id) } }
-    @objc private func upTapped()   { if let id = elementID { list?.move(id, delta: -1) } }
-    @objc private func downTapped() { if let id = elementID { list?.move(id, delta: 1) } }
+    @objc private func upTapped()   { if let id = elementID { list?.move(id, delta: 1) } }
+    @objc private func downTapped() { if let id = elementID { list?.move(id, delta: -1) } }
 }

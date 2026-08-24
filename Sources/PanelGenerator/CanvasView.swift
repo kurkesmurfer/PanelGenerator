@@ -530,11 +530,18 @@ final class CanvasView: NSView {
     private enum OverlayHandle { case rotate, mirrorX, mirrorY }
 
     private var dragMode: DragMode = .idle
+
+    /// True from mouseDown until mouseUp. Views that care about the document's
+    /// *shape* rather than its coordinates — the layer list — can skip work
+    /// while this is set: a drag moves elements, it does not rename or reorder
+    /// them, and `onChange` fires from the document's didSet on every frame.
+    private(set) var isGestureActive = false
     private var downPanelPoint = CGPoint.zero
     private var didDrag = false
 
     override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
+        isGestureActive = true
         let p = panelPoint(from: event)
 
         if event.clickCount == 2, let el = element(at: p), selection == [el.id] {
@@ -898,6 +905,7 @@ final class CanvasView: NSView {
     }
 
     override func mouseUp(with event: NSEvent) {
+        isGestureActive = false   // before the switch: the notifications below flush the layer list
         switch dragMode {
         case .marquee:
             marqueeRect = nil

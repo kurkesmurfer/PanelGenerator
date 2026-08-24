@@ -94,7 +94,7 @@ final class MainWindowController: NSWindowController, NSMenuItemValidation {
             layerList.leadingAnchor.constraint(equalTo: sidebar.leadingAnchor),
             layerList.trailingAnchor.constraint(equalTo: sidebar.trailingAnchor),
             layerList.bottomAnchor.constraint(equalTo: sidebar.bottomAnchor),
-            layerList.heightAnchor.constraint(equalToConstant: 190),
+            layerList.heightAnchor.constraint(equalToConstant: 240),
 
             inspectorScroll.trailingAnchor.constraint(equalTo: root.trailingAnchor),
             inspectorScroll.topAnchor.constraint(equalTo: root.topAnchor),
