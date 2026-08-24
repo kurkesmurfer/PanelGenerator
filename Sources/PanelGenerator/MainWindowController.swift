@@ -5,6 +5,7 @@ final class MainWindowController: NSWindowController, NSMenuItemValidation {
 
     let canvas = CanvasView()
     let inspector = InspectorView()
+    private var layerList: LayerListView!
     private var scrollView: NSScrollView!
 
     private(set) var fileURL: URL?
@@ -23,20 +24,39 @@ final class MainWindowController: NSWindowController, NSMenuItemValidation {
         win.center()
         buildLayout(in: win.contentView!)
 
-        canvas.onChange = { [weak self] in self?.markDirty() }
-        canvas.onSelectionChange = { [weak self] in self?.reloadInspector() }
+        canvas.onChange = { [weak self] in
+            self?.markDirty()
+            self?.layerList.rebuild()
+        }
+        canvas.onSelectionChange = { [weak self] in
+            self?.reloadInspector()
+            self?.layerList.rebuild()
+        }
         reloadInspector()
 
-        DispatchQueue.main.async { [weak self] in self?.pgZoomFit(nil) }
+        DispatchQueue.main.async { [weak self] in
+            self?.pgZoomFit(nil)
+            self?.layerList.rebuild()
+        }
     }
 
     required init?(coder: NSCoder) { fatalError("not supported") }
 
     private func buildLayout(in root: NSView) {
-        // Palette sidebar
+        // Left sidebar: palette on top, layer list below.
+        let sidebar = NSView()
+        sidebar.translatesAutoresizingMaskIntoConstraints = false
+        root.addSubview(sidebar)
+
         let palette = PaletteView()
+        palette.translatesAutoresizingMaskIntoConstraints = false
         palette.onInsert = { [weak self] kind in self?.canvas.insertAtCenter(kind) }
-        root.addSubview(palette)
+        sidebar.addSubview(palette)
+
+        layerList = LayerListView()
+        layerList.translatesAutoresizingMaskIntoConstraints = false
+        layerList.canvas = canvas
+        sidebar.addSubview(layerList)
 
         // Canvas scroll area
         scrollView = NSScrollView()
@@ -61,10 +81,20 @@ final class MainWindowController: NSWindowController, NSMenuItemValidation {
         root.addSubview(inspectorScroll)
 
         NSLayoutConstraint.activate([
-            palette.leadingAnchor.constraint(equalTo: root.leadingAnchor),
-            palette.topAnchor.constraint(equalTo: root.topAnchor),
-            palette.bottomAnchor.constraint(equalTo: root.bottomAnchor),
-            palette.widthAnchor.constraint(equalToConstant: 200),
+            sidebar.leadingAnchor.constraint(equalTo: root.leadingAnchor),
+            sidebar.topAnchor.constraint(equalTo: root.topAnchor),
+            sidebar.bottomAnchor.constraint(equalTo: root.bottomAnchor),
+            sidebar.widthAnchor.constraint(equalToConstant: 200),
+
+            palette.leadingAnchor.constraint(equalTo: sidebar.leadingAnchor),
+            palette.trailingAnchor.constraint(equalTo: sidebar.trailingAnchor),
+            palette.topAnchor.constraint(equalTo: sidebar.topAnchor),
+            palette.bottomAnchor.constraint(equalTo: layerList.topAnchor, constant: -1),
+
+            layerList.leadingAnchor.constraint(equalTo: sidebar.leadingAnchor),
+            layerList.trailingAnchor.constraint(equalTo: sidebar.trailingAnchor),
+            layerList.bottomAnchor.constraint(equalTo: sidebar.bottomAnchor),
+            layerList.heightAnchor.constraint(equalToConstant: 190),
 
             inspectorScroll.trailingAnchor.constraint(equalTo: root.trailingAnchor),
             inspectorScroll.topAnchor.constraint(equalTo: root.topAnchor),

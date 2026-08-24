@@ -284,7 +284,7 @@ final class CanvasView: NSView {
         Renderer.drawBackground(document, in: ctx)
         drawGrid(in: ctx)
 
-        for el in document.elements {
+        for el in document.elements where el.isHidden != true {
             Renderer.draw(el, in: ctx)
         }
 
@@ -332,7 +332,7 @@ final class CanvasView: NSView {
         let ids = selection
         guard !ids.isEmpty else { return }
 
-        for el in document.elements where ids.contains(el.id) {
+        for el in document.elements where el.isHidden != true && ids.contains(el.id) {
             ctx.saveGState()
             ctx.addPath(transformedPath(for: el))
             ctx.setStrokeColor(ColorSpec.hex("#4FC3F7").nsColor.cgColor)
@@ -606,7 +606,7 @@ final class CanvasView: NSView {
             let rect = CGRect(x: min(start.x, p.x), y: min(start.y, p.y),
                               width: abs(p.x - start.x), height: abs(p.y - start.y))
             marqueeRect = rect
-            let hit = Set(document.elements.filter { $0.frame.intersects(rect) }.map(\.id))
+            let hit = Set(document.elements.filter { $0.isHidden != true && $0.frame.intersects(rect) }.map(\.id))
             selection = base.union(hit)
             needsDisplay = true
 
@@ -703,7 +703,7 @@ final class CanvasView: NSView {
     }
 
     private func element(at p: CGPoint) -> PanelElement? {
-        document.elements.reversed().first { $0.contains(globalPoint: p) }
+        document.elements.reversed().first { $0.isHidden != true && $0.contains(globalPoint: p) }
     }
 
     // MARK: Drag & drop from palette

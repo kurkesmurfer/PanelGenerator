@@ -215,6 +215,7 @@ struct PanelElement: Codable, Hashable, Identifiable {
     var id = UUID()
     var kind: ElementKind
     var name: String = ""
+    var isHidden: Bool? = nil            // optional so old documents decode cleanly
     var x: CGFloat = 0, y: CGFloat = 0, w: CGFloat = 30, h: CGFloat = 30
     var rotation: CGFloat = 0            // degrees clockwise
     var fill: ColorSpec = .hex("#FF9C00")

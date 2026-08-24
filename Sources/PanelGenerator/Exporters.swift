@@ -16,7 +16,7 @@ enum SVGExporter {
         <rect x="0" y="0" width="\(Geo.fmt(size.width))" height="\(Geo.fmt(size.height))" fill="\(doc.background.hexString)"/>
 
         """
-        for el in doc.elements {
+        for el in doc.elements where el.isHidden != true {
             s += elementSVG(el)
             s += "\n"
         }
@@ -131,7 +131,7 @@ enum PNGExporter {
         NSGraphicsContext.saveGraphicsState()
         NSGraphicsContext.current = NSGraphicsContext(cgContext: cg, flipped: true)
         Renderer.drawBackground(doc, in: cg)
-        for el in doc.elements {
+        for el in doc.elements where el.isHidden != true {
             Renderer.draw(el, in: cg)
         }
         NSGraphicsContext.restoreGraphicsState()
