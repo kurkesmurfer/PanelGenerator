@@ -96,6 +96,25 @@ enum CodeGen {
         return [(base + ".svg", .whole)]
     }
 
+    // MARK: - Identifiers
+
+    /// One identifier per component, disambiguated by suffix. Dropping seven
+    /// faders on a panel leaves them all named "Fader · Vertical", which would
+    /// otherwise emit seven FADER_VERTICAL_PARAM entries — a C++ error, not a
+    /// subtlety. Numbering them keeps the output compiling; the warning tells
+    /// you to name them properly.
+    static func identifiers(_ doc: PanelDocument) -> [UUID: String] {
+        var used: [String: Int] = [:]
+        var out: [UUID: String] = [:]
+        for el in doc.components {
+            let stem = el.identifierStem
+            let n = (used[stem] ?? 0) + 1
+            used[stem] = n
+            out[el.id] = n == 1 ? stem : "\(stem)_\(n)"
+        }
+        return out
+    }
+
     // MARK: - Warnings
 
     /// Problems that would produce C++ that does not compile, or compiles into
@@ -104,11 +123,9 @@ enum CodeGen {
         var out: [String] = []
 
         var seen: [String: Int] = [:]
-        for el in doc.components {
-            seen[el.identifierStem + el.role.enumSuffix, default: 0] += 1
-        }
-        for (id, n) in seen.sorted(by: { $0.key < $1.key }) where n > 1 {
-            out.append("\(id) is used by \(n) components — give each one a distinct Name.")
+        for el in doc.components { seen[el.identifierStem, default: 0] += 1 }
+        for (stem, n) in seen.sorted(by: { $0.key < $1.key }) where n > 1 {
+            out.append("\(n) components share the name \(stem); they were numbered \(stem)_2 … \(stem)_\(n) so this compiles, but name them yourself.")
         }
 
         for el in doc.components where el.enumName.isEmpty {
@@ -129,10 +146,11 @@ enum CodeGen {
     // MARK: - ID enums
 
     static func idEnums(_ doc: PanelDocument) -> String {
+        let ids = identifiers(doc)
         func block(_ typeName: String, _ role: ComponentRole, _ lenName: String) -> String {
             var l = ["enum \(typeName) {"]
             for el in doc.components where el.role == role {
-                l.append("    \(el.identifierStem)\(role.enumSuffix),")
+                l.append("    \(ids[el.id] ?? el.identifierStem)\(role.enumSuffix),")
             }
             l.append("    \(lenName)")
             l.append("};")
@@ -244,6 +262,7 @@ enum CodeGen {
     static func constructorBody(_ doc: PanelDocument) -> String {
         let mod = moduleIdentifier(doc)
         let ns = namespacePrefix(doc)
+        let ids = identifiers(doc)
         var out = "setPanel(createPanel(asset::plugin(pluginInstance, \"res/\(doc.moduleSlug).svg\")));\n"
 
         var byRole: [ComponentRole: [String]] = [:]
@@ -253,7 +272,7 @@ enum CodeGen {
             let cls = el.widgetSource == .custom ? ns + widgetClass(el) : widgetClass(el)
             let p = el.centerMM
             let vec = "mm2px(Vec(\(mm3(p.x)), \(mm3(p.y))))"
-            let id = "\(mod)::\(el.identifierStem)\(el.role.enumSuffix)"
+            let id = "\(mod)::\(ids[el.id] ?? el.identifierStem)\(el.role.enumSuffix)"
             switch el.role {
             case .param:
                 byRole[.param, default: []].append("addParam(createParamCentered<\(cls)>(\(vec), module, \(id)));")

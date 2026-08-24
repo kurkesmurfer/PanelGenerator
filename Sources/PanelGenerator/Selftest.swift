@@ -237,6 +237,39 @@ enum Selftest {
             failures.append("codegen: px→mm conversion wrong (expected 15.240, 38.947)")
         }
 
+        // Components sharing a name must not emit duplicate enum entries. Seven
+        // faders dropped on a panel are all called "Fader · Vertical".
+        let dupA = ElementKind.faderVertical.defaultElement(at: CGPoint(x: 10, y: 200))
+        let dupB = ElementKind.faderVertical.defaultElement(at: CGPoint(x: 40, y: 200))
+        var dupDoc = PanelDocument()
+        dupDoc.elements = [dupA, dupB]
+        let dupSrc = CodeGen.rackSource(dupDoc)
+        if dupSrc.components(separatedBy: "FADER_VERTICAL_PARAM,").count - 1 != 1 {
+            failures.append("codegen: duplicate names produced duplicate enum entries")
+        }
+        if !dupSrc.contains("FADER_VERTICAL_2_PARAM,") {
+            failures.append("codegen: second same-named component should be numbered _2")
+        }
+
+        // A document just written is current, whatever it was read from.
+        var stamped = PanelDocument()
+        stamped.schemaVersion = 0
+        if let tmp = try? FileManager.default.url(for: .itemReplacementDirectory,
+                                                  in: .userDomainMask,
+                                                  appropriateFor: URL(fileURLWithPath: NSTemporaryDirectory()),
+                                                  create: true).appendingPathComponent("stamp.panelgen") {
+            do {
+                try stamped.save(to: tmp)
+                let back = try PanelDocument.load(from: tmp)
+                if back.schemaVersion != PanelDocument.currentSchemaVersion {
+                    failures.append("persistence: save should stamp the current schemaVersion, got \(back.schemaVersion)")
+                }
+                try? FileManager.default.removeItem(at: tmp)
+            } catch {
+                failures.append("persistence: schemaVersion stamp check failed: \(error)")
+            }
+        }
+
         // A custom widget generates its struct, its asset path and its call site.
         var custom = ElementKind.knobMedium.defaultElement(at: CGPoint(x: 60, y: 60))
         custom.widgetSource = .custom

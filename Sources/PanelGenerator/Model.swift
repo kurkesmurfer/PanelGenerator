@@ -414,8 +414,11 @@ struct PanelElement: Codable, Hashable, Identifiable {
 struct PanelDocument: Codable, Hashable {
     /// On-disk shape version. Decoding is tolerant (a missing key falls back to
     /// the property default), so this is for diagnostics and future migrations,
-    /// not for gating loads. 0 means "written before versioning existed".
-    var schemaVersion: Int = 1
+    /// not for gating loads. 0 means "read from a file written before versioning
+    /// existed"; `save` stamps the current version, so it never survives a
+    /// round-trip.
+    static let currentSchemaVersion = 1
+    var schemaVersion: Int = PanelDocument.currentSchemaVersion
     var name: String = "Untitled"
     var widthHP: Int = 8
     var format: PanelFormat = .u3
@@ -466,9 +469,13 @@ struct PanelDocument: Codable, Hashable {
     static let fileExtension = "panelgen"
 
     func save(to url: URL) throws {
+        // Stamp on write: a document loaded from a pre-versioning file decodes
+        // as 0, and without this it would carry that 0 for the rest of its life.
+        var out = self
+        out.schemaVersion = Self.currentSchemaVersion
         let enc = JSONEncoder()
         enc.outputFormatting = [.prettyPrinted, .sortedKeys]
-        try enc.encode(self).write(to: url, options: [.atomic])
+        try enc.encode(out).write(to: url, options: [.atomic])
     }
 
     static func load(from url: URL) throws -> PanelDocument {

@@ -135,11 +135,12 @@ enum SVGExporter {
         s += svgOpenTag(width: size.width, height: size.height, units: doc.svgUnits) + "\n"
         s += "<g id=\"components\">\n"
 
+        let ids = CodeGen.identifiers(doc)   // same disambiguation as the enums
         for el in doc.components {
             guard let fill = el.role.helperFill else { continue }
             let c = el.center
             let r = max(min(el.w, el.h) / 2, 1)
-            var dataName = el.identifierStem
+            var dataName = ids[el.id] ?? el.identifierStem
             if !el.widgetClass.isEmpty { dataName += "#" + el.widgetClass }
             s += "<circle cx=\"\(Geo.fmt(c.x))\" cy=\"\(Geo.fmt(c.y))\" r=\"\(Geo.fmt(r))\""
             s += " fill=\"\(fill)\" data-name=\"\(escape(dataName))\"/>\n"
