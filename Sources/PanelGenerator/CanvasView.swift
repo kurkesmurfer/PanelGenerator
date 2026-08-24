@@ -786,6 +786,33 @@ final class CanvasView: NSView {
         apply(elements: els, name: "Distribute")
     }
 
+    // MARK: Groups
+
+    /// Assign a shared group ID to the selection; clicking any member then selects all.
+    func groupSelection() {
+        guard selection.count > 1 else { return }
+        let gid = UUID()
+        var els = document.elements
+        for i in els.indices where selection.contains(els[i].id) { els[i].groupID = gid }
+        apply(elements: els, name: "Group")
+    }
+
+    func ungroupSelection() {
+        var els = document.elements
+        var hit = false
+        for i in els.indices where selection.contains(els[i].id) {
+            if els[i].groupID != nil { els[i].groupID = nil; hit = true }
+        }
+        guard hit else { return }
+        apply(elements: els, name: "Ungroup")
+    }
+
+    private func groupMembers(_ id: UUID) -> Set<UUID> {
+        guard let el = document.elements.first(where: { $0.id == id }),
+              let gid = el.groupID else { return [id] }
+        return Set(document.elements.filter { $0.groupID == gid }.map(\.id))
+    }
+
     private func updatePrimaryRotation(_ deg: CGFloat) {
         var els = document.elements
         if let i = els.firstIndex(where: { $0.id == primaryElement?.id }) {
@@ -816,7 +843,7 @@ final class CanvasView: NSView {
             endGesture()
             if !didDrag, case .moving = dragMode, event.modifierFlags.isDisjoint(with: [.shift, .command]),
                let p = element(at: panelPoint(from: event)) {
-                setSelection([p.id])
+                setSelection(groupMembers(p.id))
             }
             onSelectionChange?()
         case .groupResizing, .groupRotating:

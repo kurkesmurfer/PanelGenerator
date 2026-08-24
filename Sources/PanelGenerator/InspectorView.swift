@@ -510,6 +510,10 @@ final class InspectorView: NSView {
             { [weak self] in self?.canvas?.duplicateSelection() },
             { [weak self] in self?.canvas?.deleteSelection() },
         ], columns: 4)
+        buttonRow(["Group", "Ungroup"], handlers: [
+            { [weak self] in self?.canvas?.groupSelection() },
+            { [weak self] in self?.canvas?.ungroupSelection() },
+        ], columns: 2)
         buttonRow(["Copy", "Cut", "Paste"], handlers: [
             { [weak self] in self?.canvas?.copySelection() },
             { [weak self] in self?.canvas?.cutSelection() },

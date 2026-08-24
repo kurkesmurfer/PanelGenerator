@@ -75,7 +75,8 @@ final class LayerRowView: NSView {
             ? NSColor.selectedContentBackgroundColor.withAlphaComponent(0.55).cgColor
             : NSColor.clear.cgColor
 
-        let title = element.name.isEmpty ? element.kind.displayName : element.name
+        let base = element.name.isEmpty ? element.kind.displayName : element.name
+        let title = element.groupID != nil ? "▸ " + base : base
         let label = NSTextField(labelWithString: title)
         label.font = NSFont.systemFont(ofSize: 11)
         label.textColor = hiddenState ? .secondaryLabelColor : .labelColor
