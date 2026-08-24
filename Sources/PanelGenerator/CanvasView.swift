@@ -745,8 +745,19 @@ final class CanvasView: NSView {
     }
 
     /// Align every selected element to the group bounding box (L/CX/R/T/CY/B).
-    func alignSelection(_ mode: String) {
-        guard selection.count > 1, let b = selectionBounds else { return }
+    /// Align the selection. `to: "sel"` lines elements up with the selection's
+    /// own bounding box (needs 2+ selected). `to: "panel"` aligns to the panel
+    /// edges / center line and works with any selection size, even one element.
+    func alignSelection(_ mode: String, to target: String = "sel") {
+        let b: CGRect
+        switch target {
+        case "panel":
+            guard !selection.isEmpty else { return }
+            b = CGRect(origin: .zero, size: document.pixelSize)
+        default:
+            guard selection.count > 1, let sb = selectionBounds else { return }
+            b = sb
+        }
         var els = document.elements
         for i in els.indices where selection.contains(els[i].id) {
             switch mode {
@@ -759,7 +770,7 @@ final class CanvasView: NSView {
             default: break
             }
         }
-        apply(elements: els, name: "Align")
+        apply(elements: els, name: target == "panel" ? "Align to Panel" : "Align")
     }
 
     /// Evenly distribute 3+ selected elements along an axis (first/last stay put).

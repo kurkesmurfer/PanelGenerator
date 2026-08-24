@@ -493,8 +493,11 @@ final class InspectorView: NSView {
     }
 
     private func buildLayerSection() {
-        if canvas?.selection.count ?? 0 > 1, let cv = canvas {
-            section("Align / Distribute")
+        guard let cv = canvas, !cv.selection.isEmpty else { return }
+
+        // Multi-selection: align/distribute relative to the selection's own bounds.
+        if cv.selection.count > 1 {
+            section("Align Selection")
             buttonRow(["L", "CX", "R", "T", "M", "B"], handlers: [
                 { cv.alignSelection("L") }, { cv.alignSelection("CX") }, { cv.alignSelection("R") },
                 { cv.alignSelection("T") }, { cv.alignSelection("CY") }, { cv.alignSelection("B") },
@@ -503,6 +506,20 @@ final class InspectorView: NSView {
                 { cv.distributeSelection("X") }, { cv.distributeSelection("Y") },
             ], columns: 2)
         }
+
+        // Any selection size: align to the panel edges / center lines.
+        section("Align to Panel")
+        buttonRow(["L", "CX", "R"], handlers: [
+            { cv.alignSelection("L", to: "panel") },
+            { cv.alignSelection("CX", to: "panel") },
+            { cv.alignSelection("R", to: "panel") },
+        ], columns: 3)
+        buttonRow(["T", "M", "B"], handlers: [
+            { cv.alignSelection("T", to: "panel") },
+            { cv.alignSelection("CY", to: "panel") },
+            { cv.alignSelection("B", to: "panel") },
+        ], columns: 3)
+
         section("Arrange")
         buttonRow(["Front", "Back", "Duplicate", "Delete"], handlers: [
             { [weak self] in self?.canvas?.bringToFront() },

@@ -93,9 +93,11 @@ Source layout: `Sources/PanelGenerator/` — `Model.swift`, `Geometry.swift`,
 ## Status & roadmap
 
 This is a **prototype** (see `PLAN.md` for the phase log and deliberate
-simplifications). Next up, in rough order: freeform bezier shape authoring
-with draggable control points, multi-select align/distribute, a layer list,
-panel templates, and NSDocument migration (autosave + versions).
+simplifications). Done since the first cut: multi-select align/distribute
+(selection bounds + panel-relative), layer list with hide/reorder, and
+group/ungroup. Next up, in rough order: freeform bezier shape authoring
+with draggable control points, panel templates, and NSDocument migration
+(autosave + versions).
 
 ## License
 
