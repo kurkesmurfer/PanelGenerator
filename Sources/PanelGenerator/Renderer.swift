@@ -1,6 +1,7 @@
 import Foundation
 import AppKit
 import CoreGraphics
+import CoreText
 
 // MARK: - ShapePart
 // One paintable piece of an element. Canvas, PNG and SVG exporters all consume
@@ -192,7 +193,7 @@ enum Renderer {
 
         case .pushButton:
             let cap = f.insetBy(dx: f.width * 0.18, dy: f.height * 0.18)
-            var ps: [ShapePart] = [
+            let ps: [ShapePart] = [
                 ShapePart(path: roundedRectPath(f, tl: 2, tr: 2, br: 2, bl: 2),
                           fill: el.fill.darkened(0.6), stroke: ColorSpec.hex("#0B0C10")),
                 ShapePart(path: roundedRectPath(cap, tl: 1.5, tr: 1.5, br: 1.5, bl: 1.5), fill: el.fill),
@@ -201,11 +202,11 @@ enum Renderer {
                            width: cap.width * 0.6, height: cap.height * 0.3),
                     tl: 1, tr: 1, br: 1, bl: 1), fill: el.fill.lightened(0.35)),
             ]
-            _ = ps
             return ps
         case .buttonGroup:
             let n = max(2, min(12, Int(el.params.segments.rounded())))
-            // Radius hugs the frame so the selection outline matches the art.
+            // Radius and end-cap insets hug the frame, so the art stays inside
+            // the selection outline. Note: the cross layout is always 4 caps.
             let r: CGFloat
             switch Int(el.params.layout) {
             case 1:   r = min(f.height / 2 - 1.5, f.width / CGFloat(2 * n) - 1)      // row
@@ -216,7 +217,10 @@ enum Renderer {
             let positions: [CGPoint]
             switch Int(el.params.layout) {
             case 1:
-                positions = (0..<n).map { CGPoint(x: f.minX + f.width * CGFloat($0) / CGFloat(n - 1), y: c.y) }
+                let span = max(f.width - r * 2, 0)
+                positions = (0..<n).map {
+                    CGPoint(x: f.minX + r + span * CGFloat($0) / CGFloat(n - 1), y: c.y)
+                }
             case 2:
                 positions = [CGPoint(x: c.x, y: f.minY + r + 2), CGPoint(x: c.x, y: f.maxY - r - 2),
                              CGPoint(x: f.minX + r + 2, y: c.y), CGPoint(x: f.maxX - r - 2, y: c.y)]
@@ -227,7 +231,10 @@ enum Renderer {
                     return CGPoint(x: c.x + rad * cos(a), y: c.y + rad * sin(a))
                 }
             default:
-                positions = (0..<n).map { CGPoint(x: c.x, y: f.minY + f.height * CGFloat($0) / CGFloat(n - 1)) }
+                let span = max(f.height - r * 2, 0)
+                positions = (0..<n).map {
+                    CGPoint(x: c.x, y: f.minY + r + span * CGFloat($0) / CGFloat(n - 1))
+                }
             }
             var gs: [ShapePart] = []
             for p in positions {
@@ -305,8 +312,102 @@ enum Renderer {
                 fill: accent, stroke: el.stroke, lineWidth: el.strokeWidth)]
 
         case .text:
-            return []   // drawn separately (vector text in canvas/PNG, <text> in SVG)
+            return textParts(for: el)
         }
+    }
+
+    /// Splits a knob's parts into the static body and the part Rack rotates,
+    /// mirroring `RoundKnob`: a background `SvgWidget` added below the
+    /// TransformWidget, with only the foreground turning.
+    ///
+    /// Tied to the `.knobLarge/.knobMedium/.knobSmall` case in `parts(for:)`,
+    /// which emits exactly four parts: outer ring, body, pointer, cap. The
+    /// pointer must rotate; the cap is centred so it rides along harmlessly
+    /// and keeps the on-canvas draw order.
+    static func knobLayers(_ parts: [ShapePart]) -> (bg: [ShapePart], fg: [ShapePart])? {
+        guard parts.count == 4 else { return nil }
+        return (Array(parts.prefix(2)), Array(parts.suffix(2)))
+    }
+
+    // MARK: Text → outlines
+    //
+    // Labels become real glyph outlines rather than an SVG <text> element:
+    // VCV Rack renders panels through nanosvg, which has no text support and
+    // drops <text> silently — every label would vanish on load. Outlines also
+    // put text on the same ShapePart path as everything else, so canvas, PNG
+    // and SVG stay identical by construction instead of by coincidence.
+
+    private struct TextKey: Hashable {
+        let text: String
+        let size: CGFloat
+        let bold: Bool
+    }
+
+    /// Glyph outlines laid out with the baseline at the origin, already
+    /// mirrored into the panel's y-down space.
+    private struct TextOutline {
+        let path: CGPath
+        let advance: CGFloat
+        let capHeight: CGFloat
+    }
+
+    /// Keyed on text/size/weight only — never on the frame — so dragging a
+    /// label does not grow the cache. Main-thread only, like the rest of the
+    /// drawing code.
+    private static var outlineCache: [TextKey: TextOutline] = [:]
+
+    static func textParts(for el: PanelElement) -> [ShapePart] {
+        guard let o = outline(for: el) else { return [] }
+        // Centre the cap-height box in the frame: visually centred for the
+        // all-caps labels these panels are actually made of.
+        var t = CGAffineTransform(translationX: el.frame.midX - o.advance / 2,
+                                  y: el.frame.midY + o.capHeight / 2)
+        guard let placed = o.path.copy(using: &t) else { return [] }
+        return [ShapePart(path: placed, fill: el.fill)]
+    }
+
+    private static func outline(for el: PanelElement) -> TextOutline? {
+        let key = TextKey(text: el.params.text,
+                          size: max(4, el.params.fontSize),
+                          bold: el.params.bold)
+        guard !key.text.isEmpty else { return nil }
+        if let hit = outlineCache[key] { return hit }
+
+        let nsFont = NSFont.systemFont(ofSize: key.size, weight: key.bold ? .semibold : .regular)
+        let ctFont = nsFont as CTFont
+        let line = CTLineCreateWithAttributedString(
+            NSAttributedString(string: key.text, attributes: [.font: nsFont]))
+        let advance = CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
+
+        let out = CGMutablePath()
+        for run in (CTLineGetGlyphRuns(line) as? [CTRun] ?? []) {
+            // A run can carry a substituted font (accents, symbols); fall back
+            // to ours rather than dropping the glyph.
+            let attrs = CTRunGetAttributes(run) as NSDictionary
+            let runFont = (attrs[kCTFontAttributeName as String] as? NSFont)
+                .map { $0 as CTFont } ?? ctFont
+
+            let n = CTRunGetGlyphCount(run)
+            guard n > 0 else { continue }
+            var glyphs = [CGGlyph](repeating: 0, count: n)
+            var pos = [CGPoint](repeating: .zero, count: n)
+            CTRunGetGlyphs(run, CFRangeMake(0, n), &glyphs)
+            CTRunGetPositions(run, CFRangeMake(0, n), &pos)
+
+            for i in 0..<n {
+                guard let g = CTFontCreatePathForGlyph(runFont, glyphs[i], nil) else { continue }
+                // Glyph outlines are y-up with the origin on the baseline; the
+                // panel is y-down, so mirror each glyph as it is placed.
+                var t = CGAffineTransform(translationX: pos[i].x, y: -pos[i].y)
+                t = t.scaledBy(x: 1, y: -1)
+                out.addPath(g, transform: t)
+            }
+        }
+
+        let result = TextOutline(path: out, advance: advance, capHeight: CTFontGetCapHeight(ctFont))
+        if outlineCache.count > 512 { outlineCache.removeAll() }
+        outlineCache[key] = result
+        return result
     }
 
     // MARK: Drawing
@@ -327,41 +428,24 @@ enum Renderer {
     static func draw(_ el: PanelElement, in ctx: CGContext) {
         ctx.saveGState()
         applyRotation(el, ctx)
-        if el.kind == .text {
-            drawText(el, in: ctx)
-        } else {
-            for part in parts(for: el) {
-                if let fl = part.fill {
-                    ctx.saveGState()
-                    ctx.addPath(part.path)
-                    ctx.setFillColor(fl.nsColor.cgColor)
-                    ctx.fillPath()
-                    ctx.restoreGState()
-                }
-                if let st = part.stroke {
-                    ctx.saveGState()
-                    ctx.addPath(part.path)
-                    ctx.setStrokeColor(st.nsColor.cgColor)
-                    ctx.setLineWidth(part.lineWidth)
-                    ctx.strokePath()
-                    ctx.restoreGState()
-                }
+        // No special case for text any more — it is outlines like everything else.
+        for part in parts(for: el) {
+            if let fl = part.fill {
+                ctx.saveGState()
+                ctx.addPath(part.path)
+                ctx.setFillColor(fl.nsColor.cgColor)
+                ctx.fillPath()
+                ctx.restoreGState()
+            }
+            if let st = part.stroke {
+                ctx.saveGState()
+                ctx.addPath(part.path)
+                ctx.setStrokeColor(st.nsColor.cgColor)
+                ctx.setLineWidth(part.lineWidth)
+                ctx.strokePath()
+                ctx.restoreGState()
             }
         }
         ctx.restoreGState()
-    }
-
-    static func drawText(_ el: PanelElement, in ctx: CGContext) {
-        let font = NSFont.systemFont(ofSize: max(4, el.params.fontSize),
-                                     weight: el.params.bold ? .semibold : .regular)
-        let attrs: [NSAttributedString.Key: Any] = [
-            .font: font,
-            .foregroundColor: el.fill.nsColor,
-        ]
-        let str = NSString(string: el.params.text)
-        let size = str.size(withAttributes: attrs)
-        let pt = NSPoint(x: el.frame.midX - size.width / 2,
-                         y: el.frame.midY - size.height / 2)
-        str.draw(at: pt, withAttributes: attrs)
     }
 }

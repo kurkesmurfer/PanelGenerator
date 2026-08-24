@@ -48,6 +48,9 @@ enum Selftest {
         add(.text, 92, 360, 80, 9, fill: .hex("#8888A8")) { $0.params.text = "SN 4071-GK"; $0.params.fontSize = 6.5 }
 
         doc.addCornerScrews()
+        // The demo is a pure-artwork panel: primitives here are illustration,
+        // not bound components, so the exported demo shows the whole design.
+        for i in doc.elements.indices { doc.elements[i].role = .decoration }
         return doc
     }
 
@@ -65,17 +68,259 @@ enum Selftest {
             let pngURL = URL(fileURLWithPath: dir).appendingPathComponent("pg_demo.png")
             try png.write(to: pngURL)
 
-            print("SELFTEST OK")
+            let failures = persistenceChecks() + exportChecks()
+
+            print(failures.isEmpty ? "SELFTEST OK" : "SELFTEST FAILED")
             print("  elements : \(doc.elements.count)")
             print("  panel    : \(doc.widthHP)HP \(doc.format.rawValue) (\(Int(doc.pixelSize.width))×\(Int(doc.pixelSize.height)) px)")
             print("  svg      : \(svgURL.path) (\(svg.utf8.count) bytes)")
             print("  png      : \(pngURL.path) (\(png.count) bytes)")
+            if failures.isEmpty {
+                print("  persist  : round-trip · legacy decode · unknown-kind guard OK")
+                print("  export   : text outlines · binding · components layer · codegen OK")
+            } else {
+                for f in failures { print("  ✗ \(f)") }
+            }
             fflush(stdout)
-            exit(0)
+            exit(failures.isEmpty ? 0 : 1)
         } catch {
             print("SELFTEST FAILED: \(error)")
             fflush(stdout)
             exit(1)
         }
     }
+
+    // MARK: - Persistence checks
+    //
+    // Headless, so `make selftest` is a real regression gate. Until there is a
+    // proper XCTest target these are the tests.
+
+    static func persistenceChecks() -> [String] {
+        var failures: [String] = []
+
+        // 1. Encode → decode → identical document.
+        do {
+            let doc = demoDocument()
+            let enc = JSONEncoder()
+            enc.outputFormatting = [.sortedKeys]
+            let data = try enc.encode(doc)
+            let back = try JSONDecoder().decode(PanelDocument.self, from: data)
+            if back != doc {
+                failures.append("round-trip: decoded document differs from the original")
+            }
+        } catch {
+            failures.append("round-trip: \(error)")
+        }
+
+        // 2. A document written before segments / layout / schemaVersion existed
+        //    must still open, with those fields at their defaults. Swift's
+        //    synthesised Codable throws .keyNotFound for a missing key rather
+        //    than using the property default — which is what broke every
+        //    pre-button-group .panelgen. Guard it here permanently.
+        do {
+            let doc = try JSONDecoder().decode(PanelDocument.self,
+                                               from: Data(legacyDocumentJSON.utf8))
+            if doc.schemaVersion != 0 {
+                failures.append("legacy: schemaVersion should be 0, got \(doc.schemaVersion)")
+            }
+            if doc.elements.count != 2 {
+                failures.append("legacy: expected 2 elements, got \(doc.elements.count)")
+            }
+            if let knob = doc.elements.first {
+                if knob.kind != .knobLarge { failures.append("legacy: first kind is \(knob.kind.rawValue)") }
+                if knob.params.pointerAngle != 45 { failures.append("legacy: pointerAngle not preserved") }
+                if knob.params.segments != 4 { failures.append("legacy: segments should default to 4, got \(knob.params.segments)") }
+                if knob.params.layout != 0 { failures.append("legacy: layout should default to 0, got \(knob.params.layout)") }
+                if knob.isHidden != nil { failures.append("legacy: isHidden should decode as nil") }
+                if knob.groupID != nil { failures.append("legacy: groupID should decode as nil") }
+                if knob.w != 30 || knob.h != 30 { failures.append("legacy: size not preserved") }
+            }
+        } catch {
+            failures.append("legacy: \(error) ← a pre-button-group .panelgen no longer opens")
+        }
+
+        // 3. An unknown element kind must be a hard error, not a blank panel.
+        do {
+            let bad = legacyDocumentJSON.replacingOccurrences(of: "knobLarge", with: "quantumFlux")
+            _ = try JSONDecoder().decode(PanelDocument.self, from: Data(bad.utf8))
+            failures.append("unknown kind: decoded without error — it should have thrown")
+        } catch {
+            // expected
+        }
+
+        return failures
+    }
+
+    // MARK: - Export checks
+
+    static func exportChecks() -> [String] {
+        var failures: [String] = []
+
+        // Text must leave as outlines by default: Rack renders panels through
+        // nanosvg, which has no text support and drops <text> without warning.
+        var doc = demoDocument()
+        let outlined = SVGExporter.documentSVG(doc)
+        if outlined.contains("<text") {
+            failures.append("text export: <text> in the default export — nanosvg (Rack) drops it")
+        }
+        if !outlined.contains("<path") {
+            failures.append("text export: the default export contains no <path> at all")
+        }
+
+        doc.textAsPaths = false
+        if !SVGExporter.documentSVG(doc).contains("<text") {
+            failures.append("text export: editable mode should still emit <text>")
+        }
+
+        // A label on its own must produce real geometry, not an empty group.
+        var probe = PanelDocument()
+        var label = ElementKind.text.defaultElement(at: CGPoint(x: 10, y: 10))
+        label.params.text = "PG"
+        probe.elements = [label]
+        if !SVGExporter.documentSVG(probe).contains("<path") {
+            failures.append("text export: a text element produced no outline path")
+        }
+
+
+        // Components must not be painted into the panel: Rack and MetaModule
+        // draw them on top, so the artwork would show through from underneath.
+        var rig = PanelDocument()
+        var deco = ElementKind.box.defaultElement(at: CGPoint(x: 10, y: 10))
+        deco.fill = .hex("#123456")
+        var knob = ElementKind.knobLarge.defaultElement(at: CGPoint(x: 30, y: 100))
+        knob.fill = .hex("#ABCDEF")
+        knob.enumName = "CUTOFF"
+        rig.elements = [deco, knob]
+
+        if knob.role != .param { failures.append("binding: a knob should default to .param") }
+        if deco.role != .decoration { failures.append("binding: a box should default to .decoration") }
+        if rig.components.count != 1 {
+            failures.append("binding: expected 1 component, got \(rig.components.count)")
+        }
+
+        let panelSVG = SVGExporter.documentSVG(rig)
+        if !panelSVG.contains("#123456") {
+            failures.append("panel export: decoration was dropped from the artwork")
+        }
+        if panelSVG.contains("#ABCDEF") {
+            failures.append("panel export: a bound component was painted into the artwork")
+        }
+
+        let comps = SVGExporter.componentsSVG(rig)
+        if !comps.contains("id=\"components\"") {
+            failures.append("components layer: helper.py needs a group with id=\"components\"")
+        }
+        if !comps.contains("<circle") {
+            failures.append("components layer: use circles so helper.py emits the ...Centered forms")
+        }
+        if !comps.contains("fill=\"#ff0000\"") {
+            failures.append("components layer: a param must be filled #ff0000 for helper.py")
+        }
+        if !comps.contains("data-name=\"CUTOFF#RoundLargeBlackKnob\"") {
+            failures.append("components layer: data-name should carry NAME#WidgetClass")
+        }
+
+
+        // Generated C++ must namespace the enum to the module, position by
+        // centre, and convert px to the millimetres mm2px() expects.
+        rig.moduleSlug = "TestModule"
+        let src = CodeGen.rackSource(rig)
+        if !src.contains("enum ParamId {") { failures.append("codegen: no ParamId enum") }
+        if !src.contains("CUTOFF_PARAM,") { failures.append("codegen: CUTOFF_PARAM missing from the enum") }
+        if !src.contains("TestModule::CUTOFF_PARAM") { failures.append("codegen: enum not namespaced to the module") }
+        if !src.contains("res/TestModule.svg") { failures.append("codegen: setPanel path wrong") }
+        if !src.contains("addParam(createParamCentered<RoundLargeBlackKnob>(") {
+            failures.append("codegen: param line missing, or not the Centered form")
+        }
+        // Knob at x=30 px, 30 px wide → centre 45 px → 45 * 25.4/75 = 15.240 mm.
+        if !src.contains("mm2px(Vec(15.240, 38.947))") {
+            failures.append("codegen: px→mm conversion wrong (expected 15.240, 38.947)")
+        }
+
+        // A custom widget generates its struct, its asset path and its call site.
+        var custom = ElementKind.knobMedium.defaultElement(at: CGPoint(x: 60, y: 60))
+        custom.widgetSource = .custom
+        custom.customWidgetName = "LcarsKnob"
+        custom.enumName = "RES"
+        rig.elements.append(custom)
+        let src2 = CodeGen.rackSource(rig)
+        if !src2.contains("struct LcarsKnob : app::SvgKnob {") {
+            failures.append("codegen: custom knob struct not generated")
+        }
+        // A custom knob must split into a static body and a rotating indicator,
+        // the way Rack's own RoundKnob does — a single rotating SVG would spin
+        // the knob body along with the pointer.
+        if !src2.contains("bg->setSvg(") || !src2.contains("fb->addChildBelow(bg, tw);") {
+            failures.append("codegen: custom knob is not the bg/fg RoundKnob shape")
+        }
+        if !src2.contains("res/components/lcars-knob-bg.svg")
+            || !src2.contains("res/components/lcars-knob-fg.svg") {
+            failures.append("codegen: custom knob asset paths missing or not kebab-case")
+        }
+        if !src2.contains("addParam(createParamCentered<LcarsKnob>(") {
+            failures.append("codegen: custom widget class not used at the call site")
+        }
+        // Artwork keeps the viewBox in panel px but declares a physical size in
+        // mm: rasterisers read the width attribute, and one in this toolchain
+        // raises outright on a unitless value.
+        let art = SVGExporter.componentSVG(custom, layer: .knobForeground)
+        if !art.contains("viewBox=\"0 0 25.00 25.00\"") {
+            failures.append("component art: viewBox must stay the element's px size (25×25)")
+        }
+        if !art.contains("width=\"8.47mm\"") {
+            failures.append("component art: width should be declared in mm (8.47mm for 25 px)")
+        }
+        if !SVGExporter.documentSVG(rig).contains("mm\"") {
+            failures.append("panel export: width/height should carry the mm unit by default")
+        }
+
+        return failures
+    }
+
+    /// A .panelgen exactly as the pre-button-group build wrote it: no
+    /// schemaVersion, no params.segments / params.layout, no isHidden,
+    /// no groupID. Embedded rather than kept as a file so the check cannot
+    /// silently skip itself when a path is wrong.
+    static let legacyDocumentJSON = #"""
+    {
+      "background" : { "a" : 1, "b" : 0.0784313725490196, "g" : 0.09019607843137255, "r" : 0.09019607843137255 },
+      "elements" : [
+        {
+          "fill" : { "a" : 1, "b" : 0, "g" : 0.611764705882353, "r" : 1 },
+          "h" : 30,
+          "id" : "1E1B0C6E-0000-4000-8000-000000000001",
+          "kind" : "knobLarge",
+          "name" : "Knob · Large",
+          "params" : {
+            "armH" : 56, "armV" : 56, "bold" : true,
+            "cornerBL" : 0, "cornerBR" : 0, "cornerTL" : 0, "cornerTR" : 0,
+            "flipX" : false, "flipY" : false, "fontSize" : 12,
+            "innerRadius" : 8, "pointerAngle" : 45,
+            "startAngle" : -90, "sweepAngle" : 100,
+            "text" : "LABEL", "thickness" : 16, "value" : 0.5
+          },
+          "rotation" : 0, "strokeWidth" : 1.5, "w" : 30, "x" : 30, "y" : 100
+        },
+        {
+          "fill" : { "a" : 1, "b" : 0.9411764705882353, "g" : 0.9098039215686274, "r" : 0.9098039215686274 },
+          "h" : 20,
+          "id" : "1E1B0C6E-0000-4000-8000-000000000002",
+          "kind" : "text",
+          "name" : "Text Label",
+          "params" : {
+            "armH" : 56, "armV" : 56, "bold" : true,
+            "cornerBL" : 0, "cornerBR" : 0, "cornerTL" : 0, "cornerTR" : 0,
+            "flipX" : false, "flipY" : false, "fontSize" : 12,
+            "innerRadius" : 8, "pointerAngle" : 45,
+            "startAngle" : -90, "sweepAngle" : 100,
+            "text" : "NX-1786", "thickness" : 16, "value" : 0.5
+          },
+          "rotation" : 0, "strokeWidth" : 1.5, "w" : 120, "x" : 20, "y" : 40
+        }
+      ],
+      "format" : "3U",
+      "name" : "Legacy Fixture",
+      "widthHP" : 8
+    }
+    """#
 }

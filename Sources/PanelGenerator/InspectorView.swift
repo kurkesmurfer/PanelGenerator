@@ -30,6 +30,7 @@ final class InspectorView: NSView {
         if let p = cv.primaryElement {
             buildElementSection(for: p)
             buildParamsSection(for: p)
+            buildComponentSection(for: p)
         }
         if !cv.selection.isEmpty {
             buildLayerSection()
@@ -154,7 +155,7 @@ final class InspectorView: NSView {
         addControl(name)
         handlers.append { [weak self] sender in
             guard let self, let f = sender as? NSTextField else { return }
-            self.canvas?.mutateDocument { $0.name = f.stringValue.isEmpty ? "Untitled" : f.stringValue }
+            self.canvas?.mutateDocument(name: "Panel Name") { $0.name = f.stringValue.isEmpty ? "Untitled" : f.stringValue }
         }
 
         label("Width (HP)")
@@ -163,7 +164,7 @@ final class InspectorView: NSView {
         handlers.append { [weak self] sender in
             guard let self else { return }
             let v = Int(self.parse(sender) ?? 8)
-            self.canvas?.mutateDocument {
+            self.canvas?.mutateDocument(name: "Panel Width") {
                 $0.widthHP = min(max(v, PanelMetrics.minPanelWidthHP), PanelMetrics.maxPanelWidthHP)
                 sender.stringValue = String($0.widthHP)
             }
@@ -178,7 +179,7 @@ final class InspectorView: NSView {
         handlers.append { [weak self] sender in
             guard let self, let p = sender as? NSPopUpButton,
                   let fmt = PanelFormat(rawValue: p.titleOfSelectedItem ?? "") else { return }
-            self.canvas?.mutateDocument { $0.format = fmt }
+            self.canvas?.mutateDocument(name: "Panel Height") { $0.format = fmt }
         }
 
         label("Background")
@@ -186,7 +187,62 @@ final class InspectorView: NSView {
         addControl(bg, width: 70)
         handlers.append { [weak self] sender in
             guard let self, let cw = sender as? NSColorWell else { return }
-            self.canvas?.mutateDocument { $0.background = ColorSpec(color: cw.color) }
+            self.canvas?.mutateDocument(name: "Background") { $0.background = ColorSpec(color: cw.color) }
+        }
+
+        label("Plugin slug")
+        let pslug = makeField(value: document.pluginSlug, placeholder: "MyPlugin")
+        addControl(pslug)
+        handlers.append { [weak self] sender in
+            guard let self, let f = sender as? NSTextField else { return }
+            self.canvas?.mutateDocument(name: "Plugin Slug") { $0.pluginSlug = f.stringValue }
+        }
+
+        label("Module slug")
+        let mslug = makeField(value: document.moduleSlug, placeholder: "MyModule")
+        mslug.toolTip = "Permanent once a patch has been saved with this module — "
+            + "changing it later breaks every patch that uses it."
+        addControl(mslug)
+        handlers.append { [weak self] sender in
+            guard let self, let f = sender as? NSTextField else { return }
+            self.canvas?.mutateDocument(name: "Module Slug") { $0.moduleSlug = f.stringValue }
+        }
+
+        label("Widget ns")
+        let wns = makeField(value: document.widgetNamespace, placeholder: "museui")
+        wns.toolTip = "Namespace to wrap generated custom widget structs in. "
+            + "Leave empty to put them at file scope."
+        addControl(wns)
+        handlers.append { [weak self] sender in
+            guard let self, let f = sender as? NSTextField else { return }
+            self.canvas?.mutateDocument(name: "Widget Namespace") { $0.widgetNamespace = f.stringValue }
+        }
+
+        label("SVG units")
+        let units = NSPopUpButton(frame: .zero, pullsDown: false)
+        units.addItems(withTitles: SVGUnits.allCases.map(\.displayName))
+        units.selectItem(at: SVGUnits.allCases.firstIndex(of: document.svgUnits) ?? 0)
+        units.font = NSFont.systemFont(ofSize: 11)
+        units.toolTip = "Unit for the exported SVG's width/height; the viewBox stays in "
+            + "panel pixels either way, so nothing is rescaled. Millimetres is what Rack's "
+            + "helper.py and MetaModule rasterisers expect — some reject a unitless size."
+        addControl(units, width: 140)
+        handlers.append { [weak self] sender in
+            guard let self, let p = sender as? NSPopUpButton else { return }
+            let i = max(0, min(SVGUnits.allCases.count - 1, p.indexOfSelectedItem))
+            let picked = SVGUnits.allCases[i]
+            self.canvas?.mutateDocument(name: "SVG Units") { $0.svgUnits = picked }
+        }
+
+        label("Text")
+        let outlines = makeCheck("Export as outlines", on: document.textAsPaths)
+        outlines.toolTip = "VCV Rack's SVG parser (nanosvg) cannot render <text> "
+            + "and drops it silently. Leave this on for Rack and MetaModule; turn "
+            + "it off only to hand editable text to Illustrator or Inkscape."
+        addControl(outlines)
+        handlers.append { [weak self] sender in
+            guard let self, let b = sender as? NSButton else { return }
+            self.canvas?.mutateDocument(name: "Text Export Mode") { $0.textAsPaths = b.state == .on }
         }
 
         let screws = makeButton("Insert Corner Screws") { [weak self] in
@@ -336,6 +392,38 @@ final class InspectorView: NSView {
                     self.canvas?.mutateSelection("Fader Value") { $0.params.value = CGFloat(sl.doubleValue) }
                 }
             }
+            if el.kind == .buttonGroup {
+                // Lives here, not under .shape: ElementKind.category sends
+                // .buttonGroup to .primitive, so the .shape branch never ran
+                // and these controls were unreachable.
+                section("Button Group")
+                let weakCanvas = canvas
+
+                label("Count")
+                let n = makeSlider(min: 2, max: 12, value: Double(el.params.segments))
+                n.numberOfTickMarks = 11
+                n.allowsTickMarkValuesOnly = true
+                addControl(n)
+                handlers.append { sender in
+                    guard let sl = sender as? NSSlider else { return }
+                    weakCanvas?.mutateSelection("Button Count") {
+                        $0.params.segments = CGFloat(sl.doubleValue.rounded())
+                    }
+                }
+
+                label("Layout")
+                let lo = NSPopUpButton(frame: .zero, pullsDown: false)
+                lo.addItems(withTitles: ["Column", "Row", "Cross (4)", "Circular"])
+                lo.selectItem(at: max(0, min(3, Int(el.params.layout))))
+                lo.font = NSFont.systemFont(ofSize: 11)
+                addControl(lo, width: 110)
+                handlers.append { sender in
+                    guard let p = sender as? NSPopUpButton else { return }
+                    weakCanvas?.mutateSelection("Button Layout") {
+                        $0.params.layout = CGFloat(p.indexOfSelectedItem)
+                    }
+                }
+            }
             if el.kind == .led || el.kind == .jack || el.kind == .screw {
                 section("Info")
                 let note = NSTextField(labelWithString: "Colour comes from the Fill control above.")
@@ -404,24 +492,6 @@ final class InspectorView: NSView {
                     weakCanvas?.mutateSelection("Elbow Flip") { $0.params.flipY = b.state == .on }
                 }
                 cursorY += rowH + gap
-            case .pushButton, .buttonGroup:
-                if el.kind == .buttonGroup {
-                    label("Count")
-                    let n = makeSlider(min: 2, max: 12, value: Double(el.params.segments))
-                    addControl(n)
-                    let weakCanvas = canvas
-                    handlers.append { sender in
-                        guard let sl = sender as? NSSlider else { return }
-                        weakCanvas?.mutateSelection("Button Count") { $0.params.segments = CGFloat(sl.doubleValue) }
-                    }
-                    label("Layout 0 col · 1 row · 2 cross · 3 circ")
-                    let lo = makeSlider(min: 0, max: 3, value: Double(el.params.layout))
-                    addControl(lo)
-                    handlers.append { sender in
-                        guard let sl = sender as? NSSlider else { return }
-                        weakCanvas?.mutateSelection("Button Layout") { $0.params.layout = CGFloat(sl.doubleValue) }
-                    }
-                }
             case .ringSector:
                 label("Start °")
                 let s0 = makeSlider(min: -180, max: 180, value: Double(el.params.startAngle))
@@ -492,6 +562,86 @@ final class InspectorView: NSView {
         cursorY += 28
     }
 
+
+    private func buildComponentSection(for el: PanelElement) {
+        section("Component")
+        let weakCanvas = canvas
+
+        label("Role")
+        let role = NSPopUpButton(frame: .zero, pullsDown: false)
+        role.addItems(withTitles: ComponentRole.allCases.map(\.displayName))
+        role.selectItem(at: ComponentRole.allCases.firstIndex(of: el.role) ?? 0)
+        role.font = NSFont.systemFont(ofSize: 11)
+        addControl(role, width: 170)
+        handlers.append { sender in
+            guard let p = sender as? NSPopUpButton else { return }
+            let i = max(0, min(ComponentRole.allCases.count - 1, p.indexOfSelectedItem))
+            let picked = ComponentRole.allCases[i]
+            weakCanvas?.mutateSelection("Component Role") { $0.role = picked }
+        }
+
+        label("Name")
+        let nm = makeField(value: el.enumName, placeholder: el.identifierStem)
+        addControl(nm)
+        handlers.append { sender in
+            guard let f = sender as? NSTextField else { return }
+            weakCanvas?.mutateSelection("Component Name") { $0.enumName = f.stringValue }
+        }
+
+        label("Artwork")
+        let src = NSPopUpButton(frame: .zero, pullsDown: false)
+        src.addItems(withTitles: WidgetSource.allCases.map(\.displayName))
+        src.selectItem(at: WidgetSource.allCases.firstIndex(of: el.widgetSource) ?? 0)
+        src.font = NSFont.systemFont(ofSize: 11)
+        addControl(src, width: 170)
+        handlers.append { sender in
+            guard let p = sender as? NSPopUpButton else { return }
+            let i = max(0, min(WidgetSource.allCases.count - 1, p.indexOfSelectedItem))
+            let picked = WidgetSource.allCases[i]
+            weakCanvas?.mutateSelection("Widget Source") { $0.widgetSource = picked }
+        }
+
+        label("Rack type")
+        let combo = NSComboBox(frame: .zero)
+        combo.font = NSFont.systemFont(ofSize: 11)
+        combo.addItems(withObjectValues: el.kind.stockWidgetChoices)
+        combo.stringValue = el.stockWidget
+        combo.completes = true
+        addControl(combo)
+        handlers.append { sender in
+            guard let cb = sender as? NSComboBox else { return }
+            weakCanvas?.mutateSelection("Rack Widget") { $0.stockWidget = cb.stringValue }
+        }
+
+        label("Custom struct")
+        let custom = makeField(value: el.customWidgetName, placeholder: "LcarsKnob")
+        addControl(custom)
+        handlers.append { sender in
+            guard let f = sender as? NSTextField else { return }
+            weakCanvas?.mutateSelection("Custom Widget") { $0.customWidgetName = f.stringValue }
+        }
+
+        // Millimetres are the unit mm2px() and MetaModule's x_mm both speak, so
+        // show them next to the px fields rather than making you convert.
+        let mm = el.centerMM
+        var note = "Centre \(Geo.fmt(mm.x)) × \(Geo.fmt(mm.y)) mm"
+        if el.role.isComponent {
+            note += el.widgetSource == .stock
+                ? " · size comes from Rack's own artwork; resizing here only moves the guide."
+                : " · exported as res/components/\(el.widgetClass).svg at this size."
+        } else {
+            note += " · artwork, stays in the exported panel."
+        }
+        let hint = NSTextField(labelWithString: note)
+        hint.font = NSFont.systemFont(ofSize: 10)
+        hint.textColor = NSColor.secondaryLabelColor
+        hint.lineBreakMode = .byWordWrapping
+        hint.maximumNumberOfLines = 3
+        hint.frame = CGRect(x: pad, y: cursorY, width: contentW, height: 40)
+        addSubview(hint)
+        cursorY += 44
+    }
+
     private func buildLayerSection() {
         guard let cv = canvas, !cv.selection.isEmpty else { return }
 
@@ -542,13 +692,16 @@ final class InspectorView: NSView {
 // MARK: - Canvas conveniences used by the inspector
 
 extension CanvasView {
-    func mutateDocument(_ transform: (inout PanelDocument) -> Void) {
+    /// Panel-level edit (name, HP width, format, background). Undoable, and it
+    /// keeps the selection. It must NOT go through beginLoad()/endLoad(): that
+    /// is the "opened a file from disk" path, and endLoad() calls
+    /// edits.removeAllActions() — so every background-colour tick used to wipe
+    /// the entire undo stack and deselect.
+    func mutateDocument(name: String = "Panel Settings",
+                        _ transform: (inout PanelDocument) -> Void) {
         var doc = document
         transform(&doc)
-        beginLoad()
-        document = doc
-        endLoad()
-        onChange?()
+        applyDocument(doc, name: name)
     }
 
     func insertCornerScrews() {

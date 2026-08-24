@@ -17,6 +17,12 @@ enum PanelMetrics {
         }
     }
 
+    /// Rack authors panel SVGs at 75 dpi, so panel pixels convert to the
+    /// millimetres that `mm2px()` and MetaModule's `x_mm` both expect.
+    static let mmPerPixel: CGFloat = 25.4 / 75
+
+    static func mm(_ px: CGFloat) -> CGFloat { px * mmPerPixel }
+
     static func size(hp: Int, format: PanelFormat) -> CGSize {
         CGSize(width: CGFloat(max(hp, 1)) * pixelsPerHP,
                height: height(for: format))

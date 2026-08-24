@@ -93,6 +93,30 @@ final class CanvasView: NSView {
         onSelectionChange?()
     }
 
+    /// Whole-document change — panel settings included — with undo support and
+    /// the selection preserved. `apply(elements:name:)` covers element edits;
+    /// this covers everything else (name, HP, format, background). Both
+    /// coalesce on `name` within 0.6 s, so a continuously-firing control
+    /// (colour well, slider) collapses into one undo step.
+    func applyDocument(_ newDocument: PanelDocument, name: String) {
+        if !suppressUndoRegistration {
+            let now = Date()
+            let coalesce = (name == lastUndoName && now.timeIntervalSince(lastUndoTime) < 0.6)
+            if !coalesce {
+                let old = document
+                edits.registerUndo(withTarget: self) { target in
+                    target.applyDocument(old, name: name)
+                }
+                lastUndoName = name
+                lastUndoTime = now
+            }
+        }
+        let keep = selection
+        document = newDocument   // didSet: resize, redraw, notifyChange
+        selection = keep.intersection(Set(newDocument.elements.map(\.id)))
+        needsDisplay = true
+    }
+
     func apply(elements newElements: [PanelElement], name: String) {
         if !suppressUndoRegistration {
             let now = Date()

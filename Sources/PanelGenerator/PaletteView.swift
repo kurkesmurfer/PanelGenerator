@@ -138,9 +138,6 @@ final class PaletteItemView: NSView {
                 ctx.setLineWidth(part.lineWidth / s * min(s, 1)); ctx.strokePath(); ctx.restoreGState()
             }
         }
-        if sampleElement.kind == .text {
-            Renderer.drawText(sampleElement, in: ctx)
-        }
         ctx.restoreGState()
 
         // Caption
@@ -164,10 +161,14 @@ final class PaletteItemView: NSView {
             return
         }
 
-        let pbName = NSPasteboard.Name("pg-drag-" + UUID().uuidString)
-        let pb = NSPasteboard(name: pbName)
-        pb.declareTypes([CanvasView.Paste.elementType], owner: nil)
-        pb.setString(entry.kind.rawValue, forType: CanvasView.Paste.elementType)
+        // The dragging item's pasteboard writer decides which types reach the
+        // drag pasteboard. An NSString writes only .string, and the canvas is
+        // registered for Paste.elementType alone — so the drop was refused and
+        // nothing happened. Write the item explicitly instead. (The private
+        // NSPasteboard built here previously was never attached to the drag.)
+        let pbItem = NSPasteboardItem()
+        pbItem.setString(entry.kind.rawValue, forType: CanvasView.Paste.elementType)
+        pbItem.setString(entry.kind.rawValue, forType: .string)
 
         // Pre-render the drag snapshot (simpler and more reliable than a
         // contents provider for this prototype).
@@ -176,7 +177,7 @@ final class PaletteItemView: NSView {
             return true
         }
 
-        let item = NSDraggingItem(pasteboardWriter: entry.kind.rawValue as NSString)
+        let item = NSDraggingItem(pasteboardWriter: pbItem)
         item.setDraggingFrame(bounds, contents: snapshot)
         beginDraggingSession(with: [item], event: event, source: self)
     }

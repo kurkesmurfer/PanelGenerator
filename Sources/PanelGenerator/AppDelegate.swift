@@ -61,6 +61,9 @@ enum MenuBuilder {
         file.addItem(.separator())
         file.addItem(item("Export SVG…", #selector(MainWindowController.pgExportSVG(_:)), key: "e", target: wc))
         file.addItem(item("Export PNG…", #selector(MainWindowController.pgExportPNG(_:)), key: "E", target: wc))
+        let codeItem = item("Export Widget Code…", #selector(MainWindowController.pgExportCode(_:)), key: "e", target: wc)
+        codeItem.keyEquivalentModifierMask = [.command, .option]
+        file.addItem(codeItem)
         fileItem.submenu = file
 
         // Edit

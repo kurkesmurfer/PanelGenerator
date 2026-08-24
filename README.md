@@ -26,7 +26,11 @@ repository. Colours are edited with the **native macOS colour picker**
 - **One vector truth** — canvas, PNG and SVG all consume the same `CGPath`
   data; exports can never drift from what you see.
 - **Export** — SVG (vector, Rack-compatible px space) and PNG at 4×
-  (720×1520 for a 12HP 3U panel).
+  (720×1520 for a 12HP 3U panel). Text exports as **glyph outlines** by
+  default: VCV Rack parses SVG with nanosvg, which has no text support and
+  drops `<text>` silently, taking every label with it. Turning *Text ▸ Export
+  as outlines* off emits editable `<text>` instead, for handing a panel to
+  Illustrator / Inkscape.
 - **Documents** — JSON `.panelgen` files; Open/Save/Save As with dirty-state
   prompts.
 - **Headless smoke test** — `PanelGenerator --selftest [dir]` renders a
@@ -71,6 +75,40 @@ Or plain SPM: `swift build && .build/debug/PanelGenerator`.
 | Toggle snap-to-grid | ⇧⌘G |
 | New / Open / Save | ⌘N / ⌘O / ⌘S |
 | Export SVG / PNG | ⌘E / ⇧⌘E |
+
+## From panel to plugin
+
+Every element carries a **component binding**: a role (decoration / param /
+input / output / light / custom widget), an identifier, and a widget source —
+either a stock Rack type or your own artwork.
+
+- **Decoration** is artwork and stays in the exported panel.
+- **Components** are drawn by Rack and MetaModule themselves, so they are left
+  out of the panel artwork (painting them there would show through underneath
+  the real widget) and exported as positions instead.
+- **Rack default** components take their size from Rack's own SVG, so the
+  on-canvas element is a placement guide — resizing it changes nothing in Rack.
+- **Custom** components export their artwork to `components/<Name>.svg`, and
+  `setSvg()` takes the widget's size from that file — so resizing here *is*
+  how you resize the control.
+
+SVGs export with their `width`/`height` in **millimetres** and the viewBox left
+in panel pixels — nothing is rescaled, but the physical size is declared. That
+matters downstream: `helper.py` skips its 75-dpi guess, and MetaModule
+rasterisers read the physical size from that attribute (at least one raises
+outright on a unitless value). Switch it to pixels in the Panel section if you
+need the old form.
+
+`File ▸ Export SVG…` writes the panel plus `<name>-components.svg`, a positions
+file in the shape `helper.py createmodule` expects (circles, classified by
+fill, named through `data-name` with an optional `#WidgetClass` suffix).
+
+`File ▸ Export Widget Code…` (⌥⌘E) writes the C++ directly: `ParamId` /
+`InputId` / `OutputId` / `LightId` enums, `app::SvgKnob` / `SvgPort` /
+`SvgSlider` / `SvgSwitch` structs for each custom widget, the `ModuleWidget`
+constructor body with `createParamCentered<…>(mm2px(Vec(x, y)), …)`, and the
+matching millimetre table for MetaModule — whose elements use the same mm
+coordinates, with knob angles in degrees rather than Rack's radians.
 
 ## Architecture
 
