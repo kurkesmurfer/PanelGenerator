@@ -299,7 +299,9 @@ final class CanvasView: NSView {
     }
 
     func selectAllElements() {
-        setSelection(Set(document.elements.map(\.id)))
+        // Templates stay out: Select All followed by a nudge must not drag the
+        // thing you are tracing out from under your drawing.
+        setSelection(Set(document.elements.filter { $0.isTemplate != true }.map(\.id)))
     }
 
     func bringToFront() {
@@ -378,7 +380,17 @@ final class CanvasView: NSView {
         drawGrid(in: ctx)
 
         for el in document.elements where el.isHidden != true {
-            Renderer.draw(el, in: ctx)
+            // A tracing template is drawn faintly and behind your own work in
+            // spirit — it is reference, not artwork. It is still visible enough
+            // to trace, and the layer list is where you select or delete it.
+            if el.isTemplate == true {
+                ctx.saveGState()
+                ctx.setAlpha(0.35)
+                Renderer.draw(el, in: ctx)
+                ctx.restoreGState()
+            } else {
+                Renderer.draw(el, in: ctx)
+            }
         }
 
         drawSelectionOverlay(in: ctx)
@@ -772,7 +784,9 @@ final class CanvasView: NSView {
             marqueeRect = rect
             // Rubber-band hits expand to whole groups, so a marquee over part
             // of a group selects (and later moves) the group as one unit.
-            let hitIDs = document.elements.filter { $0.isHidden != true && $0.frame.intersects(rect) }.map(\.id)
+            let hitIDs = document.elements
+                .filter { $0.isHidden != true && $0.isTemplate != true && $0.frame.intersects(rect) }
+                .map(\.id)
             var hit = Set<UUID>()
             for id in hitIDs { hit.formUnion(groupMembers(id)) }
             selection = base.union(hit)
@@ -1071,7 +1085,9 @@ final class CanvasView: NSView {
     }
 
     private func element(at p: CGPoint) -> PanelElement? {
-        document.elements.reversed().first { $0.isHidden != true && $0.contains(globalPoint: p) }
+        document.elements.reversed().first {
+            $0.isHidden != true && $0.isTemplate != true && $0.contains(globalPoint: p)
+        }
     }
 
     // MARK: Drag & drop from palette

@@ -733,6 +733,19 @@ final class InspectorView: NSView {
                     guard let sl = sender as? NSSlider else { return }
                     weakCanvas?.mutateSelection("Ring Thickness") { $0.params.thickness = CGFloat(sl.doubleValue) }
                 }
+            case .path:
+                // No parameters by design: an imported bezier does not carry
+                // the fact that it was once an elbow. Say so, rather than
+                // showing an empty section that looks broken.
+                let note = NSTextField(wrappingLabelWithString:
+                    "Imported artwork. Move, scale, rotate and recolour it; there is nothing "
+                    + "parametric to edit. Redraw it as a shape if you need to change its form.")
+                note.font = NSFont.systemFont(ofSize: 10)
+                note.textColor = ColorSpec.hex("#9A9AB0").nsColor
+                note.frame = CGRect(x: pad, y: cursorY, width: contentW, height: 46)
+                addSubview(note)
+                cursorY += 50
+
             default:
                 break
             }

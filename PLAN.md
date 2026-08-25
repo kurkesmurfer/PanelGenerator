@@ -62,3 +62,34 @@ from what you see.
 4. Export variants: per-knob sprite sheets, MetaModule-friendly asset naming.
 5. NSDocument migration, autosave, versions; custom .icns app icon.
 6. Silkscreen helpers: measurement overlay, HP ruler, drill-size annotations.
+
+## Import (in progress)
+
+`File ▸ Import SVG…` covers three of the four ways in; see `Docs/IMPORT.md`.
+
+- [x] SVG path data and transform lists → CGPath (`SVGPath.swift`), both
+      directions honest against `PathSVG.d`.
+- [x] Geometry import: rect/circle/ellipse recognised as parametric elements,
+      everything else as a normalised `.path` element.
+- [x] Tracing template mode: faint, unclickable, never exported.
+- [x] helper.py components layer: roles by fill, identifiers from `data-name`,
+      `#WidgetClass` suffix honoured.
+- [ ] **Component recovery from C++.** For adopting an existing plugin the SVG
+      is the wrong file: positions, widget types and enum names all live in the
+      ModuleWidget constructor.
+
+      ```cpp
+      addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(15.24, 38.95)), module, Module::CUTOFF_PARAM));
+      addInput(createInputCentered<PJ301MPort>(mm2px(Vec(7.62, 100.0)), module, Module::IN_INPUT));
+      ```
+
+      A reader wants: the `create*Centered<T>` vs `create*<T>` distinction
+      (the latter is a top-left position, not a centre — getting that wrong
+      shifts every component by half its size), `mm2px(Vec(x, y))` vs raw
+      `Vec(x, y)` in pixels, the enum name as the identifier, and `T` as the
+      stock widget. Pair it with the panel SVG imported as artwork and the
+      module comes back whole.
+
+- [ ] Gradients in the renderer. Still the one thing that stops Muse's
+      `knob-large-bg.svg` round-tripping, and now also the reason an imported
+      gradient flattens to grey.

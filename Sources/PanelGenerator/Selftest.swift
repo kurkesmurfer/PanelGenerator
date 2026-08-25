@@ -1,4 +1,5 @@
 import Foundation
+import CoreGraphics
 
 /// Headless verification harness: builds a showcase panel exercising every
 /// element kind, exports SVG + PNG, and exits. Runs without a window server,
@@ -72,7 +73,8 @@ enum Selftest {
                 + textExportChecks() + bindingChecks() + symbolChecks()
                 + widgetChecks() + uniformChecks() + presetChecks()
                 + colourChecks() + alignChecks() + bulkBindChecks()
-                + labelChecks() + codegenChecks()
+                + labelChecks() + svgPathChecks() + svgImportChecks()
+                + codegenChecks()
 
             print(failures.isEmpty ? "SELFTEST OK" : "SELFTEST FAILED")
             print("  elements : \(doc.elements.count)")
@@ -666,6 +668,229 @@ enum Selftest {
         if bulk.elements[1].role != .decoration { failures.append("bind: a box must stay artwork") }
         if bulk.elements[2].role != .output { failures.append("bind: a hand-set role was overwritten") }
         if bulk.bindPrimitives() != 0 { failures.append("bind: a second pass should be a no-op") }
+
+        return failures
+    }
+
+    // MARK: - SVG reading checks
+
+    static func svgPathChecks() -> [String] {
+        var failures: [String] = []
+
+        func bbox(_ d: String, _ label: String) -> CGRect? {
+            guard let p = SVGPath.path(fromD: d) else {
+                failures.append("svgpath: could not parse \(label): \(d)")
+                return nil
+            }
+            return p.boundingBoxOfPath
+        }
+        func near(_ a: CGFloat, _ b: CGFloat, _ tol: CGFloat = 0.01) -> Bool { abs(a - b) <= tol }
+
+        if let r = bbox("M0 0 L10 0 L10 10 Z", "triangle"),
+           !(near(r.minX, 0) && near(r.minY, 0) && near(r.width, 10) && near(r.height, 10)) {
+            failures.append("svgpath: absolute lineto box wrong: \(r)")
+        }
+
+        // An implicit repeat of moveto is lineto. Get this wrong and a polygon
+        // becomes a scatter of dots — silently, because it still parses.
+        if let r = bbox("M0 0 5 0 5 5", "implicit lineto"),
+           !(near(r.width, 5) && near(r.height, 5)) {
+            failures.append("svgpath: implicit lineto after M not handled: \(r)")
+        }
+
+        // Relative commands, no separators between sign-prefixed numbers, and
+        // exponent notation — all of which Double(String) alone gets wrong.
+        if let r = bbox("m10 10l10 0l0 10z", "relative"),
+           !(near(r.minX, 10) && near(r.width, 10)) {
+            failures.append("svgpath: relative commands wrong: \(r)")
+        }
+        if let r = bbox("M0 0L10-5", "no separator"), !near(r.height, 5) {
+            failures.append("svgpath: \"10-5\" should read as two numbers: \(r)")
+        }
+        if let r = bbox("M1e1 1e1L20 20", "exponent"), !near(r.minX, 10) {
+            failures.append("svgpath: exponent notation wrong: \(r)")
+        }
+
+        // A half-circle arc: 10 wide, 5 tall. Arcs are where a path parser
+        // usually goes quietly wrong.
+        if let r = bbox("M0 0 A5 5 0 0 1 10 0", "arc"),
+           !(near(r.width, 10, 0.05) && near(r.height, 5, 0.05)) {
+            failures.append("svgpath: arc geometry wrong: \(r)")
+        }
+        // Flags may run together with the coordinate that follows them.
+        if SVGPath.path(fromD: "M0 0a5 5 0 0110 0") == nil {
+            failures.append("svgpath: run-together arc flags not handled")
+        }
+
+        // Garbage must fail rather than draw something plausible.
+        if SVGPath.path(fromD: "M0 0 L10 Q") != nil {
+            failures.append("svgpath: a truncated command should not parse")
+        }
+        if SVGPath.path(fromD: "10 10 L20 20") != nil {
+            failures.append("svgpath: data without a leading command should not parse")
+        }
+
+        // Round trip: what PathSVG writes, SVGPath must read back.
+        if let first = SVGPath.path(fromD: "M0 0 C0 5 5 10 10 10 L10 0 Z"),
+           let second = SVGPath.path(fromD: PathSVG.d(first)) {
+            let a = first.boundingBoxOfPath, b = second.boundingBoxOfPath
+            if !(near(a.minX, b.minX) && near(a.minY, b.minY)
+                 && near(a.width, b.width) && near(a.height, b.height)) {
+                failures.append("svgpath: round trip through PathSVG.d moved the shape")
+            }
+        } else {
+            failures.append("svgpath: round trip through PathSVG.d failed to parse")
+        }
+
+        // Transforms. The list applies left to right, outermost first.
+        guard let t = SVGPath.transform(from: "translate(10 20) scale(2)") else {
+            return failures + ["svgtransform: translate+scale did not parse"]
+        }
+        let p = CGPoint(x: 1, y: 1).applying(t)
+        if !(near(p.x, 12) && near(p.y, 22)) {
+            failures.append("svgtransform: expected (12, 22), got \(p)")
+        }
+        if let r = SVGPath.transform(from: "rotate(90 5 5)") {
+            let q = CGPoint(x: 5, y: 0).applying(r)
+            if !(near(q.x, 10, 0.001) && near(q.y, 5, 0.001)) {
+                failures.append("svgtransform: rotate about a centre wrong: \(q)")
+            }
+        } else {
+            failures.append("svgtransform: rotate(a cx cy) did not parse")
+        }
+        if SVGPath.transform(from: "wobble(3)") != nil {
+            failures.append("svgtransform: an unknown function should fail, not be ignored")
+        }
+        if SVGPath.transform(from: "")?.isIdentity != true {
+            failures.append("svgtransform: an empty list should be the identity")
+        }
+
+        return failures
+    }
+
+    /// A panel SVG in millimetre user units, the shape Rack panels actually
+    /// take: viewBox in mm, a full-bleed background, one rounded rect, one
+    /// circle, one transformed path, and a helper.py components layer.
+    private static let importFixture = """
+    <svg xmlns="http://www.w3.org/2000/svg" width="30.48mm" height="128.5mm" viewBox="0 0 30.48 128.5">
+      <rect width="30.48" height="128.5" fill="#1d1713"/>
+      <rect x="2" y="2" width="10" height="4" rx="1" style="fill:#ff9c00"/>
+      <circle cx="10" cy="20" r="3" fill="#99ccff"/>
+      <defs><clipPath id="c"><rect x="0" y="0" width="1" height="1"/></clipPath></defs>
+      <g transform="translate(5 40)"><path d="M0 0 L8 0 L8 8 Z" fill="#cc99cc"/></g>
+      <g id="components">
+        <circle cx="6" cy="100" r="2" fill="#00ff00" data-name="CV_IN"/>
+        <circle cx="20" cy="100" r="2" fill="#0000ff" data-name="OUT#PJ3410Port"/>
+      </g>
+    </svg>
+    """
+
+    static func svgImportChecks() -> [String] {
+        var failures: [String] = []
+        let data = Data(importFixture.utf8)
+
+        let outcome: SVGImport.Outcome
+        do {
+            outcome = try SVGImport.outcome(from: data)
+        } catch {
+            return ["svgimport: fixture failed to import: \(error)"]
+        }
+
+        // Millimetre user units are the whole ballgame. 30.48 mm is 6 HP; at
+        // 1:1 it would come in as 2 HP and every position would be a third of
+        // where it belongs.
+        if outcome.widthHP != 6 { failures.append("svgimport: expected 6 HP, got \(outcome.widthHP)") }
+        if outcome.format != .u3 { failures.append("svgimport: expected a 3U panel") }
+        if outcome.background?.hexString.lowercased() != "#1d1713" {
+            failures.append("svgimport: the full-bleed rect should become the panel background")
+        }
+        if outcome.elements.count != 5 {
+            failures.append("svgimport: expected 5 elements, got \(outcome.elements.count)")
+        }
+
+        let scale = 75.0 / 25.4 as CGFloat
+        func near(_ a: CGFloat, _ b: CGFloat, _ tol: CGFloat = 0.05) -> Bool { abs(a - b) <= tol }
+
+        // A rounded rect is a Box, with its radius scaled like everything else.
+        if let box = outcome.elements.first(where: { $0.kind == .box }) {
+            if !(near(box.x, 2 * scale) && near(box.w, 10 * scale)) {
+                failures.append("svgimport: rect placed at \(box.frame), expected mm→px scaling")
+            }
+            if !near(box.params.cornerTL, 1 * scale) {
+                failures.append("svgimport: corner radius not scaled: \(box.params.cornerTL)")
+            }
+            if box.fill.hexString.lowercased() != "#ff9c00" {
+                failures.append("svgimport: style=\"fill:…\" was not read")
+            }
+        } else {
+            failures.append("svgimport: the rounded rect should come back as a Box")
+        }
+
+        // A circle is an Ellipse, not a path — that one is worth recognising
+        // because a jack outline is a circle in every panel ever drawn.
+        let ellipses = outcome.elements.filter { $0.kind == .ellipse }
+        if ellipses.count != 3 {
+            failures.append("svgimport: expected 3 ellipses, got \(ellipses.count)")
+        }
+
+        // The transformed path keeps its place and comes back as a Path.
+        if let path = outcome.elements.first(where: { $0.kind == .path }) {
+            if !near(path.x, 5 * scale) {
+                failures.append("svgimport: group transform not applied: x=\(path.x)")
+            }
+            if path.pathData?.isEmpty != false {
+                failures.append("svgimport: a Path element carries no path data")
+            }
+            if Renderer.importedParts(for: path).isEmpty {
+                failures.append("svgimport: an imported path does not render")
+            }
+        } else {
+            failures.append("svgimport: the transformed path did not import")
+        }
+
+        // The components layer is what turns a picture into a module.
+        let inputs = outcome.elements.filter { $0.role == .input }
+        let outputs = outcome.elements.filter { $0.role == .output }
+        if inputs.count != 1 || outputs.count != 1 {
+            failures.append("svgimport: components layer gave \(inputs.count) inputs, \(outputs.count) outputs")
+        }
+        if inputs.first?.enumName != "CV_IN" {
+            failures.append("svgimport: data-name should become the identifier")
+        }
+        if inputs.first?.stockWidget != "PJ301MPort" {
+            failures.append("svgimport: an unqualified port should fall back to PJ301MPort")
+        }
+        if outputs.first?.stockWidget != "PJ3410Port" {
+            failures.append("svgimport: data-name's #WidgetClass suffix should set the Rack type")
+        }
+        if outputs.first?.enumName != "OUT" {
+            failures.append("svgimport: the #WidgetClass suffix should not survive in the identifier")
+        }
+
+        // Template mode: reference only, and never exported.
+        var options = SVGImport.Options()
+        options.asTemplate = true
+        guard let template = try? SVGImport.outcome(from: data, options: options) else {
+            return failures + ["svgimport: template import failed"]
+        }
+        if !template.elements.allSatisfy({ $0.isTemplate == true && $0.role == .decoration }) {
+            failures.append("svgimport: template elements must be template artwork, never components")
+        }
+        var doc = PanelDocument()
+        doc.widthHP = template.widthHP
+        doc.elements = template.elements
+        let svg = SVGExporter.documentSVG(doc)
+        if svg.contains("#cc99cc") {
+            failures.append("svgimport: a template must not reach the exported SVG")
+        }
+
+        // A file with no viewBox cannot be placed, and must say so rather than
+        // importing everything at the origin.
+        let noBox = Data("<svg xmlns=\"http://www.w3.org/2000/svg\"><rect width=\"5\" height=\"5\"/></svg>".utf8)
+        do {
+            _ = try SVGImport.outcome(from: noBox)
+            failures.append("svgimport: an SVG without a viewBox should be refused")
+        } catch {}
 
         return failures
     }

@@ -23,7 +23,8 @@ enum SVGExporter {
         // Rack composites the widget on top, so drawing it here too would show
         // it through from underneath.
         for el in doc.elements
-        where el.isHidden != true && !el.role.isComponent && !doc.isWidgetArtwork(el) {
+        where el.isHidden != true && el.isTemplate != true
+            && !el.role.isComponent && !doc.isWidgetArtwork(el) {
             s += elementSVG(el, textAsPaths: doc.textAsPaths)
             s += "\n"
         }
@@ -304,7 +305,9 @@ enum PNGExporter {
         NSGraphicsContext.saveGraphicsState()
         NSGraphicsContext.current = NSGraphicsContext(cgContext: cg, flipped: true)
         Renderer.drawBackground(doc, in: cg)
-        for el in doc.elements where el.isHidden != true {
+        // The PNG is what the panel looks like, so the template a panel was
+        // traced from has no business in it.
+        for el in doc.elements where el.isHidden != true && el.isTemplate != true {
             Renderer.draw(el, in: cg)
         }
         NSGraphicsContext.restoreGraphicsState()

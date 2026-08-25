@@ -59,6 +59,8 @@ enum MenuBuilder {
         file.addItem(item("Save", #selector(MainWindowController.pgSave(_:)), key: "s", target: wc))
         file.addItem(item("Save As…", #selector(MainWindowController.pgSaveAs(_:)), key: "S", target: wc))
         file.addItem(.separator())
+        file.addItem(item("Import SVG…", #selector(MainWindowController.pgImportSVG(_:)), key: "i", target: wc))
+        file.addItem(.separator())
         file.addItem(item("Export SVG…", #selector(MainWindowController.pgExportSVG(_:)), key: "e", target: wc))
         file.addItem(item("Export PNG…", #selector(MainWindowController.pgExportPNG(_:)), key: "E", target: wc))
         let codeItem = item("Export Widget Code…", #selector(MainWindowController.pgExportCode(_:)), key: "e", target: wc)

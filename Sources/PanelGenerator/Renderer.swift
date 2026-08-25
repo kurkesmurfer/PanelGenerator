@@ -357,9 +357,41 @@ enum Renderer {
             return [ShapePart(path: SymbolCatalogue.path(for: el), fill: accent,
                               stroke: el.stroke, lineWidth: el.strokeWidth)]
 
+        case .path:
+            return importedParts(for: el)
+
         case .text:
             return textParts(for: el)
         }
+    }
+
+    // MARK: Imported paths
+
+    /// Parsed `d` strings, keyed by the string itself. An imported panel is a
+    /// few hundred paths and the canvas redraws on every mouse move; re-parsing
+    /// all of them per frame is the difference between usable and not.
+    private static var importCache: [String: CGPath] = [:]
+
+    /// An imported path, scaled from its unit box into the element's frame.
+    /// That is what makes dragging a corner resize the artwork rather than
+    /// crop it.
+    static func importedParts(for el: PanelElement) -> [ShapePart] {
+        guard let d = el.pathData, !d.isEmpty else { return [] }
+        let unit: CGPath
+        if let hit = importCache[d] {
+            unit = hit
+        } else {
+            guard let parsed = SVGPath.path(fromD: d) else { return [] }
+            if importCache.count > 2048 { importCache.removeAll() }
+            importCache[d] = parsed
+            unit = parsed
+        }
+        let f = el.frame
+        var t = CGAffineTransform(scaleX: max(f.width, 0.01), y: max(f.height, 0.01))
+            .concatenating(CGAffineTransform(translationX: f.minX, y: f.minY))
+        guard let placed = unit.copy(using: &t) else { return [] }
+        return [ShapePart(path: placed, fill: el.fill,
+                          stroke: el.stroke, lineWidth: el.strokeWidth)]
     }
 
     /// Splits a knob's parts into the static body and the part Rack rotates,

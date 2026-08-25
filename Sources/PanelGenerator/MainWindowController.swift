@@ -154,6 +154,88 @@ final class MainWindowController: NSWindowController, NSMenuItemValidation {
         }
     }
 
+    // MARK: Import
+
+    /// Read an existing panel SVG — someone else's module, or your own earlier
+    /// artwork — either as a tracing template or as editable elements.
+    @objc func pgImportSVG(_ sender: Any?) {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.allowedContentTypes = [.svg]
+        panel.message = "Import a panel SVG as a tracing template or as editable artwork."
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+
+        let choice = NSAlert()
+        choice.messageText = "Import \(url.lastPathComponent)"
+        choice.informativeText = "A template is reference only: drawn faintly, not clickable on the canvas, "
+            + "and never exported — trace over it and delete it when you are done. Imported artwork is "
+            + "editable, but only rectangles and ellipses come back as parametric elements; everything "
+            + "else arrives as a path you can move, scale and recolour but not reshape."
+        choice.addButton(withTitle: "Import")
+        choice.addButton(withTitle: "Cancel")
+
+        let box = NSView(frame: CGRect(x: 0, y: 0, width: 320, height: 82))
+        let mode = NSPopUpButton(frame: CGRect(x: 0, y: 56, width: 320, height: 24))
+        mode.addItems(withTitles: ["As tracing template", "As editable artwork"])
+        let components = NSButton(checkboxWithTitle: "Read a helper.py components layer, if present",
+                                  target: nil, action: nil)
+        components.state = .on
+        components.frame = CGRect(x: 0, y: 30, width: 320, height: 20)
+        let resize = NSButton(checkboxWithTitle: "Take the panel's size and background from the file",
+                              target: nil, action: nil)
+        resize.state = canvas.document.elements.isEmpty ? .on : .off
+        resize.frame = CGRect(x: 0, y: 6, width: 320, height: 20)
+        box.addSubview(mode); box.addSubview(components); box.addSubview(resize)
+        choice.accessoryView = box
+        guard choice.runModal() == .alertFirstButtonReturn else { return }
+
+        var options = SVGImport.Options()
+        options.asTemplate = mode.indexOfSelectedItem == 0
+        options.bindComponents = components.state == .on
+        options.adoptBackground = resize.state == .on
+
+        do {
+            let data = try Data(contentsOf: url)
+            let outcome = try SVGImport.outcome(from: data, options: options)
+            var doc = canvas.document
+            if resize.state == .on {
+                doc.widthHP = outcome.widthHP
+                doc.format = outcome.format
+                if let bg = outcome.background { doc.background = bg }
+            }
+            doc.elements.append(contentsOf: outcome.elements)
+            canvas.applyDocument(doc, name: "Import SVG")
+            canvas.setSelection(options.asTemplate ? [] : Set(outcome.elements.map(\.id)))
+            reloadInspector()
+            report(outcome, from: url, resized: resize.state == .on)
+        } catch {
+            showError("Could not import that SVG", error)
+        }
+    }
+
+    /// What came in, and what did not. An importer that silently drops half a
+    /// panel is worse than one that refuses: you would find out by noticing a
+    /// hole in your own drawing a week later.
+    private func report(_ outcome: SVGImport.Outcome, from url: URL, resized: Bool) {
+        let alert = NSAlert()
+        let count = outcome.elements.count
+        alert.messageText = "Imported \(count) element\(count == 1 ? "" : "s")"
+        var lines: [String] = []
+        lines.append(String(format: "%@ measures %.0f × %.0f px (%.1f × %.1f mm) — %d HP %@.",
+                            url.lastPathComponent,
+                            outcome.sourceSize.width, outcome.sourceSize.height,
+                            PanelMetrics.mm(outcome.sourceSize.width),
+                            PanelMetrics.mm(outcome.sourceSize.height),
+                            outcome.widthHP, outcome.format.rawValue))
+        if !resized {
+            lines.append("The panel kept its own size; the import may not line up with it.")
+        }
+        lines.append(contentsOf: outcome.warnings)
+        alert.informativeText = lines.joined(separator: "\n\n")
+        alert.runModal()
+    }
+
     private func loadIntoCanvas(_ doc: PanelDocument, url: URL?) {
         suppressDirty = true
         canvas.beginLoad()
@@ -389,6 +471,10 @@ final class MainWindowController: NSWindowController, NSMenuItemValidation {
           re-sizes the whole set in one go.
         • {ka} {ru} {te} … inside a label's text places an alien glyph inline.
 
+        File ▸ Import SVG (⌘I) reads an existing panel — as a faint tracing
+        template you draw over, or as editable artwork. See Docs/IMPORT.md
+        for what survives the trip and what does not.
+
         File ▸ Export SVG / PNG writes Rack-compatible artwork
         (1 HP = 15 px · 3U = 380 px · 1U = 127 px).
         """
@@ -419,7 +505,8 @@ final class MainWindowController: NSWindowController, NSMenuItemValidation {
             return window?.firstResponder === canvas && !canvas.selection.isEmpty
         case #selector(pgPaste(_:)):
             return window?.firstResponder === canvas && canvas.canPaste
-        case #selector(pgDuplicate(_:)), #selector(pgFront(_:)), #selector(pgBack(_:)):
+        case #selector(pgDuplicate(_:)), #selector(pgFront(_:)), #selector(pgBack(_:)),
+             #selector(pgMakeWidget(_:)), #selector(pgLabelSelection(_:)):
             return !canvas.selection.isEmpty
         default:
             break

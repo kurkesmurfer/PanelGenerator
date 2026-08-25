@@ -193,6 +193,10 @@ enum ElementKind: String, Codable, CaseIterable {
     case elbow          // LCARS elbow: two arms joined by a curved corner
     case ringSector     // annulus arc — the big sweeping TNG curves
     case symbol         // parametric synth iconography — see SymbolCatalogue
+    /// Imported artwork: an arbitrary path, held normalised to a unit box so
+    /// the frame scales it like every other element. Not parametric — a bezier
+    /// blob does not carry the fact that it was once an elbow.
+    case path
     // Text
     case text
 
@@ -202,7 +206,7 @@ enum ElementKind: String, Codable, CaseIterable {
 
     var category: Category {
         switch self {
-        case .box, .ellipse, .triangle, .elbow, .ringSector, .symbol: return .shape
+        case .box, .ellipse, .triangle, .elbow, .ringSector, .symbol, .path: return .shape
         case .text: return .text
         default: return .primitive
         }
@@ -226,6 +230,7 @@ enum ElementKind: String, Codable, CaseIterable {
         case .elbow: return "LCARS Elbow"
         case .ringSector: return "Ring Sector"
         case .symbol: return "Symbol"
+        case .path: return "Imported Path"
         case .text: return "Text Label"
         }
     }
@@ -332,6 +337,10 @@ enum ElementKind: String, Codable, CaseIterable {
             let d = SymbolCatalogue.spec("sine").defaults
             e.params.symbolA = d[0]; e.params.symbolB = d[1]
             e.params.symbolC = d[2]; e.params.symbolD = d[3]
+        case .path:
+            // Placed by the importer, which overwrites all of this; the
+            // defaults only matter if a path element is ever made by hand.
+            e.w = 40; e.h = 40; e.fill = .hex("#9AA0AB")
         case .text:
             e.w = 120; e.h = 20; e.fill = .hex("#E8E8F0")
             e.params.text = "LABEL"; e.params.fontSize = 12; e.params.bold = true
@@ -426,6 +435,13 @@ struct PanelElement: Codable, Hashable, Identifiable {
     /// stacking a second copy on the first — invisible on canvas, doubled in
     /// the export.
     var labelOwner: UUID? = nil
+    /// SVG path data for a `.path` element, normalised into a 0…1 box so the
+    /// frame drives its size. Optional so every document written before the
+    /// importer existed decodes unchanged.
+    var pathData: String? = nil
+    /// Imported tracing template: drawn faintly, never exported, and not
+    /// selectable by clicking through it. Draw over it, then delete it.
+    var isTemplate: Bool? = nil
 
     var frame: CGRect {
         get { CGRect(x: x, y: y, width: w, height: h) }
@@ -970,6 +986,8 @@ extension PanelElement {
         customWidgetName = try c.decodeOr(.customWidgetName, customWidgetName)
         rotatesWithValue = try c.decodeOr(.rotatesWithValue, rotatesWithValue)
         labelOwner       = try c.decodeIfPresent(UUID.self, forKey: .labelOwner)
+        pathData         = try c.decodeIfPresent(String.self, forKey: .pathData)
+        isTemplate       = try c.decodeIfPresent(Bool.self, forKey: .isTemplate)
     }
 }
 
