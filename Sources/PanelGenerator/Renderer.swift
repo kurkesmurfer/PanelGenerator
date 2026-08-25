@@ -406,6 +406,19 @@ enum Renderer {
     /// drawing code.
     private static var outlineCache: [TextKey: TextOutline] = [:]
 
+    /// Size a text element's own drawing wants: the advance of the laid-out
+    /// line by its cap height, padded so the frame stays grabbable. Needed when
+    /// a label is created in code and has no frame to inherit — the glyph run,
+    /// not the string length, is what decides the width.
+    static func textSize(for el: PanelElement) -> CGSize {
+        guard let o = outline(for: el) else {
+            return CGSize(width: max(8, el.params.fontSize * 2),
+                          height: max(8, el.params.fontSize * 1.4))
+        }
+        return CGSize(width: max(8, o.advance + el.params.fontSize * 0.3),
+                      height: max(8, o.capHeight * 1.5))
+    }
+
     static func textParts(for el: PanelElement) -> [ShapePart] {
         guard let o = outline(for: el) else { return [] }
         // Centre the cap-height box in the frame: visually centred for the
@@ -416,17 +429,61 @@ enum Renderer {
         return [ShapePart(path: placed, fill: el.fill)]
     }
 
-    private static func outline(for el: PanelElement) -> TextOutline? {
-        let key = TextKey(text: el.params.text,
-                          size: max(4, el.params.fontSize),
-                          bold: el.params.bold)
-        guard !key.text.isEmpty else { return nil }
-        if let hit = outlineCache[key] { return hit }
+    /// A text element is a sequence of literal runs and glyph tokens. `{ka}`
+    /// anywhere in the string places the Ka glyph inline, sized to cap height
+    /// so it sits on the baseline with the Latin characters around it.
+    private enum TextSegment {
+        case literal(String)
+        case glyph(String)      // a SymbolCatalogue id in the .glyph category
+    }
 
-        let nsFont = NSFont.systemFont(ofSize: key.size, weight: key.bold ? .semibold : .regular)
+    private static func segments(of text: String) -> [TextSegment] {
+        var out: [TextSegment] = []
+        var literal = ""
+        var i = text.startIndex
+
+        while i < text.endIndex {
+            if text[i] == "{", let close = text[i...].firstIndex(of: "}") {
+                let name = String(text[text.index(after: i)..<close]).lowercased()
+                if let spec = SymbolCatalogue.all.first(where: {
+                    $0.category == .glyph && $0.id.lowercased() == "glyph" + name
+                }) {
+                    if !literal.isEmpty { out.append(.literal(literal)); literal = "" }
+                    out.append(.glyph(spec.id))
+                    i = text.index(after: close)
+                    continue
+                }
+                // Not a glyph name — leave the brace alone rather than eating it.
+            }
+            literal.append(text[i])
+            i = text.index(after: i)
+        }
+        if !literal.isEmpty { out.append(.literal(literal)) }
+        return out
+    }
+
+    /// One glyph as a filled ribbon in a `side` × `side` box, top-left at the
+    /// origin. Same construction as a Symbol element, so a glyph typed into a
+    /// label and one dropped from the palette are the same shape.
+    private static func glyphOutline(_ id: String, side: CGFloat) -> CGPath? {
+        guard side > 1 else { return nil }
+        let weight = SymbolCatalogue.defaultWeight
+        let inset = weight / 2
+        let box = CGRect(x: inset, y: inset, width: 1 - inset * 2, height: 1 - inset * 2)
+        let spec = SymbolCatalogue.spec(id)
+        let unit = spec.centreline(SymbolContext(box: box, p: spec.defaults))
+
+        var scale = CGAffineTransform(scaleX: side, y: side)
+        guard let scaled = unit.copy(using: &scale) else { return nil }
+        let px = max(SymbolCatalogue.minWeightPixels, weight * side)
+        return scaled.copy(strokingWithWidth: px, lineCap: .round, lineJoin: .round, miterLimit: 4)
+    }
+
+    /// Outlines for one literal run, baseline at the origin, y-down.
+    private static func literalOutline(_ text: String, font nsFont: NSFont) -> (CGPath, CGFloat) {
         let ctFont = nsFont as CTFont
         let line = CTLineCreateWithAttributedString(
-            NSAttributedString(string: key.text, attributes: [.font: nsFont]))
+            NSAttributedString(string: text, attributes: [.font: nsFont]))
         let advance = CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
 
         let out = CGMutablePath()
@@ -453,8 +510,41 @@ enum Renderer {
                 out.addPath(g, transform: t)
             }
         }
+        return (out, advance)
+    }
 
-        let result = TextOutline(path: out, advance: advance, capHeight: CTFontGetCapHeight(ctFont))
+    private static func outline(for el: PanelElement) -> TextOutline? {
+        let key = TextKey(text: el.params.text,
+                          size: max(4, el.params.fontSize),
+                          bold: el.params.bold)
+        guard !key.text.isEmpty else { return nil }
+        if let hit = outlineCache[key] { return hit }
+
+        let nsFont = NSFont.systemFont(ofSize: key.size, weight: key.bold ? .semibold : .regular)
+        let capHeight = CTFontGetCapHeight(nsFont as CTFont)
+
+        let out = CGMutablePath()
+        var x: CGFloat = 0
+        for segment in segments(of: key.text) {
+            switch segment {
+            case .literal(let run):
+                let (path, advance) = literalOutline(run, font: nsFont)
+                var t = CGAffineTransform(translationX: x, y: 0)
+                if let placed = path.copy(using: &t) { out.addPath(placed) }
+                x += advance
+
+            case .glyph(let id):
+                // Square, cap height, sitting on the baseline: y = -capHeight is
+                // the top of the box in the panel's y-down space.
+                if let g = glyphOutline(id, side: capHeight) {
+                    var t = CGAffineTransform(translationX: x, y: -capHeight)
+                    if let placed = g.copy(using: &t) { out.addPath(placed) }
+                }
+                x += capHeight * 1.14   // the glyph plus a little tracking
+            }
+        }
+
+        let result = TextOutline(path: out, advance: x, capHeight: capHeight)
         if outlineCache.count > 512 { outlineCache.removeAll() }
         outlineCache[key] = result
         return result

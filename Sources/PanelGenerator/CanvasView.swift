@@ -236,9 +236,9 @@ final class CanvasView: NSView {
         setSelection(Set(remapped.map(\.id)))
     }
 
-    func insertAtCenter(_ kind: ElementKind, symbol: String? = nil) {
+    func insertAtCenter(_ kind: ElementKind, preset: String? = nil) {
         var el = kind.defaultElement(at: .zero)
-        if let symbol { el.applySymbol(symbol) }
+        if let preset { el.applyPreset(preset) }
         el.frame.origin = CGPoint(
             x: Geo.snap(document.pixelSize.width / 2 - el.w / 2, to: Geo.defaultSnap),
             y: Geo.snap(document.pixelSize.height / 2 - el.h / 2, to: Geo.defaultSnap))
@@ -253,6 +253,13 @@ final class CanvasView: NSView {
         selection = ids
         needsDisplay = true
         onSelectionChange?()
+    }
+
+    /// Stand-in element for a homogeneous multi-selection; nil for a mixed one.
+    var uniformSelection: PanelElement? { document.uniformSelection(ids: selection) }
+
+    func selectionAgrees<T: Equatable>(_ keyPath: KeyPath<PanelElement, T>) -> Bool {
+        document.selectionAgrees(keyPath, ids: selection)
     }
 
     var primaryElement: PanelElement? {
@@ -603,6 +610,10 @@ final class CanvasView: NSView {
     override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
         isGestureActive = true
+        // Reset here rather than per-branch. The marquee branch below used to
+        // omit it, so a click on empty canvas after a resize or a group drag
+        // inherited didDrag == true and the deselect on mouseUp never fired.
+        didDrag = false
         let p = panelPoint(from: event)
 
         if event.clickCount == 2, let el = element(at: p), selection == [el.id] {
@@ -876,6 +887,50 @@ final class CanvasView: NSView {
     /// Align the selection. `to: "sel"` lines elements up with the selection's
     /// own bounding box (needs 2+ selected). `to: "panel"` aligns to the panel
     /// edges / center line and works with any selection size, even one element.
+    /// Undoable wrapper around `PanelDocument.nameSequentially`.
+    func nameSelectionSequentially(prefix: String) {
+        var doc = document
+        doc.nameSequentially(ids: selection, prefix: prefix)
+        guard doc.elements != document.elements else { return }
+        apply(elements: doc.elements, name: "Name Components")
+    }
+
+    /// Undoable wrapper around `PanelDocument.labelSelection`.
+    ///
+    /// The new labels end up selected. That is the point of the command: the
+    /// inspector's Size row then writes to all of them at once, so twenty-five
+    /// labels are still one action if the size is wrong.
+    @discardableResult
+    func labelSelection(placement: LabelPlacement,
+                        gap: CGFloat,
+                        fontSize: CGFloat,
+                        bold: Bool,
+                        uppercase: Bool,
+                        spaceUnderscores: Bool,
+                        colour: ColorSpec) -> (created: Int, skipped: Int) {
+        let owners = selection
+        var doc = document
+        let result = doc.labelSelection(ids: owners, placement: placement, gap: gap,
+                                        fontSize: fontSize, bold: bold, uppercase: uppercase,
+                                        spaceUnderscores: spaceUnderscores, colour: colour)
+        guard result.created > 0 else { return result }
+        let made = Set(doc.elements.filter { el in
+            el.kind == .text && (el.labelOwner.map(owners.contains) ?? false)
+        }.map(\.id))
+        apply(elements: doc.elements, name: "Label Selection")
+        setSelection(made)
+        return result
+    }
+
+    /// Undoable wrapper around `PanelDocument.makeWidget`.
+    @discardableResult
+    func makeWidget(name: String, role: ComponentRole) -> Bool {
+        var doc = document
+        guard doc.makeWidget(ids: selection, name: name, role: role) else { return false }
+        apply(elements: doc.elements, name: "Make Widget")
+        return true
+    }
+
     /// Undoable wrapper around `PanelDocument.setColour`.
     func setColour(_ colour: ColorSpec, ids: [UUID], strokes: Bool, name: String) {
         var doc = document
@@ -1025,13 +1080,13 @@ final class CanvasView: NSView {
     override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation { .copy }
 
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
-        // "kind" or "kind#symbolID" — the symbol palette drags a specific glyph.
+        // "kind" or "kind#preset" — a specific glyph, a ring knob, and so on.
         guard let raw = sender.draggingPasteboard.string(forType: Paste.elementType) else { return false }
         let parts = raw.split(separator: "#", maxSplits: 1).map(String.init)
         guard let kind = ElementKind(rawValue: parts[0]) else { return false }
 
         var el = kind.defaultElement(at: .zero)
-        if parts.count > 1 { el.applySymbol(parts[1]) }
+        if parts.count > 1 { el.applyPreset(parts[1]) }
         let p = panelPoint(fromWindowLocation: sender.draggingLocation)
         el.frame.origin = CGPoint(
             x: snapVal(Geo.snap(p.x - el.w / 2, to: Geo.defaultSnap)),

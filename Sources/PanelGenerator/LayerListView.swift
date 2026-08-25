@@ -190,6 +190,7 @@ extension LayerListView: NSTableViewDataSource, NSTableViewDelegate {
 final class LayerRowView: NSView {
 
     private let eye = NSButton()
+    private let badge = NSTextField(labelWithString: "")
     private let label = NSTextField(labelWithString: "")
     private let up = NSButton()
     private let down = NSButton()
@@ -215,6 +216,13 @@ final class LayerRowView: NSView {
         style(up, "▲", #selector(upTapped))
         style(down, "▼", #selector(downTapped))
 
+        badge.font = NSFont.monospacedDigitSystemFont(ofSize: 9, weight: .bold)
+        badge.alignment = .center
+        badge.wantsLayer = true
+        badge.layer?.cornerRadius = 3
+        badge.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(badge)
+
         label.font = NSFont.systemFont(ofSize: 11)
         label.lineBreakMode = .byTruncatingTail
         label.translatesAutoresizingMaskIntoConstraints = false
@@ -226,7 +234,12 @@ final class LayerRowView: NSView {
             eye.centerYAnchor.constraint(equalTo: centerYAnchor),
             eye.widthAnchor.constraint(equalToConstant: 18),
 
-            label.leadingAnchor.constraint(equalTo: eye.trailingAnchor, constant: 2),
+            badge.leadingAnchor.constraint(equalTo: eye.trailingAnchor, constant: 2),
+            badge.centerYAnchor.constraint(equalTo: centerYAnchor),
+            badge.widthAnchor.constraint(equalToConstant: 15),
+            badge.heightAnchor.constraint(equalToConstant: 13),
+
+            label.leadingAnchor.constraint(equalTo: badge.trailingAnchor, constant: 4),
             label.centerYAnchor.constraint(equalTo: centerYAnchor),
             label.trailingAnchor.constraint(lessThanOrEqualTo: up.leadingAnchor, constant: -4),
 
@@ -244,6 +257,21 @@ final class LayerRowView: NSView {
         buildIfNeeded()
         self.elementID = element.id
         self.list = list
+
+        // Role at a glance. Binding is otherwise invisible unless you select an
+        // element and find the Component section, which is exactly how it stays
+        // undiscovered.
+        let isWidget = element.widgetSource == .custom && !element.customWidgetName.isEmpty
+        badge.stringValue = isWidget ? "W" : element.role.badge
+        if badge.stringValue.isEmpty {
+            badge.layer?.backgroundColor = NSColor.clear.cgColor
+        } else {
+            let tint = isWidget
+                ? ColorSpec.hex("#ffff00")
+                : ColorSpec.hex(element.role.helperFill ?? "#808080")
+            badge.textColor = NSColor.black.withAlphaComponent(0.85)
+            badge.layer?.backgroundColor = tint.nsColor.withAlphaComponent(0.85).cgColor
+        }
 
         let hidden = element.isHidden == true
         eye.title = hidden ? "○" : "◉"

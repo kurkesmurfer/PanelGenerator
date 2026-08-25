@@ -1,0 +1,180 @@
+{
+  "background": {
+    "a": 1,
+    "b": 0.11764705882352941,
+    "g": 0.09019607843137255,
+    "r": 0.09019607843137255
+  },
+  "elements": [
+    {
+      "customWidgetName": "LcarsKnob",
+      "enumName": "CUTOFF",
+      "fill": {
+        "a": 1,
+        "b": 0.07450980392156863,
+        "g": 0.09019607843137255,
+        "r": 0.11372549019607843
+      },
+      "groupID": "7B1D0000-0000-4000-8000-000000000001",
+      "h": 30,
+      "id": "1CA25000-0000-4000-8000-000000000001",
+      "kind": "ellipse",
+      "name": "Knob seat",
+      "params": {},
+      "role": "param",
+      "rotatesWithValue": false,
+      "rotation": 0,
+      "stockWidget": "",
+      "strokeWidth": 1.5,
+      "w": 30,
+      "widgetSource": "custom",
+      "x": 60,
+      "y": 60
+    },
+    {
+      "customWidgetName": "",
+      "enumName": "",
+      "fill": {
+        "a": 1,
+        "b": 0.0,
+        "g": 0.611764705882353,
+        "r": 1.0
+      },
+      "groupID": "7B1D0000-0000-4000-8000-000000000001",
+      "h": 30,
+      "id": "1CA25000-0000-4000-8000-000000000002",
+      "kind": "ringSector",
+      "name": "Knob ring",
+      "params": {
+        "startAngle": -240,
+        "sweepAngle": 300,
+        "thickness": 4
+      },
+      "role": "decoration",
+      "rotatesWithValue": false,
+      "rotation": 0,
+      "stockWidget": "",
+      "strokeWidth": 1.5,
+      "w": 30,
+      "widgetSource": "stock",
+      "x": 60,
+      "y": 60
+    },
+    {
+      "customWidgetName": "",
+      "enumName": "",
+      "fill": {
+        "a": 1,
+        "b": 0.4,
+        "g": 0.8,
+        "r": 1.0
+      },
+      "groupID": "7B1D0000-0000-4000-8000-000000000001",
+      "h": 11,
+      "id": "1CA25000-0000-4000-8000-000000000003",
+      "kind": "box",
+      "name": "Indicator",
+      "params": {
+        "cornerBL": 1.5,
+        "cornerBR": 1.5,
+        "cornerTL": 1.5,
+        "cornerTR": 1.5
+      },
+      "role": "decoration",
+      "rotatesWithValue": true,
+      "rotation": 0,
+      "stockWidget": "",
+      "strokeWidth": 1.5,
+      "w": 3,
+      "widgetSource": "stock",
+      "x": 73.5,
+      "y": 62
+    },
+    {
+      "customWidgetName": "",
+      "enumName": "",
+      "fill": {
+        "a": 1,
+        "b": 0.3137254901960784,
+        "g": 0.3803921568627451,
+        "r": 0.43137254901960786
+      },
+      "groupID": "7B1D0000-0000-4000-8000-000000000001",
+      "h": 7,
+      "id": "1CA25000-0000-4000-8000-000000000004",
+      "kind": "ellipse",
+      "name": "Cap",
+      "params": {},
+      "role": "decoration",
+      "rotatesWithValue": false,
+      "rotation": 0,
+      "stockWidget": "",
+      "strokeWidth": 1.5,
+      "w": 7,
+      "widgetSource": "stock",
+      "x": 71.5,
+      "y": 71.5
+    },
+    {
+      "customWidgetName": "",
+      "enumName": "IN",
+      "fill": {
+        "a": 1,
+        "b": 0.6705882352941176,
+        "g": 0.6274509803921569,
+        "r": 0.6039215686274509
+      },
+      "h": 22,
+      "id": "1CA25000-0000-4000-8000-000000000005",
+      "kind": "jack",
+      "name": "In",
+      "params": {},
+      "role": "input",
+      "rotatesWithValue": false,
+      "rotation": 0,
+      "stockWidget": "PJ301MPort",
+      "strokeWidth": 1.5,
+      "w": 22,
+      "widgetSource": "stock",
+      "x": 20,
+      "y": 140
+    },
+    {
+      "customWidgetName": "",
+      "enumName": "",
+      "fill": {
+        "a": 1,
+        "b": 0.0,
+        "g": 0.611764705882353,
+        "r": 1.0
+      },
+      "h": 16,
+      "id": "1CA25000-0000-4000-8000-000000000006",
+      "kind": "box",
+      "name": "Header bar",
+      "params": {
+        "cornerBL": 8,
+        "cornerBR": 8,
+        "cornerTL": 8,
+        "cornerTR": 8
+      },
+      "role": "decoration",
+      "rotatesWithValue": false,
+      "rotation": 0,
+      "stockWidget": "",
+      "strokeWidth": 1.5,
+      "w": 104,
+      "widgetSource": "stock",
+      "x": 8,
+      "y": 8
+    }
+  ],
+  "format": "3U",
+  "moduleSlug": "LcarsTest",
+  "name": "LCARS Knob Test",
+  "pluginSlug": "Kurkesmurfer",
+  "svgUnits": "millimetres",
+  "textAsPaths": true,
+  "widgetNamespace": "lcarsui",
+  "widthHP": 8
+}

@@ -92,6 +92,8 @@ enum MenuBuilder {
         edit.addItem(.separator())
         edit.addItem(item("Insert Corner Screws", #selector(MainWindowController.pgScrews(_:)), target: wc))
         edit.addItem(item("Bind Primitives as Components", #selector(MainWindowController.pgBindPrimitives(_:)), target: wc))
+        edit.addItem(item("Make Widget from Selection…", #selector(MainWindowController.pgMakeWidget(_:)), target: wc))
+        edit.addItem(item("Label Selection…", #selector(MainWindowController.pgLabelSelection(_:)), key: "l", target: wc))
         editItem.submenu = edit
 
         // View

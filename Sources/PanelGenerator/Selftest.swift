@@ -68,7 +68,11 @@ enum Selftest {
             let pngURL = URL(fileURLWithPath: dir).appendingPathComponent("pg_demo.png")
             try png.write(to: pngURL)
 
-            let failures = persistenceChecks() + exportChecks()
+            let failures = persistenceChecks()
+                + textExportChecks() + bindingChecks() + symbolChecks()
+                + widgetChecks() + uniformChecks() + presetChecks()
+                + colourChecks() + alignChecks() + bulkBindChecks()
+                + labelChecks() + codegenChecks()
 
             print(failures.isEmpty ? "SELFTEST OK" : "SELFTEST FAILED")
             print("  elements : \(doc.elements.count)")
@@ -76,12 +80,7 @@ enum Selftest {
             print("  svg      : \(svgURL.path) (\(svg.utf8.count) bytes)")
             print("  png      : \(pngURL.path) (\(png.count) bytes)")
             if failures.isEmpty {
-                print("  persist  : round-trip · legacy decode · unknown-kind guard OK")
-                print("  export   : text outlines · binding · components layer · codegen OK")
-                print("  bulk     : bind primitives · hand-set roles preserved OK")
-                print("  align    : selection bounds vs panel bounds OK")
-                print("  colours  : grouping stable, recolour scoped OK")
-                print("  symbols  : \(SymbolCatalogue.all.count) specs, geometry contained OK")
+                print("  checks   : persistence · export · symbols · widgets · codegen OK")
             } else {
                 for f in failures { print("  ✗ \(f)") }
             }
@@ -157,7 +156,14 @@ enum Selftest {
 
     // MARK: - Export checks
 
-    static func exportChecks() -> [String] {
+    // MARK: - Checks
+    //
+    // One function per topic, each with its own scope. They used to be one
+    // 400-line function sharing a single scope, which cost two builds to name
+    // collisions — `symDoc`, then `art` — because every new block competed for
+    // names with everything already written. Scope is the fix, not vigilance.
+
+    static func textExportChecks() -> [String] {
         var failures: [String] = []
 
         // Text must leave as outlines by default: Rack renders panels through
@@ -176,7 +182,26 @@ enum Selftest {
             failures.append("text export: editable mode should still emit <text>")
         }
 
-        // A label on its own must produce real geometry, not an empty group.
+        // A glyph token inside a label is real geometry, and an unknown one is
+        // left alone rather than silently eaten.
+        var withGlyph = ElementKind.text.defaultElement(at: CGPoint(x: 10, y: 40))
+        withGlyph.params.text = "SN {ka}{ru} 4071"
+        var plain = ElementKind.text.defaultElement(at: CGPoint(x: 10, y: 80))
+        plain.params.text = "SN 4071"
+        var unknown = ElementKind.text.defaultElement(at: CGPoint(x: 10, y: 120))
+        unknown.params.text = "SN {nope} 4071"
+
+        let glyphBox = Renderer.parts(for: withGlyph).first?.path.boundingBoxOfPath ?? .null
+        let plainBox = Renderer.parts(for: plain).first?.path.boundingBoxOfPath ?? .null
+        let unknownBox = Renderer.parts(for: unknown).first?.path.boundingBoxOfPath ?? .null
+        if glyphBox.isNull || plainBox.isNull {
+            failures.append("glyph text: produced no geometry")
+        } else if glyphBox.width <= plainBox.width {
+            failures.append("glyph text: two inline glyphs should be wider than the same label without them")
+        }
+        if unknownBox.isNull || unknownBox.width <= plainBox.width {
+            failures.append("glyph text: an unknown token should stay as literal text, not vanish")
+        }
         var probe = PanelDocument()
         var label = ElementKind.text.defaultElement(at: CGPoint(x: 10, y: 10))
         label.params.text = "PG"
@@ -185,16 +210,32 @@ enum Selftest {
             failures.append("text export: a text element produced no outline path")
         }
 
+        return failures
+    }
 
-        // Components must not be painted into the panel: Rack and MetaModule
-        // draw them on top, so the artwork would show through from underneath.
-        var rig = PanelDocument()
+    /// One piece of artwork and one bound knob at a known position. Shared by
+    /// the binding and codegen checks as a *fixture* rather than as a variable
+    /// they both happen to see — which is what splitting these into separate
+    /// functions was for.
+    static func componentRig() -> PanelDocument {
+        var doc = PanelDocument()
         var deco = ElementKind.box.defaultElement(at: CGPoint(x: 10, y: 10))
         deco.fill = .hex("#123456")
         var knob = ElementKind.knobLarge.defaultElement(at: CGPoint(x: 30, y: 100))
         knob.fill = .hex("#ABCDEF")
         knob.enumName = "CUTOFF"
-        rig.elements = [deco, knob]
+        doc.elements = [deco, knob]
+        return doc
+    }
+
+    static func bindingChecks() -> [String] {
+        var failures: [String] = []
+
+        // Components must not be painted into the panel: Rack and MetaModule
+        // draw them on top, so the artwork would show through from underneath.
+        let rig = componentRig()
+        let deco = rig.elements[0]
+        let knob = rig.elements[1]
 
         if knob.role != .param { failures.append("binding: a knob should default to .param") }
         if deco.role != .decoration { failures.append("binding: a box should default to .decoration") }
@@ -224,7 +265,28 @@ enum Selftest {
             failures.append("components layer: data-name should carry NAME#WidgetClass")
         }
 
+        // A namespaced custom widget must appear namespaced here too: helper.py
+        // pastes this name into C++, and the direct emission already qualifies
+        // it. If the two disagree, only one of the two routes compiles.
+        var nsRig = componentRig()
+        nsRig.widgetNamespace = "lcarsui"
+        for i in nsRig.elements.indices where nsRig.elements[i].role == .param {
+            nsRig.elements[i].widgetSource = .custom
+            nsRig.elements[i].customWidgetName = "LcarsKnob"
+        }
+        let nsComps = SVGExporter.componentsSVG(nsRig)
+        if !nsComps.contains("data-name=\"CUTOFF#lcarsui::LcarsKnob\"") {
+            failures.append("components layer: a namespaced widget should be qualified for helper.py")
+        }
+        if !CodeGen.rackSource(nsRig).contains("createParamCentered<lcarsui::LcarsKnob>") {
+            failures.append("codegen: the direct emission should qualify the same way")
+        }
 
+        return failures
+    }
+
+    static func symbolChecks() -> [String] {
+        var failures: [String] = []
 
         // Every symbol must produce geometry, and it must stay inside its own
         // frame. The content box is inset by half the weight precisely so the
@@ -268,6 +330,239 @@ enum Selftest {
             failures.append("symbol export: a symbol element produced no path in the SVG")
         }
 
+        return failures
+    }
+
+    static func widgetChecks() -> [String] {
+        var failures: [String] = []
+
+        // Naming a selection numbers it in reading order, not in document
+        // order and not by floating-point noise on y.
+        var namer = PanelDocument()
+        var n1 = ElementKind.jack.defaultElement(at: CGPoint(x: 200, y: 300))   // row 2, right
+        var n2 = ElementKind.jack.defaultElement(at: CGPoint(x: 20, y: 300.4))  // row 2, left
+        var n3 = ElementKind.jack.defaultElement(at: CGPoint(x: 110, y: 100))   // row 1, middle
+        n1.name = "a"; n2.name = "b"; n3.name = "c"
+        namer.elements = [n1, n2, n3]
+        namer.nameSequentially(ids: Set(namer.elements.map { $0.id }), prefix: "IN")
+
+        func named(_ id: UUID) -> String {
+            namer.elements.first { $0.id == id }?.enumName ?? "?"
+        }
+        if named(n3.id) != "IN_1" {
+            failures.append("naming: the top row should come first, got \(named(n3.id))")
+        }
+        if named(n2.id) != "IN_2" {
+            failures.append("naming: left before right within a row, got \(named(n2.id))")
+        }
+        if named(n1.id) != "IN_3" {
+            failures.append("naming: expected IN_3, got \(named(n1.id))")
+        }
+
+        // A plain group is not a widget. Rows of controls get grouped so they
+        // move together; treating that as one composed control collapsed every
+        // component in the row onto the group's centre.
+        var rowDoc = PanelDocument()
+        let shared = UUID()
+        var rk = ElementKind.knobLarge.defaultElement(at: CGPoint(x: 20, y: 100))
+        var rj = ElementKind.jack.defaultElement(at: CGPoint(x: 120, y: 100))
+        rk.groupID = shared
+        rj.groupID = shared
+        rk.enumName = "CUTOFF"
+        rj.enumName = "IN"
+        rowDoc.elements = [rk, rj]
+
+        if rowDoc.components.count != 2 {
+            failures.append("group: a plain group of two components is still two components")
+        }
+        let rkCentre = rowDoc.componentCentreMM(rowDoc.elements[0])
+        let rjCentre = rowDoc.componentCentreMM(rowDoc.elements[1])
+        if abs(rkCentre.x - rjCentre.x) < 1 {
+            failures.append("group: grouped components were collapsed onto one position")
+        }
+        if abs(rkCentre.x - PanelMetrics.mm(35)) > 0.001 {
+            failures.append("group: a grouped component should keep its own centre (expected 11.853 mm)")
+        }
+
+        // Composed widgets: several elements promoted to one control.
+        var wid = PanelDocument()
+        var body = ElementKind.box.defaultElement(at: CGPoint(x: 100, y: 100))
+        body.w = 40; body.h = 40; body.fill = .hex("#112244")
+        var pointer = ElementKind.triangle.defaultElement(at: CGPoint(x: 115, y: 105))
+        pointer.w = 10; pointer.h = 15; pointer.fill = .hex("#AA33BB")
+        pointer.rotatesWithValue = true
+        wid.elements = [body, pointer]
+        let widIDs: Set<UUID> = [body.id, pointer.id]
+
+        if !wid.makeWidget(ids: widIDs, name: "LcarsKnob", role: .param) {
+            failures.append("widget: makeWidget refused a valid selection")
+        }
+        guard let anchor = wid.components.first else {
+            failures.append("widget: no component after promotion")
+            return failures
+        }
+        if wid.components.count != 1 {
+            failures.append("widget: a widget is one component, got \(wid.components.count)")
+        }
+        if anchor.id != body.id {
+            failures.append("widget: the anchor should be the part nearest the centre")
+        }
+        if anchor.customWidgetName != "LcarsKnob" || anchor.role != .param {
+            failures.append("widget: the anchor did not take the name and role")
+        }
+        if anchor.groupID == nil || wid.widgetMembers(of: anchor).count != 2 {
+            failures.append("widget: members are not grouped")
+        }
+        guard let widgetArt = wid.elements.first(where: { $0.id == pointer.id }) else {
+            failures.append("widget: lost the artwork element")
+            return failures
+        }
+        if widgetArt.role != .decoration || !wid.isWidgetArtwork(widgetArt) {
+            failures.append("widget: the non-anchor part should be artwork, not a component")
+        }
+
+        let wBounds = wid.widgetBounds(of: anchor)
+        if wBounds != CGRect(x: 100, y: 100, width: 40, height: 40) {
+            failures.append("widget: bounds should be the union of the parts, got \(wBounds)")
+        }
+
+        // Artwork belongs to the widget's own SVG, never to the panel.
+        let widPanel = SVGExporter.documentSVG(wid)
+        if widPanel.contains("#AA33BB") || widPanel.contains("#112244") {
+            failures.append("widget: parts were painted into the panel artwork")
+        }
+
+        // bg / fg split follows the per-part flag.
+        let bg = SVGExporter.componentSVG(anchor, in: wid, layer: .knobBackground)
+        let fg = SVGExporter.componentSVG(anchor, in: wid, layer: .knobForeground)
+        if !bg.contains("#112244") || bg.contains("#AA33BB") {
+            failures.append("widget: the background should hold the static part only")
+        }
+        if !fg.contains("#AA33BB") || fg.contains("#112244") {
+            failures.append("widget: the foreground should hold the turning part only")
+        }
+        if !bg.contains("viewBox=\"0 0 40.00 40.00\"") {
+            failures.append("widget: artwork should be sized to the widget's bounds")
+        }
+        let files = CodeGen.componentFiles(for: anchor, in: wid).map(\.name)
+        if files != ["lcars-knob-bg.svg", "lcars-knob-fg.svg"] {
+            failures.append("widget: expected a bg/fg pair, got \(files)")
+        }
+
+        // Generated code positions by the widget's bounds, not the anchor's.
+        wid.moduleSlug = "WidgetTest"
+        let widSrc = CodeGen.rackSource(wid)
+        if !widSrc.contains("struct LcarsKnob : app::SvgKnob {") {
+            failures.append("widget: a composed param with a turning part should subclass SvgKnob")
+        }
+        if !widSrc.contains("mm2px(Vec(40.640, 40.640))") {
+            failures.append("widget: position should be the centre of the union (40.640 mm)")
+        }
+
+        // A composed param with nothing turning is a switch, and says so.
+        var still = wid
+        for i in still.elements.indices { still.elements[i].rotatesWithValue = false }
+        if !CodeGen.warnings(still).contains(where: { $0.contains("generates as a switch") }) {
+            failures.append("widget: a composed param with no turning part should warn")
+        }
+
+        return failures
+    }
+
+    static func uniformChecks() -> [String] {
+        var failures: [String] = []
+
+        // A homogeneous multi-selection gets one stand-in element; a mixed one
+        // gets none, because the parameter rows would not mean the same thing
+        // for every element the sliders write to.
+        var uni = PanelDocument()
+        let e1 = ElementKind.elbow.defaultElement(at: CGPoint(x: 10, y: 10))
+        var e2 = ElementKind.elbow.defaultElement(at: CGPoint(x: 60, y: 10))
+        e2.params.thickness = 24            // deliberately different
+        e2.params.flipX = true
+        let e3 = ElementKind.box.defaultElement(at: CGPoint(x: 10, y: 80))
+        uni.elements = [e1, e2, e3]
+
+        let elbows: Set<UUID> = [e1.id, e2.id]
+        guard let stand = uni.uniformSelection(ids: elbows) else {
+            failures.append("uniform: two elbows should yield a stand-in element")
+            return failures
+        }
+        if stand.id != e1.id {
+            failures.append("uniform: the stand-in should be the first in document order")
+        }
+        if uni.uniformSelection(ids: [e1.id, e3.id]) != nil {
+            failures.append("uniform: an elbow and a box are not a homogeneous selection")
+        }
+        if uni.uniformSelection(ids: [e1.id]) != nil {
+            failures.append("uniform: a single element is the primary selection, not a stand-in")
+        }
+
+        if uni.selectionAgrees(\.params.thickness, ids: elbows) {
+            failures.append("uniform: thickness differs and should be reported as differing")
+        }
+        if !uni.selectionAgrees(\.params.armH, ids: elbows) {
+            failures.append("uniform: armH matches and should be reported as agreeing")
+        }
+        if !uni.selectionAgrees(\.params.thickness, ids: [e1.id]) {
+            failures.append("uniform: one element always agrees with itself")
+        }
+
+        // Symbols additionally have to be the *same* symbol: the rows are
+        // labelled from the spec, so a sine and an ADSR share no meaning.
+        var symA = ElementKind.symbol.defaultElement(at: .zero)
+        var symB = ElementKind.symbol.defaultElement(at: CGPoint(x: 40, y: 0))
+        symA.applySymbol("sine")
+        symB.applySymbol("adsr")
+        var symUni = PanelDocument()
+        symUni.elements = [symA, symB]
+        let symIDs: Set<UUID> = [symA.id, symB.id]
+        if symUni.uniformSelection(ids: symIDs) != nil {
+            failures.append("uniform: two different symbols are not a homogeneous selection")
+        }
+        symB.applySymbol("sine")
+        symUni.elements = [symA, symB]
+        if symUni.uniformSelection(ids: symIDs) == nil {
+            failures.append("uniform: two of the same symbol should yield a stand-in")
+        }
+
+        return failures
+    }
+
+    static func presetChecks() -> [String] {
+        var failures: [String] = []
+
+        // Palette presets: one element kind appearing as several entries.
+        var plainKnob = ElementKind.knobLarge.defaultElement(at: .zero)
+        if plainKnob.params.knobStyle != 0 {
+            failures.append("preset: a plain knob must stay what Rack draws")
+        }
+        plainKnob.applyPreset("ring")
+        if plainKnob.params.knobStyle != 2 {
+            failures.append("preset: the ring preset did not take")
+        }
+        plainKnob.applyPreset("plain")
+        if plainKnob.params.knobStyle != 0 {
+            failures.append("preset: the plain preset did not take")
+        }
+        var presetSymbol = ElementKind.symbol.defaultElement(at: .zero)
+        presetSymbol.applyPreset("adsr")
+        if presetSymbol.params.symbol != "adsr" || presetSymbol.params.symbolA != SymbolCatalogue.spec("adsr").defaults[0] {
+            failures.append("preset: a symbol id should route through applySymbol with its defaults")
+        }
+        var unaffected = ElementKind.box.defaultElement(at: .zero)
+        let before = unaffected.params
+        unaffected.applyPreset("ring")
+        if unaffected.params != before {
+            failures.append("preset: an unknown preset must leave the element alone")
+        }
+
+        return failures
+    }
+
+    static func colourChecks() -> [String] {
+        var failures: [String] = []
+
         // Colour grouping: distinct colours, most-used first, and recolouring
         // touches only the elements that carried that colour.
         var pal = PanelDocument()
@@ -309,6 +604,12 @@ enum Selftest {
             failures.append("colours: a fill recolour must not disturb strokes")
         }
 
+        return failures
+    }
+
+    static func alignChecks() -> [String] {
+        var failures: [String] = []
+
         // Align must use the selection's own bounds unless the panel is asked
         // for. Y grows downward, so "top" is the smallest y among the selected.
         var al = PanelDocument()
@@ -338,6 +639,12 @@ enum Selftest {
             failures.append("align: a single element has no selection bounds to align to; it must not move")
         }
 
+        return failures
+    }
+
+    static func bulkBindChecks() -> [String] {
+        var failures: [String] = []
+
         // Bulk binding: a primitive takes the role its kind implies, artwork
         // stays artwork, and a role set by hand is never overwritten.
         var bulk = PanelDocument()
@@ -360,14 +667,160 @@ enum Selftest {
         if bulk.elements[2].role != .output { failures.append("bind: a hand-set role was overwritten") }
         if bulk.bindPrimitives() != 0 { failures.append("bind: a second pass should be a no-op") }
 
+        return failures
+    }
+
+    // MARK: - Label checks
+
+    static func labelChecks() -> [String] {
+        var failures: [String] = []
+
+        var doc = PanelDocument()
+        var named = ElementKind.jack.defaultElement(at: CGPoint(x: 40, y: 100))
+        named.enumName = "CV_IN"
+        let unnamed = ElementKind.jack.defaultElement(at: CGPoint(x: 80, y: 100))
+        var existing = ElementKind.text.defaultElement(at: CGPoint(x: 0, y: 300))
+        existing.params.text = "KEEP ME"
+        doc.elements = [named, unnamed, existing]
+        let ids: Set<UUID> = [named.id, unnamed.id, existing.id]
+
+        // One label for the one named component. The unnamed jack is reported,
+        // not labelled "Jack (3.5 mm)"; the text element in the selection is
+        // not labelled at all.
+        let first = doc.labelSelection(ids: ids, placement: .below, gap: 4, fontSize: 7,
+                                       bold: true, uppercase: true, spaceUnderscores: true,
+                                       colour: .hex("#E8E8F0"))
+        if first.created != 1 { failures.append("label: expected 1 label, got \(first.created)") }
+        if first.skipped != 1 { failures.append("label: the unnamed jack should be reported as skipped") }
+
+        guard let made = doc.elements.first(where: { $0.labelOwner == named.id }) else {
+            return failures + ["label: no label was attached to the named jack"]
+        }
+        if made.params.text != "CV IN" {
+            failures.append("label: underscores should read as spaces, got \(made.params.text)")
+        }
+        if abs(made.center.x - named.center.x) > 0.01 {
+            failures.append("label: a below label should be centred on its component")
+        }
+        if made.y < named.frame.maxY {
+            failures.append("label: a below label should sit under its component")
+        }
+        if made.role != .decoration {
+            failures.append("label: a label is artwork, never a component")
+        }
+        if doc.elements.contains(where: { $0.labelOwner == existing.id }) {
+            failures.append("label: a text element in the selection should not be labelled")
+        }
+
+        // Re-running replaces rather than stacking. Getting the size wrong the
+        // first time is the normal case, so this is the path that matters.
+        let second = doc.labelSelection(ids: ids, placement: .above, gap: 6, fontSize: 9,
+                                        bold: true, uppercase: true, spaceUnderscores: true,
+                                        colour: .hex("#E8E8F0"))
+        let labels = doc.elements.filter { $0.labelOwner != nil }
+        if second.created != 1 || labels.count != 1 {
+            failures.append("label: re-labelling should replace, found \(labels.count) labels")
+        }
+        if let above = labels.first, above.frame.maxY > named.y {
+            failures.append("label: an above label should sit over its component")
+        }
+        if !doc.elements.contains(where: { $0.params.text == "KEEP ME" }) {
+            failures.append("label: re-labelling removed a hand-made text element")
+        }
+
+        // A composed widget is labelled once, under the whole artwork — not
+        // once per part, and not against the anchor's own frame.
+        var wdoc = PanelDocument()
+        let knob = ElementKind.knobLarge.defaultElement(at: CGPoint(x: 100, y: 100))
+        var ring = ElementKind.ringSector.defaultElement(at: CGPoint(x: 88, y: 88))
+        ring.w = 54; ring.h = 54
+        wdoc.elements = [knob, ring]
+        let wids: Set<UUID> = [knob.id, ring.id]
+        if !wdoc.makeWidget(ids: wids, name: "LcarsKnob", role: .param) {
+            failures.append("label: makeWidget fixture failed")
+        }
+        let anchor = wdoc.elements.first { $0.widgetSource == .custom }
+        let wResult = wdoc.labelSelection(ids: wids, placement: .below, gap: 4, fontSize: 7,
+                                          bold: true, uppercase: true, spaceUnderscores: true,
+                                          colour: .hex("#E8E8F0"))
+        if wResult.created != 1 {
+            failures.append("label: a composed widget should take one label, got \(wResult.created)")
+        }
+        if let anchor, let wLabel = wdoc.elements.first(where: { $0.labelOwner == anchor.id }) {
+            let bounds = wdoc.widgetBounds(of: anchor)
+            if wLabel.y < bounds.maxY {
+                failures.append("label: a widget's label should clear the whole artwork, not just the anchor")
+            }
+            if abs(wLabel.center.x - bounds.midX) > 0.01 {
+                failures.append("label: a widget's label should be centred on the artwork")
+            }
+        } else {
+            failures.append("label: the widget's label is not attached to its anchor")
+        }
+
+        // The frame is measured from the glyph run: a long label must not come
+        // back the same width as a short one.
+        var short = ElementKind.text.defaultElement(at: .zero)
+        short.params.text = "IN"
+        var long = short
+        long.params.text = "CUTOFF FREQUENCY"
+        if Renderer.textSize(for: long).width <= Renderer.textSize(for: short).width {
+            failures.append("label: text size is not measured from the glyph run")
+        }
+
+        return failures
+    }
+
+    static func codegenChecks() -> [String] {
+        var failures: [String] = []
+
         // Generated C++ must namespace the enum to the module, position by
         // centre, and convert px to the millimetres mm2px() expects.
+        var rig = componentRig()
         rig.moduleSlug = "TestModule"
         let src = CodeGen.rackSource(rig)
         if !src.contains("enum ParamId {") { failures.append("codegen: no ParamId enum") }
         if !src.contains("CUTOFF_PARAM,") { failures.append("codegen: CUTOFF_PARAM missing from the enum") }
         if !src.contains("TestModule::CUTOFF_PARAM") { failures.append("codegen: enum not namespaced to the module") }
         if !src.contains("res/TestModule.svg") { failures.append("codegen: setPanel path wrong") }
+        // The regenerable header: same positions as the flat form, wrapped so a
+        // module source can include it without ever being rewritten.
+        let header = CodeGen.panelHeader(rig)
+        if !header.contains("#pragma once") || !header.contains("namespace TestModulePanel {") {
+            failures.append("header: missing include guard or namespace")
+        }
+        if !header.contains("inline void addComponents(ModuleWidget* widget, Module* module) {") {
+            failures.append("header: missing addComponents entry point")
+        }
+        if !header.contains("widget->addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(15.240, 38.947))") {
+            failures.append("header: component lines should be addressed to the widget, at the same position as the flat form")
+        }
+        if header.contains("\ncreateModel<") {
+            failures.append("header: registration belongs in the module source, not the generated header")
+        }
+
+        // Rack's slug rule, checked here rather than at Rack's load time.
+        if CodeGen.isValidSlug("Muse ND") || CodeGen.isValidSlug("") || CodeGen.isValidSlug("a/b") {
+            failures.append("slug: spaces, slashes and empties are not valid Rack slugs")
+        }
+        if !CodeGen.isValidSlug("Muse-ND") || !CodeGen.isValidSlug("Muse_ND2") {
+            failures.append("slug: letters, digits, - and _ are valid")
+        }
+        if CodeGen.slugSuggestion("Muse ND") != "Muse-ND" {
+            failures.append("slug: suggestion for \"Muse ND\" should be \"Muse-ND\", got \(CodeGen.slugSuggestion("Muse ND"))")
+        }
+        var badSlug = componentRig()
+        badSlug.moduleSlug = "Muse ND"
+        if !CodeGen.warnings(badSlug).contains(where: { $0.contains("not a valid Rack slug") }) {
+            failures.append("slug: an invalid module slug should warn")
+        }
+
+        if !src.contains("createModel<TestModule, TestModuleWidget>(\"TestModule\")") {
+            failures.append("codegen: missing the createModel registration line")
+        }
+        if !src.contains("\"slug\": \"TestModule\"") {
+            failures.append("codegen: missing the plugin.json module entry")
+        }
         if !src.contains("addParam(createParamCentered<RoundLargeBlackKnob>(") {
             failures.append("codegen: param line missing, or not the Centered form")
         }

@@ -19,7 +19,11 @@ enum SVGExporter {
         // Components are drawn by Rack / MetaModule on top of the panel.
         // Painting them into the artwork too would show them through from
         // underneath, so only decoration reaches the exported SVG.
-        for el in doc.elements where el.isHidden != true && !el.role.isComponent {
+        // Widget artwork belongs to its widget's own SVG, not to the panel —
+        // Rack composites the widget on top, so drawing it here too would show
+        // it through from underneath.
+        for el in doc.elements
+        where el.isHidden != true && !el.role.isComponent && !doc.isWidgetArtwork(el) {
             s += elementSVG(el, textAsPaths: doc.textAsPaths)
             s += "\n"
         }
@@ -140,8 +144,16 @@ enum SVGExporter {
             guard let fill = el.role.helperFill else { continue }
             let c = el.center
             let r = max(min(el.w, el.h) / 2, 1)
+            // helper.py pastes this class name straight into the generated
+            // source, so it has to be the name as C++ will see it. Without the
+            // namespace the direct emission says lcarsui::LcarsKnob and the
+            // helper.py route says LcarsKnob, and only one of them compiles.
+            var widgetClass = el.widgetClass
+            if el.widgetSource == .custom, !widgetClass.isEmpty {
+                widgetClass = CodeGen.namespacePrefix(doc) + widgetClass
+            }
             var dataName = ids[el.id] ?? el.identifierStem
-            if !el.widgetClass.isEmpty { dataName += "#" + el.widgetClass }
+            if !widgetClass.isEmpty { dataName += "#" + widgetClass }
             s += "<circle cx=\"\(Geo.fmt(c.x))\" cy=\"\(Geo.fmt(c.y))\" r=\"\(Geo.fmt(r))\""
             s += " fill=\"\(fill)\" data-name=\"\(escape(dataName))\"/>\n"
         }
@@ -163,6 +175,41 @@ enum SVGExporter {
     /// its origin at (0,0). This is what a custom widget's `setSvg()` loads —
     /// and since Rack takes the widget's box size from the file, the element's
     /// size here *is* the control's size in Rack.
+    /// A composed widget's artwork: every member of the group, moved so the
+    /// widget's own bounds start at the origin, split by which parts turn.
+    static func componentSVG(_ anchor: PanelElement,
+                             in doc: PanelDocument,
+                             layer: ComponentLayer = .whole,
+                             units: SVGUnits = .millimetres) -> String {
+        let members = doc.widgetMembers(of: anchor)
+        guard members.count > 1 else {
+            return componentSVG(anchor, layer: layer, units: units)
+        }
+        let bounds = doc.widgetBounds(of: anchor)
+
+        var parts: [ShapePart] = []
+        for member in members where member.isHidden != true {
+            switch layer {
+            case .knobBackground where member.rotatesWithValue: continue
+            case .knobForeground where !member.rotatesWithValue: continue
+            default: break
+            }
+            var local = member
+            local.x -= bounds.minX
+            local.y -= bounds.minY
+            if member.kind.isKnob { local.params.pointerAngle = 0 }
+            parts += Renderer.parts(for: local)
+        }
+
+        let title = anchor.customWidgetName.isEmpty ? anchor.identifierStem : anchor.customWidgetName
+        var s = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+        s += "<!-- PanelGenerator widget \"\(escape(title))\", \(members.count) parts -->\n"
+        s += svgOpenTag(width: max(bounds.width, 1), height: max(bounds.height, 1), units: units) + "\n"
+        s += partsBody(parts)
+        s += "\n</svg>\n"
+        return s
+    }
+
     static func componentSVG(_ el: PanelElement,
                              layer: ComponentLayer = .whole,
                              units: SVGUnits = .millimetres) -> String {

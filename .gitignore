@@ -5,3 +5,7 @@ DerivedData/
 PanelGenerator.app/
 *.xcodeproj
 xcuserdata/
+build/
+.fuse_hidden*
+_to_delete/
+Panels/*.svg

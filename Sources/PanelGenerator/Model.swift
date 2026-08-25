@@ -137,6 +137,20 @@ enum ComponentRole: String, Codable, CaseIterable {
     }
 
     var isComponent: Bool { self != .decoration }
+
+    /// One-letter badge for the layer list. The colours are helper.py's own
+    /// classification colours, so what you see in the list is what lands in the
+    /// components layer.
+    var badge: String {
+        switch self {
+        case .decoration: return ""
+        case .param:      return "P"
+        case .input:      return "I"
+        case .output:     return "O"
+        case .light:      return "L"
+        case .custom:     return "C"
+        }
+    }
 }
 
 /// Where a component's artwork comes from.
@@ -151,6 +165,14 @@ enum WidgetSource: String, Codable, CaseIterable {
     case custom
 
     var displayName: String { self == .stock ? "Rack default" : "Custom (own art)" }
+}
+
+// MARK: - Label placement
+
+/// Where "Label Selection…" puts a generated label relative to its component.
+enum LabelPlacement: String, Codable, CaseIterable {
+    case above, below, left, right
+    var displayName: String { rawValue.capitalized }
 }
 
 // MARK: - Element kinds
@@ -271,11 +293,11 @@ enum ElementKind: String, Codable, CaseIterable {
         case .jack:
             e.w = 22; e.h = 22; e.fill = .hex("#9AA0AB")
         case .knobLarge:
-            e.w = 30; e.h = 30; e.fill = .hex("#FF9C00"); e.params.knobStyle = 2
+            e.w = 30; e.h = 30; e.fill = .hex("#FF9C00")
         case .knobMedium:
-            e.w = 25; e.h = 25; e.fill = .hex("#FF9C00"); e.params.knobStyle = 2
+            e.w = 25; e.h = 25; e.fill = .hex("#FF9C00")
         case .knobSmall:
-            e.w = 19; e.h = 19; e.fill = .hex("#99CCFF"); e.params.knobStyle = 2
+            e.w = 19; e.h = 19; e.fill = .hex("#99CCFF")
         case .faderVertical:
             e.w = 17; e.h = 64; e.fill = .hex("#CC99CC")
         case .faderHorizontal:
@@ -340,9 +362,9 @@ struct ElementParams: Codable, Hashable {
     var sweepAngle: CGFloat = 100
     // Knobs
     var pointerAngle: CGFloat = 45       // degrees, 0 = pointing up
-    /// 0 pointer only, 1 position ring only, 2 both. Defaults to 0 so panels
-    /// drawn before the ring existed keep the look they were designed with;
-    /// newly dropped knobs ask for 2.
+    /// 0 pointer only, 1 position ring only, 2 both. A plain knob is what Rack
+    /// draws, so it stays the default and the ring is a separate palette entry
+    /// rather than a changed meaning for an existing one.
     var knobStyle: CGFloat = 0
     /// Total sweep of the open ring, degrees. 298.8 is Rack's own ±0.83·π.
     var arcSpan: CGFloat = 298.8
@@ -395,6 +417,15 @@ struct PanelElement: Codable, Hashable, Identifiable {
     var stockWidget: String = ""
     /// Struct name to generate when `widgetSource == .custom`, e.g. LcarsKnob.
     var customWidgetName: String = ""
+    /// For a composed widget: this part turns with the parameter, so it lands
+    /// in the `-fg` file that Rack rotates. Everything else is background.
+    /// Only knobs rotate; for other widget types the split is not used yet.
+    var rotatesWithValue: Bool = false
+    /// Set on a text element made by "Label Selection…": the component it
+    /// annotates. Re-running the command replaces its own labels rather than
+    /// stacking a second copy on the first — invisible on canvas, doubled in
+    /// the export.
+    var labelOwner: UUID? = nil
 
     var frame: CGRect {
         get { CGRect(x: x, y: y, width: w, height: h) }
@@ -429,6 +460,25 @@ struct PanelElement: Codable, Hashable, Identifiable {
         s = s.trimmingCharacters(in: CharacterSet(charactersIn: "_"))
         if let first = s.first, first.isNumber { s = "_" + s }
         return s.isEmpty ? "UNNAMED" : s
+    }
+
+    /// Apply a palette preset. The palette carries these as a suffix on the
+    /// pasteboard (`kind#preset`), which is how one element kind appears as
+    /// several entries without multiplying ElementKind — and the same hook the
+    /// symbol grid already used.
+    mutating func applyPreset(_ id: String) {
+        switch kind {
+        case .symbol:
+            applySymbol(id)
+        case .knobLarge, .knobMedium, .knobSmall:
+            switch id {
+            case "ring":  params.knobStyle = 2
+            case "plain": params.knobStyle = 0
+            default: break
+            }
+        default:
+            break
+        }
     }
 
     /// Switch this element to a symbol, taking that symbol's own defaults for
@@ -481,10 +531,122 @@ struct PanelDocument: Codable, Hashable {
     /// reading order so generated code and enums keep a sensible sequence.
     var components: [PanelElement] {
         elements
-            .filter { $0.role.isComponent && $0.isHidden != true }
-            .sorted { a, b in
-                a.center.y == b.center.y ? a.center.x < b.center.x : a.center.y < b.center.y
+            .filter { $0.role.isComponent && $0.isHidden != true && !isWidgetArtwork($0) }
+            .sorted(by: PanelDocument.readingOrder)
+    }
+
+    /// Top row first, left to right within a row.
+    ///
+    /// The row tolerance matters: a row of jacks aligned by eye is not aligned
+    /// to the micron, and exact equality on y would order a row by that noise
+    /// instead of by position — scrambling the generated enum.
+    static func readingOrder(_ a: PanelElement, _ b: PanelElement) -> Bool {
+        let rowHeight: CGFloat = 8
+        let rowA = (a.center.y / rowHeight).rounded()
+        let rowB = (b.center.y / rowHeight).rounded()
+        return rowA == rowB ? a.center.x < b.center.x : rowA < rowB
+    }
+
+    /// Number these elements from one prefix, in reading order. Naming fifteen
+    /// jacks one at a time is the tedium this removes; the identifiers are what
+    /// make the generated enum readable as IN_1 rather than JACK_3_5_MM_7.
+    mutating func nameSequentially(ids: Set<UUID>, prefix: String) {
+        let trimmed = prefix.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return }
+        let ordered = elements.filter { ids.contains($0.id) }.sorted(by: PanelDocument.readingOrder)
+        for (index, element) in ordered.enumerated() {
+            guard let i = elements.firstIndex(where: { $0.id == element.id }) else { continue }
+            elements[i].enumName = ordered.count == 1 ? trimmed : "\(trimmed)_\(index + 1)"
+        }
+    }
+
+    /// The text a generated label should carry: the identifier you gave the
+    /// element, not the kind it happens to be. An element still holding its
+    /// default layer name gets no label — twenty jacks all reading
+    /// "Jack (3.5 mm)" is worse than none, and the fix is to name them first.
+    func labelText(for el: PanelElement, uppercase: Bool, spaceUnderscores: Bool) -> String? {
+        var raw = el.enumName.trimmingCharacters(in: .whitespaces)
+        if raw.isEmpty && el.name != el.kind.displayName {
+            raw = el.name.trimmingCharacters(in: .whitespaces)
+        }
+        guard !raw.isEmpty else { return nil }
+        // Underscores are an identifier artefact: CUTOFF_FREQ is how the enum
+        // must read, "CUTOFF FREQ" is how the panel must read.
+        if spaceUnderscores { raw = raw.replacingOccurrences(of: "_", with: " ") }
+        return uppercase ? raw.uppercased() : raw
+    }
+
+    /// Give every selected component a text label carrying its name, in one
+    /// action. Returns how many were made and how many selected elements had
+    /// nothing to say, so the caller can tell you to name those first rather
+    /// than leaving you to count labels.
+    ///
+    /// Labels are positioned against `widgetBounds`, not the element's own
+    /// frame: for a composed widget that is the whole artwork, so a label sits
+    /// under the knob rather than under whichever part happens to be the anchor.
+    @discardableResult
+    mutating func labelSelection(ids: Set<UUID>,
+                                 placement: LabelPlacement,
+                                 gap: CGFloat,
+                                 fontSize: CGFloat,
+                                 bold: Bool,
+                                 uppercase: Bool,
+                                 spaceUnderscores: Bool,
+                                 colour: ColorSpec) -> (created: Int, skipped: Int) {
+        // Read the document through a snapshot: the geometry a label is placed
+        // against must be the panel as it stands, not as it is part-way through
+        // having last run's labels removed from it.
+        let doc = self
+        let targets = elements
+            .filter { ids.contains($0.id) && $0.kind != .text && !doc.isWidgetArtwork($0) }
+            .sorted(by: PanelDocument.readingOrder)
+        guard !targets.isEmpty else { return (0, 0) }
+
+        // Re-labelling replaces. Without this, changing the size and running
+        // again leaves the old labels underneath the new ones.
+        let owned = Set(targets.map(\.id))
+        elements.removeAll { $0.kind == .text && ($0.labelOwner.map(owned.contains) ?? false) }
+
+        var created = 0
+        var skipped = 0
+        for target in targets {
+            guard let text = doc.labelText(for: target, uppercase: uppercase,
+                                       spaceUnderscores: spaceUnderscores) else {
+                skipped += 1
+                continue
             }
+            var label = ElementKind.text.defaultElement(at: .zero)
+            label.params.text = text
+            label.params.fontSize = max(4, fontSize)
+            label.params.bold = bold
+            label.fill = colour
+            label.name = "Label · \(text)"
+            label.labelOwner = target.id
+            label.role = .decoration
+
+            let size = Renderer.textSize(for: label)
+            label.w = max(size.width, 4)
+            label.h = max(size.height, 4)
+
+            let box = doc.widgetBounds(of: target)
+            switch placement {
+            case .above:
+                label.x = box.midX - label.w / 2
+                label.y = box.minY - gap - label.h
+            case .below:
+                label.x = box.midX - label.w / 2
+                label.y = box.maxY + gap
+            case .left:
+                label.x = box.minX - gap - label.w
+                label.y = box.midY - label.h / 2
+            case .right:
+                label.x = box.maxX + gap
+                label.y = box.midY - label.h / 2
+            }
+            elements.append(label)
+            created += 1
+        }
+        return (created, skipped)
     }
 
     var pixelSize: CGSize { PanelMetrics.size(hp: widthHP, format: format) }
@@ -498,6 +660,112 @@ struct PanelDocument: Codable, Hashable {
     /// hatch. Only elements still sitting at `.decoration` whose kind actually
     /// implies a component are touched, so a role set by hand is never
     /// overwritten, and shapes, text and screws stay as artwork.
+    // MARK: - Composed widgets
+    //
+    // A widget is a group with a name. One member is the anchor — it carries
+    // the role and the struct name, exactly as a single custom component does —
+    // and the rest are its artwork. Reusing groups rather than inventing a
+    // second kind of container means Group/Ungroup, move, align and the layer
+    // list all keep working on a widget without knowing it is one.
+
+    /// Members of the composed widget anchored on `anchor`, in draw order.
+    /// A custom component that is not grouped is a widget of one.
+    func widgetMembers(of anchor: PanelElement) -> [PanelElement] {
+        // Only a promoted widget unions its group. A group is also just a
+        // selection convenience — rows of controls grouped so they move
+        // together — and treating those as widgets collapsed every component in
+        // a row onto the group's centre. The custom anchor is the marker that
+        // says "this group is one control".
+        guard anchor.widgetSource == .custom, !anchor.customWidgetName.isEmpty,
+              let group = anchor.groupID else { return [anchor] }
+        return elements.filter { $0.groupID == group }
+    }
+
+    /// The widget's own frame: the union of its members. This is what the
+    /// generated code positions by and what the artwork is sized to — not the
+    /// anchor's frame, which is just one piece of the drawing.
+    func widgetBounds(of anchor: PanelElement) -> CGRect {
+        let members = widgetMembers(of: anchor)
+        guard let first = members.first else { return anchor.frame }
+        return members.dropFirst().reduce(first.frame) { $0.union($1.frame) }
+    }
+
+    /// Centre in millimetres of the thing Rack positions: the widget's bounds
+    /// for a composed widget, the element itself otherwise.
+    func componentCentreMM(_ el: PanelElement) -> CGPoint {
+        let bounds = widgetBounds(of: el)
+        return CGPoint(x: PanelMetrics.mm(bounds.midX), y: PanelMetrics.mm(bounds.midY))
+    }
+
+    /// True when this element is artwork belonging to someone else's widget,
+    /// and so must not be drawn into the panel or treated as a component.
+    func isWidgetArtwork(_ el: PanelElement) -> Bool {
+        guard let group = el.groupID, !el.role.isComponent else { return false }
+        return elements.contains {
+            $0.groupID == group && $0.role.isComponent && $0.widgetSource == .custom
+        }
+    }
+
+    /// Promote a selection to a composed widget: one group, one anchor holding
+    /// the name and role, the rest its artwork. The anchor is the member
+    /// nearest the centre of the whole, which for a knob is the piece you would
+    /// expect the control to be positioned by.
+    @discardableResult
+    mutating func makeWidget(ids: Set<UUID>, name: String, role: ComponentRole) -> Bool {
+        let members = elements.filter { ids.contains($0.id) }
+        guard members.count >= 1, !name.isEmpty else { return false }
+
+        var bounds = members[0].frame
+        for m in members.dropFirst() { bounds = bounds.union(m.frame) }
+        let middle = CGPoint(x: bounds.midX, y: bounds.midY)
+        let anchorID = members.min {
+            hypot($0.center.x - middle.x, $0.center.y - middle.y)
+                < hypot($1.center.x - middle.x, $1.center.y - middle.y)
+        }?.id
+
+        let group = members.compactMap(\.groupID).first ?? UUID()
+        for i in elements.indices where ids.contains(elements[i].id) {
+            elements[i].groupID = group
+            if elements[i].id == anchorID {
+                elements[i].role = role
+                elements[i].widgetSource = .custom
+                elements[i].customWidgetName = name
+                if elements[i].enumName.isEmpty { elements[i].enumName = name }
+            } else {
+                // Artwork, not a component in its own right.
+                elements[i].role = .decoration
+                elements[i].widgetSource = .stock
+                elements[i].customWidgetName = ""
+            }
+        }
+        return true
+    }
+
+    /// The element whose values stand in for a homogeneous multi-selection.
+    ///
+    /// nil unless every selected element is the same kind — and, for symbols,
+    /// the same symbol — because otherwise the inspector's rows would not mean
+    /// the same thing for every element it is about to write to. Returns in
+    /// document order, so the stand-in does not change between rebuilds.
+    func uniformSelection(ids: Set<UUID>) -> PanelElement? {
+        let selected = elements.filter { ids.contains($0.id) }
+        guard selected.count > 1, let first = selected.first else { return nil }
+        guard selected.allSatisfy({ $0.kind == first.kind }) else { return nil }
+        if first.kind == .symbol {
+            guard selected.allSatisfy({ $0.params.symbol == first.params.symbol }) else { return nil }
+        }
+        return first
+    }
+
+    /// Whether every selected element already agrees on a value. The inspector
+    /// marks the ones that do not, so a slider showing a single number never
+    /// implies the rest match it.
+    func selectionAgrees<T: Equatable>(_ keyPath: KeyPath<PanelElement, T>, ids: Set<UUID>) -> Bool {
+        let selected = elements.filter { ids.contains($0.id) }
+        guard let first = selected.first else { return true }
+        return selected.allSatisfy { $0[keyPath: keyPath] == first[keyPath: keyPath] }
+    }
+
     /// Distinct colours across `ids`, most-used first, each with the elements
     /// carrying it.
     ///
@@ -700,6 +968,8 @@ extension PanelElement {
         widgetSource     = try c.decodeOr(.widgetSource, widgetSource)
         stockWidget      = try c.decodeOr(.stockWidget, stockWidget)
         customWidgetName = try c.decodeOr(.customWidgetName, customWidgetName)
+        rotatesWithValue = try c.decodeOr(.rotatesWithValue, rotatesWithValue)
+        labelOwner       = try c.decodeIfPresent(UUID.self, forKey: .labelOwner)
     }
 }
 

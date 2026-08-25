@@ -18,6 +18,16 @@ final class InspectorView: NSView {
     /// "sel" or "panel". Lives on the view, not the document: it is how you are
     /// working right now, not a property of the panel. Survives rebuilds.
     private var alignTarget: String = "sel"
+    /// "Label Selection…" settings, remembered between runs: labelling a panel
+    /// is a dozen passes over different groups of controls, and retyping the
+    /// size and gap each time is the tedium the command exists to remove.
+    private var labelPlacement: LabelPlacement = .below
+    private var labelGap: CGFloat = 4
+    private var labelSize: CGFloat = 7
+    private var labelBold = true
+    private var labelUppercase = true
+    private var labelSpaces = true
+    private var labelColour: ColorSpec? = nil
     private var handlers: [(NSControl) -> Void] = []
 
     private var contentW: CGFloat { max(bounds.width - pad * 2 - 14, 120) }
@@ -34,6 +44,12 @@ final class InspectorView: NSView {
             buildElementSection(for: p)
             buildParamsSection(for: p)
             buildComponentSection(for: p)
+        } else if let representative = cv.uniformSelection {
+            // Several elements of one kind: the same parameter rows, writing to
+            // all of them. Mirrored elbows and matched ring sectors are the
+            // reason this exists — keeping them identical by hand is the tedium.
+            buildSharedSection(for: representative, count: cv.selection.count)
+            buildParamsSection(for: representative)
         }
         if !cv.selection.isEmpty {
             buildLayerSection()
@@ -55,6 +71,14 @@ final class InspectorView: NSView {
         l.frame = CGRect(x: pad, y: cursorY, width: contentW, height: 15)
         addSubview(l)
         cursorY += 21
+    }
+
+    /// A label that marks a value the selection disagrees on. A slider can
+    /// only show one number; without the mark it would silently claim that
+    /// number is everyone's.
+    private func plabel<T: Equatable>(_ text: String, _ keyPath: KeyPath<PanelElement, T>) {
+        let agrees = canvas?.selectionAgrees(keyPath) ?? true
+        label(agrees ? text : text + " ≠")
     }
 
     @discardableResult
@@ -195,10 +219,27 @@ final class InspectorView: NSView {
 
         label("Plugin slug")
         let pslug = makeField(value: document.pluginSlug, placeholder: "MyPlugin")
+        pslug.toolTip = "The plugin that will contain this module — its directory name and "
+            + "the top-level \"slug\" in plugin.json. Not the brand: brand is a separate "
+            + "display field. One plugin holds many modules."
+        
         addControl(pslug)
         handlers.append { [weak self] sender in
             guard let self, let f = sender as? NSTextField else { return }
             self.canvas?.mutateDocument(name: "Plugin Slug") { $0.pluginSlug = f.stringValue }
+        }
+
+        for (title, slug) in [("Plugin", document.pluginSlug), ("Module", document.moduleSlug)]
+        where !CodeGen.isValidSlug(slug) {
+            let note = NSTextField(labelWithString:
+                "⚠ \(title) slug: letters, digits, - and _ only. Try “\(CodeGen.slugSuggestion(slug))”.")
+            note.font = NSFont.systemFont(ofSize: 10)
+            note.textColor = ColorSpec.hex("#DD8844").nsColor
+            note.lineBreakMode = .byWordWrapping
+            note.maximumNumberOfLines = 2
+            note.frame = CGRect(x: pad, y: cursorY, width: contentW, height: 26)
+            addSubview(note)
+            cursorY += 30
         }
 
         label("Module slug")
@@ -209,6 +250,7 @@ final class InspectorView: NSView {
         handlers.append { [weak self] sender in
             guard let self, let f = sender as? NSTextField else { return }
             self.canvas?.mutateDocument(name: "Module Slug") { $0.moduleSlug = f.stringValue }
+            self.scheduleRebuild()   // so the validity note appears or clears
         }
 
         label("Widget ns")
@@ -374,6 +416,88 @@ final class InspectorView: NSView {
         cursorY += CGFloat(rows) * (cell + spacing) + gap
     }
 
+    /// The properties worth writing to a whole selection at once: size,
+    /// rotation, colour. Position deliberately not — setting X across a
+    /// selection stacks it into a column, and Align already does the useful
+    /// version of that.
+    private func buildSharedSection(for el: PanelElement, count: Int) {
+        section("\(count) × \(el.kind.displayName)")
+        let weakCanvas = canvas
+
+        for (title, keyPath) in [("W", \PanelElement.w), ("H", \PanelElement.h)] {
+            plabel(title, keyPath)
+            let field = makeField(value: Geo.fmt(el[keyPath: keyPath]))
+            addControl(field)
+            handlers.append { sender in
+                guard let f = sender as? NSTextField,
+                      let v = Double(f.stringValue.replacingOccurrences(of: ",", with: ".")) else { return }
+                weakCanvas?.mutateSelection("Size") { $0[keyPath: keyPath] = CGFloat(v) }
+            }
+        }
+
+        plabel("Rotation", \.rotation)
+        let rot = makeSlider(min: -180, max: 180, value: Double(el.rotation))
+        addControl(rot)
+        handlers.append { sender in
+            guard let s = sender as? NSSlider else { return }
+            var v = CGFloat(s.doubleValue)
+            if abs(v) < 0.5 { v = 0 }
+            weakCanvas?.mutateSelection("Rotate") { $0.rotation = v }
+        }
+
+        plabel("Fill", \.fill)
+        let well = makeColorWell(el.fill)
+        addControl(well, width: 70)
+        handlers.append { sender in
+            guard let cw = sender as? NSColorWell else { return }
+            weakCanvas?.mutateSelection("Fill") { $0.fill = ColorSpec(color: cw.color) }
+        }
+        addSwatchBank(current: el.fill)
+
+        // Role and naming for the whole selection. These used to appear only
+        // for a single element, which meant turning six jacks into outputs was
+        // six separate trips through the inspector.
+        section("Components — \(count) selected")
+
+        plabel("Role", \.role)
+        let roles = NSPopUpButton(frame: .zero, pullsDown: false)
+        roles.addItems(withTitles: ComponentRole.allCases.map(\.displayName))
+        roles.selectItem(at: ComponentRole.allCases.firstIndex(of: el.role) ?? 0)
+        roles.font = NSFont.systemFont(ofSize: 11)
+        addControl(roles, width: 170)
+        handlers.append { sender in
+            guard let p = sender as? NSPopUpButton else { return }
+            let picked = ComponentRole.allCases[max(0, min(ComponentRole.allCases.count - 1, p.indexOfSelectedItem))]
+            weakCanvas?.mutateSelection("Component Role") { $0.role = picked }
+        }
+
+        label("Name prefix")
+        let prefix = makeField(value: "", placeholder: "IN → IN_1, IN_2 …")
+        prefix.toolTip = "Numbers the selection in reading order — top row first, left to "
+            + "right. Identifiers are what make the generated enum readable as IN_3 rather "
+            + "than JACK_3_5_MM_7."
+        addControl(prefix)
+        handlers.append { [weak self] sender in
+            guard let f = sender as? NSTextField, !f.stringValue.isEmpty else { return }
+            weakCanvas?.nameSelectionSequentially(prefix: f.stringValue)
+            self?.scheduleRebuild()
+        }
+
+        if !el.kind.stockWidgetChoices.isEmpty {
+            plabel("Rack type", \.stockWidget)
+            let combo = NSComboBox(frame: .zero)
+            combo.font = NSFont.systemFont(ofSize: 11)
+            combo.addItems(withObjectValues: el.kind.stockWidgetChoices)
+            combo.stringValue = el.stockWidget
+            combo.completes = true
+            addControl(combo)
+            handlers.append { sender in
+                guard let cb = sender as? NSComboBox else { return }
+                weakCanvas?.mutateSelection("Rack Widget") { $0.stockWidget = cb.stringValue }
+            }
+        }
+    }
+
     private func buildParamsSection(for el: PanelElement) {
         switch el.kind.category {
         case .primitive:
@@ -381,7 +505,7 @@ final class InspectorView: NSView {
                 section("Knob")
                 let weakCanvas = canvas
 
-                label("Pointer °")
+                plabel("Pointer °", \.params.pointerAngle)
                 let s = makeSlider(min: 0, max: 360, value: Double(el.params.pointerAngle))
                 addControl(s)
                 handlers.append { sender in
@@ -389,7 +513,7 @@ final class InspectorView: NSView {
                     weakCanvas?.mutateSelection("Pointer Angle") { $0.params.pointerAngle = CGFloat(sl.doubleValue) }
                 }
 
-                label("Indicator")
+                plabel("Indicator", \.params.knobStyle)
                 let style = NSPopUpButton(frame: .zero, pullsDown: false)
                 style.addItems(withTitles: ["Pointer", "Position ring", "Ring + pointer"])
                 style.selectItem(at: max(0, min(2, Int(el.params.knobStyle.rounded()))))
@@ -401,7 +525,7 @@ final class InspectorView: NSView {
                     weakCanvas?.mutateSelection("Knob Indicator") { $0.params.knobStyle = picked }
                 }
 
-                label("Sweep °")
+                plabel("Sweep °", \.params.arcSpan)
                 let span = makeSlider(min: 90, max: 350, value: Double(el.params.arcSpan))
                 span.toolTip = "Total travel of the open ring. 298.8° is Rack's own ±0.83·π, "
                     + "so a knob drawn at that sweep matches what Rack will render."
@@ -411,7 +535,7 @@ final class InspectorView: NSView {
                     weakCanvas?.mutateSelection("Knob Sweep") { $0.params.arcSpan = CGFloat(sl.doubleValue) }
                 }
 
-                label("Ring width")
+                plabel("Ring width", \.params.arcWidth)
                 let aw = makeSlider(min: 0.04, max: 0.22, value: Double(el.params.arcWidth))
                 addControl(aw)
                 handlers.append { sender in
@@ -436,10 +560,17 @@ final class InspectorView: NSView {
                 section("Button Group")
                 let weakCanvas = canvas
 
-                label("Count")
+                let isCross = Int(el.params.layout.rounded()) == 2
+                plabel("Count", \.params.segments)
                 let n = makeSlider(min: 2, max: 12, value: Double(el.params.segments))
                 n.numberOfTickMarks = 11
                 n.allowsTickMarkValuesOnly = true
+                // Cross is four by definition; the slider would look live and
+                // do nothing.
+                n.isEnabled = !isCross
+                n.toolTip = isCross
+                    ? "The cross layout is four positions by definition. For three, use Column, Row or Circular."
+                    : "Number of positions, 2 to 12."
                 addControl(n)
                 handlers.append { sender in
                     guard let sl = sender as? NSSlider else { return }
@@ -448,17 +579,18 @@ final class InspectorView: NSView {
                     }
                 }
 
-                label("Layout")
+                plabel("Layout", \.params.layout)
                 let lo = NSPopUpButton(frame: .zero, pullsDown: false)
                 lo.addItems(withTitles: ["Column", "Row", "Cross (4)", "Circular"])
                 lo.selectItem(at: max(0, min(3, Int(el.params.layout))))
                 lo.font = NSFont.systemFont(ofSize: 11)
                 addControl(lo, width: 110)
-                handlers.append { sender in
+                handlers.append { [weak self] sender in
                     guard let p = sender as? NSPopUpButton else { return }
                     weakCanvas?.mutateSelection("Button Layout") {
                         $0.params.layout = CGFloat(p.indexOfSelectedItem)
                     }
+                    self?.scheduleRebuild()   // Count enables or disables with it
                 }
             }
             if el.kind == .led || el.kind == .jack || el.kind == .screw {
@@ -481,7 +613,7 @@ final class InspectorView: NSView {
                     ("Corner BR", \.cornerBR), ("Corner BL", \.cornerBL),
                 ]
                 for (t, kp) in radii {
-                    label(t)
+                    plabel(t, (\PanelElement.params).appending(path: kp))
                     let s = makeSlider(min: 0, max: Double(max(el.w, el.h) / 2),
                                        value: Double(el.params[keyPath: kp]))
                     addControl(s)
@@ -499,7 +631,7 @@ final class InspectorView: NSView {
                     ("Arm H", \.armH, 200), ("Arm V", \.armV, 200),
                 ]
                 for (t, kp, maxV) in sliders {
-                    label(t)
+                    plabel(t, (\PanelElement.params).appending(path: kp))
                     let s = makeSlider(min: 0, max: maxV, value: Double(el.params[keyPath: kp]))
                     addControl(s)
                     let weakCanvas = canvas
@@ -551,7 +683,7 @@ final class InspectorView: NSView {
                     }
                 }
 
-                label("Weight")
+                plabel("Weight", \.params.weight)
                 let wt = makeSlider(min: Double(SymbolCatalogue.minWeight),
                                     max: Double(SymbolCatalogue.maxWeight),
                                     value: Double(el.params.weight))
@@ -566,7 +698,7 @@ final class InspectorView: NSView {
                 for (i, title) in spec.parameters.enumerated() {
                     guard let title, i < slots.count else { continue }
                     let kp = slots[i]
-                    label(title)
+                    plabel(title, (\PanelElement.params).appending(path: kp))
                     let s = makeSlider(min: 0, max: 1, value: Double(el.params[keyPath: kp]))
                     addControl(s)
                     handlers.append { sender in
@@ -578,7 +710,7 @@ final class InspectorView: NSView {
                 }
 
             case .ringSector:
-                label("Start °")
+                plabel("Start °", \.params.startAngle)
                 let s0 = makeSlider(min: -180, max: 180, value: Double(el.params.startAngle))
                 addControl(s0)
                 let weakCanvas = canvas
@@ -586,14 +718,14 @@ final class InspectorView: NSView {
                     guard let sl = sender as? NSSlider else { return }
                     weakCanvas?.mutateSelection("Ring Start") { $0.params.startAngle = CGFloat(sl.doubleValue) }
                 }
-                label("Sweep °")
+                plabel("Sweep °", \.params.sweepAngle)
                 let s1 = makeSlider(min: -360, max: 360, value: Double(el.params.sweepAngle))
                 addControl(s1)
                 handlers.append { sender in
                     guard let sl = sender as? NSSlider else { return }
                     weakCanvas?.mutateSelection("Ring Sweep") { $0.params.sweepAngle = CGFloat(sl.doubleValue) }
                 }
-                label("Thickness")
+                plabel("Thickness", \.params.thickness)
                 let s2 = makeSlider(min: 1, max: Double(max(el.w, el.h) / 2),
                                     value: Double(el.params.thickness))
                 addControl(s2)
@@ -607,7 +739,7 @@ final class InspectorView: NSView {
 
         case .text:
             section("Text")
-            label("Content")
+            plabel("Content", \.params.text)
             let t = makeField(value: el.params.text)
             addControl(t)
             let weakCanvas = canvas
@@ -615,8 +747,12 @@ final class InspectorView: NSView {
                 guard let f = sender as? NSTextField else { return }
                 weakCanvas?.mutateSelection("Text") { $0.params.text = f.stringValue }
             }
-            label("Size")
+            plabel("Size", \.params.fontSize)
             let fs = makeField(value: Geo.fmt(el.params.fontSize))
+            fs.toolTip = "\(Geo.fmt(PanelMetrics.mm(el.params.fontSize))) mm. Jack labels are "
+                + "2.0–2.5 mm (6–7.5 px), knob labels 2.5–3.0, section headers 3.0–4.0. "
+                + "Anything under about 2 mm disappears on MetaModule's 240 px faceplate."
+
             addControl(fs)
             handlers.append { [weak self] sender in
                 guard let self else { return }
@@ -706,6 +842,20 @@ final class InspectorView: NSView {
             weakCanvas?.mutateSelection("Custom Widget") { $0.customWidgetName = f.stringValue }
         }
 
+        // Composed widgets: which parts turn decides the bg/fg split, and it
+        // is per-part, so it lives on the element rather than on the widget.
+        if let cv = canvas, cv.document.widgetMembers(of: el).count > 1 || el.groupID != nil {
+            let turns = makeCheck("Rotates with value", on: el.rotatesWithValue)
+            turns.toolTip = "Parts ticked here go into the widget's -fg file, which Rack "
+                + "rotates; everything else is the static background. Only knobs turn."
+            addControl(turns)
+            let weakCanvas = canvas
+            handlers.append { sender in
+                guard let b = sender as? NSButton else { return }
+                weakCanvas?.mutateSelection("Rotating Part") { $0.rotatesWithValue = b.state == .on }
+            }
+        }
+
         // Millimetres are the unit mm2px() and MetaModule's x_mm both speak, so
         // show them next to the px fields rather than making you convert.
         let mm = el.centerMM
@@ -781,6 +931,159 @@ final class InspectorView: NSView {
         cv.alignSelection(mode, to: cv.selection.count > 1 ? alignTarget : "panel")
     }
 
+    /// Promote the selection to a composed widget. Asks for the struct name,
+    /// because that name reaches the generated C++ and the asset filenames and
+    /// is not something to invent silently.
+    /// Same prompt, reached from the Edit menu.
+    func makeWidgetFromMenu() { promptMakeWidget() }
+    func labelSelectionFromMenu() { promptLabelSelection() }
+
+    /// Label every selected component in one action.
+    ///
+    /// The settings are asked for once and applied to the whole selection —
+    /// that is the whole point. Labelling twenty-five controls one text box at
+    /// a time is what this replaces, and a size that turns out wrong is fixed
+    /// on all of them at once because the new labels come back selected.
+    private func promptLabelSelection() {
+        guard let cv = canvas, !cv.selection.isEmpty else { return }
+
+        // Anything already carrying a name; the rest can only be labelled once
+        // it has one, and saying so up front beats producing eight labels for
+        // a selection of twelve without explanation.
+        let named = cv.document.elements.filter {
+            cv.selection.contains($0.id) && $0.kind != .text
+                && cv.document.labelText(for: $0, uppercase: true, spaceUnderscores: true) != nil
+        }.count
+
+        let alert = NSAlert()
+        alert.messageText = "Label \(named) of \(cv.selection.count) selected element\(cv.selection.count == 1 ? "" : "s")"
+        alert.informativeText = named == 0
+            ? "None of the selection carries a name yet. Set Identifier in the inspector, or use "
+              + "Name Sequentially, and run this again."
+            : "One text label per named component, placed the same way for all of them. "
+              + "Running it again on the same controls replaces these labels rather than adding a second set."
+        alert.addButton(withTitle: "Create Labels")
+        alert.addButton(withTitle: "Cancel")
+
+        // Frame-placed, top-down, like the rest of this inspector: the alert's
+        // accessory view is not under Auto Layout.
+        let lineH: CGFloat = 26
+        let box = NSView(frame: CGRect(x: 0, y: 0, width: 300, height: 5 * lineH))
+        func place(_ v: NSView, row: CGFloat, x: CGFloat, w: CGFloat, h: CGFloat = 22) {
+            v.frame = CGRect(x: x, y: box.bounds.height - (row + 1) * lineH + (lineH - h) / 2,
+                             width: w, height: h)
+            box.addSubview(v)
+        }
+        func caption(_ t: String, row: CGFloat) {
+            let l = NSTextField(labelWithString: t)
+            l.font = NSFont.systemFont(ofSize: 11)
+            l.alignment = .right
+            place(l, row: row, x: 0, w: 76, h: 16)
+        }
+
+        caption("Placement", row: 0)
+        let placement = NSPopUpButton(frame: .zero, pullsDown: false)
+        placement.addItems(withTitles: LabelPlacement.allCases.map(\.displayName))
+        placement.selectItem(at: LabelPlacement.allCases.firstIndex(of: labelPlacement) ?? 1)
+        place(placement, row: 0, x: 82, w: 110, h: 24)
+
+        caption("Gap", row: 1)
+        let gapField = NSTextField(string: Geo.fmt(labelGap))
+        gapField.toolTip = "Distance from the control's edge to the label, in panel pixels "
+            + "(\(Geo.fmt(PanelMetrics.mm(labelGap))) mm)."
+        place(gapField, row: 1, x: 82, w: 60)
+        let gapNote = NSTextField(labelWithString: "px")
+        gapNote.font = NSFont.systemFont(ofSize: 11)
+        gapNote.textColor = .secondaryLabelColor
+        place(gapNote, row: 1, x: 146, w: 24, h: 16)
+
+        caption("Size", row: 2)
+        let sizeField = NSTextField(string: Geo.fmt(labelSize))
+        sizeField.toolTip = "Jack labels are 2.0–2.5 mm (6–7.5 px), knob labels 2.5–3.0. "
+            + "Anything under about 2 mm disappears on MetaModule's 240 px faceplate."
+        place(sizeField, row: 2, x: 82, w: 60)
+        let bold = NSButton(checkboxWithTitle: "Bold", target: nil, action: nil)
+        bold.state = labelBold ? .on : .off
+        place(bold, row: 2, x: 150, w: 70)
+        let well = NSColorWell(frame: .zero)
+        well.color = (labelColour ?? defaultLabelColour(in: cv.document)).nsColor
+        place(well, row: 2, x: 226, w: 60, h: 22)
+
+        let upper = NSButton(checkboxWithTitle: "Uppercase", target: nil, action: nil)
+        upper.state = labelUppercase ? .on : .off
+        place(upper, row: 3, x: 82, w: 140)
+
+        let spaces = NSButton(checkboxWithTitle: "Underscores as spaces", target: nil, action: nil)
+        spaces.state = labelSpaces ? .on : .off
+        spaces.toolTip = "CUTOFF_FREQ is how the generated enum must read; \"CUTOFF FREQ\" is how the panel should."
+        place(spaces, row: 4, x: 82, w: 210)
+
+        alert.accessoryView = box
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+
+        labelPlacement = LabelPlacement.allCases[max(0, min(LabelPlacement.allCases.count - 1,
+                                                           placement.indexOfSelectedItem))]
+        labelGap = CGFloat(Double(gapField.stringValue.replacingOccurrences(of: ",", with: ".")) ?? Double(labelGap))
+        labelSize = max(4, CGFloat(Double(sizeField.stringValue.replacingOccurrences(of: ",", with: ".")) ?? Double(labelSize)))
+        labelBold = bold.state == .on
+        labelUppercase = upper.state == .on
+        labelSpaces = spaces.state == .on
+        labelColour = ColorSpec(color: well.color)
+
+        let result = cv.labelSelection(placement: labelPlacement, gap: labelGap,
+                                       fontSize: labelSize, bold: labelBold,
+                                       uppercase: labelUppercase, spaceUnderscores: labelSpaces,
+                                       colour: labelColour ?? .hex("#E8E8F0"))
+        if result.created == 0 && result.skipped > 0 {
+            let none = NSAlert()
+            none.messageText = "Nothing to label"
+            none.informativeText = "\(result.skipped) selected element\(result.skipped == 1 ? " carries" : "s carry") "
+                + "no name yet. Set Identifier in the inspector, or use Name Sequentially."
+            none.runModal()
+        }
+        scheduleRebuild()
+    }
+
+    /// Match labels already on the panel rather than imposing a colour: a panel
+    /// with a house text colour should keep it without a trip to the well.
+    private func defaultLabelColour(in doc: PanelDocument) -> ColorSpec {
+        var counts: [ColorSpec: Int] = [:]
+        for el in doc.elements where el.kind == .text { counts[el.fill, default: 0] += 1 }
+        return counts.max { a, b in
+            a.value == b.value ? a.key.hexString < b.key.hexString : a.value < b.value
+        }?.key ?? .hex("#E8E8F0")
+    }
+
+    private func promptMakeWidget() {
+        guard let cv = canvas, !cv.selection.isEmpty else { return }
+
+        let alert = NSAlert()
+        alert.messageText = "Make a widget from \(cv.selection.count) element\(cv.selection.count == 1 ? "" : "s")"
+        alert.informativeText = "The parts become one control: the artwork exports as its own SVG, "
+            + "and a matching C++ struct is generated. Tick \"Rotates with value\" on the parts "
+            + "that should turn, such as a knob's indicator."
+        alert.addButton(withTitle: "Make Widget")
+        alert.addButton(withTitle: "Cancel")
+
+        let field = NSTextField(string: "LcarsKnob")
+        field.frame = CGRect(x: 0, y: 26, width: 260, height: 22)
+        let roles = NSPopUpButton(frame: CGRect(x: 0, y: 0, width: 260, height: 24))
+        let choices: [ComponentRole] = [.param, .input, .output, .custom]
+        roles.addItems(withTitles: choices.map(\.displayName))
+
+        let box = NSView(frame: CGRect(x: 0, y: 0, width: 260, height: 52))
+        box.addSubview(field)
+        box.addSubview(roles)
+        alert.accessoryView = box
+
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        let name = field.stringValue.trimmingCharacters(in: .whitespaces)
+        guard !name.isEmpty else { return }
+        let role = choices[max(0, min(choices.count - 1, roles.indexOfSelectedItem))]
+        cv.makeWidget(name: CodeGen.cppIdentifier(name, fallback: "CustomWidget"), role: role)
+        scheduleRebuild()
+    }
+
     /// Rebuild on the next pass rather than immediately: a control's own
     /// handler must not tear down the control while it is still being used.
     private func scheduleRebuild() {
@@ -850,6 +1153,10 @@ final class InspectorView: NSView {
         buttonRow(["Group", "Ungroup"], handlers: [
             { [weak self] in self?.canvas?.groupSelection() },
             { [weak self] in self?.canvas?.ungroupSelection() },
+        ], columns: 2)
+        buttonRow(["Make Widget…", "Label…"], handlers: [
+            { [weak self] in self?.promptMakeWidget() },
+            { [weak self] in self?.promptLabelSelection() },
         ], columns: 2)
         buttonRow(["Copy", "Cut", "Paste"], handlers: [
             { [weak self] in self?.canvas?.copySelection() },

@@ -51,6 +51,30 @@ enum CodeGen {
         return out.trimmingCharacters(in: CharacterSet(charactersIn: "-"))
     }
 
+    /// Rack's own rule, from helper.py: ^[a-zA-Z0-9_\-]+$
+    ///
+    /// Worth checking here rather than leaving it to Rack, because a slug also
+    /// becomes the panel's filename and the string in createModel — so an
+    /// invalid one is wrong in three places at once and only fails at load.
+    static func isValidSlug(_ slug: String) -> Bool {
+        !slug.isEmpty && slug.allSatisfy { ch in
+            (ch.isASCII && (ch.isLetter || ch.isNumber)) || ch == "_" || ch == "-"
+        }
+    }
+
+    /// The nearest valid slug, for the "try this instead" half of the warning.
+    static func slugSuggestion(_ slug: String) -> String {
+        var out = ""
+        for ch in slug {
+            if ch.isASCII && (ch.isLetter || ch.isNumber) { out.append(ch) }
+            else if ch == "_" || ch == "-" { out.append(ch) }
+            else if ch == " " || ch == "." { out.append("-") }
+        }
+        while out.contains("--") { out = out.replacingOccurrences(of: "--", with: "-") }
+        out = out.trimmingCharacters(in: CharacterSet(charactersIn: "-_"))
+        return out.isEmpty ? "MyModule" : out
+    }
+
     static func moduleIdentifier(_ doc: PanelDocument) -> String {
         cppIdentifier(doc.moduleSlug, fallback: "MyModule")
     }
@@ -85,8 +109,17 @@ enum CodeGen {
 
     /// Files to write for a custom component, and which slice of the element
     /// each one holds. A knob needs two: Rack rotates only the foreground.
-    static func componentFiles(for el: PanelElement) -> [(name: String, layer: SVGExporter.ComponentLayer)] {
+    static func componentFiles(for el: PanelElement,
+                               in doc: PanelDocument? = nil) -> [(name: String, layer: SVGExporter.ComponentLayer)] {
         let base = kebab(el.customWidgetName.isEmpty ? el.identifierStem : el.customWidgetName)
+
+        // A composed widget splits only if something in it actually turns.
+        if let doc, doc.widgetMembers(of: el).count > 1 {
+            return doc.widgetMembers(of: el).contains(where: \.rotatesWithValue)
+                ? [(base + "-bg.svg", .knobBackground), (base + "-fg.svg", .knobForeground)]
+                : [(base + ".svg", .whole)]
+        }
+
         if el.role == .param && el.kind.isKnob {
             return [(base + "-bg.svg", .knobBackground), (base + "-fg.svg", .knobForeground)]
         }
@@ -122,17 +155,34 @@ enum CodeGen {
     static func warnings(_ doc: PanelDocument) -> [String] {
         var out: [String] = []
 
+        for (label, slug) in [("Module", doc.moduleSlug), ("Plugin", doc.pluginSlug)]
+        where !isValidSlug(slug) {
+            out.append("\(label) slug \"\(slug)\" is not a valid Rack slug — letters, digits, - and _ only. Rack rejects the plugin at load. Try \"\(slugSuggestion(slug))\"."
+                + (label == "Module" ? " It is also the panel's filename." : ""))
+        }
+
         var seen: [String: Int] = [:]
         for el in doc.components { seen[el.identifierStem, default: 0] += 1 }
         for (stem, n) in seen.sorted(by: { $0.key < $1.key }) where n > 1 {
             out.append("\(n) components share the name \(stem); they were numbered \(stem)_2 … \(stem)_\(n) so this compiles, but name them yourself.")
         }
 
-        for el in doc.components where el.enumName.isEmpty {
-            out.append("\(el.identifierStem)\(el.role.enumSuffix) was derived from the layer name; set an explicit Name if you want it stable.")
+        let unnamed = doc.components.filter(\.enumName.isEmpty)
+        if !unnamed.isEmpty {
+            out.append("\(unnamed.count) component\(unnamed.count == 1 ? " has" : "s have") no explicit Name, so identifiers were derived from layer names — they will change if you rename a layer.")
         }
         for el in doc.components where el.widgetSource == .custom && el.customWidgetName.isEmpty {
             out.append("A custom \(el.kind.displayName) has no struct name — it will not generate.")
+        }
+        for el in doc.components where doc.widgetMembers(of: el).count > 1 {
+            let bounds = doc.widgetBounds(of: el)
+            if composedBase(for: el, in: doc) == "knob",
+               abs(bounds.width - bounds.height) > 0.5 {
+                out.append("\(el.identifierStem) is a composed knob whose bounds are \(Geo.fmt(bounds.width))×\(Geo.fmt(bounds.height)) — Rack rotates the artwork about the centre of its own box, so a knob that is not square will wobble as it turns.")
+            }
+            if el.role == .param, !doc.widgetMembers(of: el).contains(where: \.rotatesWithValue) {
+                out.append("\(el.identifierStem) is a composed param with no part marked as turning; it generates as a switch. Tick \"Rotates with value\" on the indicator if it is a knob.")
+            }
         }
         for el in doc.components
         where el.widgetSource == .custom && el.kind.isKnob && el.params.knobStyle >= 1 {
@@ -174,13 +224,72 @@ enum CodeGen {
         for el in doc.components where el.widgetSource == .custom {
             let name = el.customWidgetName
             guard !name.isEmpty, seen.insert(name).inserted else { continue }
-            out += structSource(for: el, named: name) + "\n"
+            out += structSource(for: el, named: name, in: doc) + "\n"
         }
         return out
     }
 
-    private static func structSource(for el: PanelElement, named name: String) -> String {
-        let files = componentFiles(for: el).map(\.name)
+    /// What a composed widget should subclass. The anchor's own kind says
+    /// nothing useful — it might be a ring sector — so the base comes from the
+    /// role plus whether any part turns.
+    private static func composedBase(for el: PanelElement, in doc: PanelDocument) -> String {
+        switch el.role {
+        case .input, .output: return "port"
+        case .param:          return doc.widgetMembers(of: el).contains(where: \.rotatesWithValue) ? "knob" : "switch"
+        default:              return "plain"
+        }
+    }
+
+    private static func structSource(for el: PanelElement, named name: String,
+                                     in doc: PanelDocument) -> String {
+        let files = componentFiles(for: el, in: doc).map(\.name)
+        let composed = doc.widgetMembers(of: el).count > 1
+
+        if composed {
+            switch composedBase(for: el, in: doc) {
+            case "port":
+                return lines([
+                    "struct \(name) : app::SvgPort {",
+                    "    \(name)() {",
+                    "        setSvg(\(asset(files[0])));",
+                    "    }",
+                    "};",
+                ])
+            case "knob":
+                return lines([
+                    "struct \(name) : app::SvgKnob {",
+                    "    widget::SvgWidget* bg;",
+                    "    \(name)() {",
+                    "        minAngle = -0.83f * M_PI;",
+                    "        maxAngle =  0.83f * M_PI;",
+                    "        bg = new widget::SvgWidget;",
+                    "        fb->addChildBelow(bg, tw);",
+                    "        bg->setSvg(\(asset(files[0])));",
+                    "        setSvg(\(asset(files.count > 1 ? files[1] : files[0])));",
+                    "    }",
+                    "};",
+                ])
+            case "switch":
+                return lines([
+                    "struct \(name) : app::SvgSwitch {",
+                    "    \(name)() {",
+                    "        momentary = true;",
+                    "        shadow->opacity = 0.f;",
+                    "        addFrame(\(asset(files[0])));",
+                    "        addFrame(\(asset(kebab(name) + "-1.svg")));  // TODO: draw the second position",
+                    "    }",
+                    "};",
+                ])
+            default:
+                return lines([
+                    "struct \(name) : widget::SvgWidget {",
+                    "    \(name)() {",
+                    "        setSvg(\(asset(files[0])));",
+                    "    }",
+                    "};",
+                ])
+            }
+        }
 
         switch el.role {
 
@@ -263,31 +372,34 @@ enum CodeGen {
 
     // MARK: - ModuleWidget constructor body
 
-    static func constructorBody(_ doc: PanelDocument) -> String {
+    /// `receiver` is empty for a bare constructor body, or "widget->" when the
+    /// lines go inside a free function taking the widget. One body serves both
+    /// so the two outputs cannot disagree about a position.
+    static func constructorBody(_ doc: PanelDocument, receiver: String = "") -> String {
         let mod = moduleIdentifier(doc)
         let ns = namespacePrefix(doc)
         let ids = identifiers(doc)
-        var out = "setPanel(createPanel(asset::plugin(pluginInstance, \"res/\(doc.moduleSlug).svg\")));\n"
+        var out = "\(receiver)setPanel(createPanel(asset::plugin(pluginInstance, \"res/\(doc.moduleSlug).svg\")));\n"
 
         var byRole: [ComponentRole: [String]] = [:]
         for el in doc.components {
             // Stock types live in Rack's global namespace; only our own structs
             // get the document's namespace prefix.
             let cls = el.widgetSource == .custom ? ns + widgetClass(el) : widgetClass(el)
-            let p = el.centerMM
+            let p = doc.componentCentreMM(el)
             let vec = "mm2px(Vec(\(mm3(p.x)), \(mm3(p.y))))"
             let id = "\(mod)::\(ids[el.id] ?? el.identifierStem)\(el.role.enumSuffix)"
             switch el.role {
             case .param:
-                byRole[.param, default: []].append("addParam(createParamCentered<\(cls)>(\(vec), module, \(id)));")
+                byRole[.param, default: []].append("\(receiver)addParam(createParamCentered<\(cls)>(\(vec), module, \(id)));")
             case .input:
-                byRole[.input, default: []].append("addInput(createInputCentered<\(cls)>(\(vec), module, \(id)));")
+                byRole[.input, default: []].append("\(receiver)addInput(createInputCentered<\(cls)>(\(vec), module, \(id)));")
             case .output:
-                byRole[.output, default: []].append("addOutput(createOutputCentered<\(cls)>(\(vec), module, \(id)));")
+                byRole[.output, default: []].append("\(receiver)addOutput(createOutputCentered<\(cls)>(\(vec), module, \(id)));")
             case .light:
-                byRole[.light, default: []].append("addChild(createLightCentered<\(cls)>(\(vec), module, \(id)));")
+                byRole[.light, default: []].append("\(receiver)addChild(createLightCentered<\(cls)>(\(vec), module, \(id)));")
             case .custom:
-                byRole[.custom, default: []].append("addChild(createWidgetCentered<\(cls)>(\(vec)));")
+                byRole[.custom, default: []].append("\(receiver)addChild(createWidgetCentered<\(cls)>(\(vec)));")
             case .decoration:
                 break
             }
@@ -296,6 +408,102 @@ enum CodeGen {
             if let l = byRole[role], !l.isEmpty { out += "\n" + lines(l) }
         }
         return out
+    }
+
+    // MARK: - Regenerable header
+
+    /// The layout as a header the module source includes, rather than
+    /// fragments to paste.
+    ///
+    /// This is what makes "regenerate rather than hand-edit" true instead of
+    /// aspirational: the header is overwritten on every emit and contains no
+    /// hand-written code, so revising a panel is one command with nothing to
+    /// merge. The module, its DSP and its registration live in a file the
+    /// generator never touches.
+    static func panelHeader(_ doc: PanelDocument) -> String {
+        let mod = moduleIdentifier(doc)
+        let ns = doc.widgetNamespace.isEmpty
+            ? mod + "Panel"
+            : cppIdentifier(doc.widgetNamespace, fallback: "ui")
+
+        var out = lines([
+            "// Generated by PanelGenerator — do not edit.",
+            "//",
+            "// \(doc.name) · \(doc.widthHP)HP \(doc.format.rawValue) · \(doc.components.count) component\(doc.components.count == 1 ? "" : "s").",
+            "// Overwritten on every emit, so nothing written here survives.",
+            "//",
+            "// Include after plugin.hpp — the declarations below are unqualified and",
+            "// rely on the `using namespace rack;` that plugin.hpp brings in.",
+            "//",
+            "//   #include \"plugin.hpp\"",
+            "//   #include \"\(mod)_panel.hpp\"",
+            "//",
+            "//   struct \(mod) : Module {",
+            "//       \(mod)() {",
+            "//           config(\(ns)::PARAMS_LEN, \(ns)::INPUTS_LEN,",
+            "//                  \(ns)::OUTPUTS_LEN, \(ns)::LIGHTS_LEN);",
+            "//       }",
+            "//       void process(const ProcessArgs& args) override {}",
+            "//   };",
+            "//",
+            "//   struct \(mod)Widget : ModuleWidget {",
+            "//       \(mod)Widget(\(mod)* module) {",
+            "//           setModule(module);",
+            "//           \(ns)::addComponents(this, module);",
+            "//       }",
+            "//   };",
+            "//",
+            "//   Model* model\(mod) = createModel<\(mod), \(mod)Widget>(\"\(doc.moduleSlug)\");",
+        ])
+
+        let warns = warnings(doc)
+        if !warns.isEmpty {
+            out += "//\n// WARNINGS\n"
+            for warning in warns { out += "//   ! \(warning)\n" }
+        }
+
+        out += "\n#pragma once\n\nnamespace \(ns) {\n\n"
+        out += idEnums(doc)
+
+        let structs = customWidgetStructs(doc)
+        if !structs.isEmpty { out += "\n" + structs }
+
+        out += "\ninline void addComponents(ModuleWidget* widget, Module* module) {\n"
+        for line in constructorBody(doc, receiver: "widget->").split(separator: "\n", omittingEmptySubsequences: false) {
+            out += line.isEmpty ? "\n" : "    " + line + "\n"
+        }
+        out += "}\n\n} // namespace \(ns)\n\n"
+        out += metaModuleNotes(doc)
+        return out
+    }
+
+    // MARK: - Registration
+
+    /// The `createModel` line and the plugin.json entry that go with it.
+    /// Without these the generated file is a widget with nothing registering
+    /// it, which is the one piece helper.py does emit and we did not.
+    static func registration(_ doc: PanelDocument) -> String {
+        let mod = moduleIdentifier(doc)
+        return lines([
+            "Model* model\(mod) = createModel<\(mod), \(mod)Widget>(\"\(doc.moduleSlug)\");",
+            "",
+            "/* plugin.json — add to \"modules\":",
+            "",
+            "     {",
+            "       \"slug\": \"\(doc.moduleSlug)\",",
+            "       \"name\": \"\(doc.name)\",",
+            "       \"description\": \"\",",
+            "       \"tags\": []",
+            "     }",
+            "",
+            "   The plugin's own slug is \"\(doc.pluginSlug)\" — the plugin directory and",
+            "   the top-level \"slug\" in plugin.json. That is not the brand: brand is a",
+            "   separate display field and may be anything.",
+            "",
+            "   Both slugs are permanent from the first saved patch. Renaming either",
+            "   breaks every patch that uses this module, silently.",
+            "*/",
+        ])
     }
 
     // MARK: - MetaModule notes
@@ -335,11 +543,11 @@ enum CodeGen {
         var out = ""
 
         out += lines([
-            "// Generated by PanelGenerator — \(doc.name), \(doc.widthHP)HP \(doc.format.rawValue).",
-            "// \(comps.count) component\(comps.count == 1 ? "" : "s"). Regenerate rather than",
-            "// hand-edit: these positions come straight from the .panelgen, which is the",
-            "// whole point — artwork and widget code cannot drift apart if both are",
-            "// generated from one source.",
+            "// Generated by PanelGenerator — \(doc.name), \(doc.widthHP)HP \(doc.format.rawValue), "
+                + "\(comps.count) component\(comps.count == 1 ? "" : "s").",
+            "// Regenerate rather than hand-edit: these positions come straight from the",
+            "// .panelgen, which is the whole point — artwork and widget code cannot drift",
+            "// apart if both are generated from one source.",
             "//",
             "// Expects in your plugin:",
             "//   res/\(doc.moduleSlug).svg",
@@ -369,6 +577,10 @@ enum CodeGen {
 
         out += "\n// ---- \(section). \(mod)Widget constructor body ---------------------\n\n"
         out += constructorBody(doc)
+
+        out += "\n// ---- \(section + 1). Registration ----------------------------------\n\n"
+        out += registration(doc)
+
         out += "\n"
         out += metaModuleNotes(doc)
         return out

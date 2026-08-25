@@ -50,8 +50,8 @@ final class MainWindowController: NSWindowController, NSMenuItemValidation {
 
         let palette = PaletteView()
         palette.translatesAutoresizingMaskIntoConstraints = false
-        palette.onInsert = { [weak self] kind, symbol in
-            self?.canvas.insertAtCenter(kind, symbol: symbol)
+        palette.onInsert = { [weak self] kind, preset in
+            self?.canvas.insertAtCenter(kind, preset: preset)
         }
         sidebar.addSubview(palette)
 
@@ -256,8 +256,8 @@ final class MainWindowController: NSWindowController, NSMenuItemValidation {
             .filter { !$0.isEmpty })
 
         let panel = NSSavePanel()
-        panel.allowedContentTypes = [UTType(filenameExtension: "cpp") ?? .plainText]
-        panel.nameFieldStringValue = CodeGen.moduleIdentifier(doc) + "Widget.cpp"
+        panel.allowedContentTypes = [UTType(filenameExtension: "hpp") ?? .plainText]
+        panel.nameFieldStringValue = CodeGen.moduleIdentifier(doc) + "_panel.hpp"
         panel.message = customNames.isEmpty
             ? "Writes the ID enums and the ModuleWidget constructor body."
             : "Writes the widget code plus a components/ folder with artwork for "
@@ -265,7 +265,7 @@ final class MainWindowController: NSWindowController, NSMenuItemValidation {
         guard panel.runModal() == .OK, let url = panel.url else { return }
 
         do {
-            try CodeGen.rackSource(doc).write(to: url, atomically: true, encoding: .utf8)
+            try CodeGen.panelHeader(doc).write(to: url, atomically: true, encoding: .utf8)
             guard !customNames.isEmpty else { return }
 
             let dir = url.deletingLastPathComponent().appendingPathComponent("components")
@@ -276,8 +276,8 @@ final class MainWindowController: NSWindowController, NSMenuItemValidation {
                 guard !name.isEmpty, written.insert(name).inserted else { continue }
                 // A knob needs two files (static body + rotating indicator); a
                 // switch needs one per position, of which we can supply the first.
-                for file in CodeGen.componentFiles(for: el) {
-                    try SVGExporter.componentSVG(el, layer: file.layer, units: doc.svgUnits)
+                for file in CodeGen.componentFiles(for: el, in: doc) {
+                    try SVGExporter.componentSVG(el, in: doc, layer: file.layer, units: doc.svgUnits)
                         .write(to: dir.appendingPathComponent(file.name),
                                atomically: true, encoding: .utf8)
                 }
@@ -315,6 +315,16 @@ final class MainWindowController: NSWindowController, NSMenuItemValidation {
     @objc func pgBack(_ sender: Any?) { canvas.sendToBack() }
 
     @objc func pgScrews(_ sender: Any?) { canvas.insertCornerScrews() }
+
+    @objc func pgMakeWidget(_ sender: Any?) {
+        guard !canvas.selection.isEmpty else { return }
+        inspector.makeWidgetFromMenu()
+    }
+
+    @objc func pgLabelSelection(_ sender: Any?) {
+        guard !canvas.selection.isEmpty else { return }
+        inspector.labelSelectionFromMenu()
+    }
 
     @objc func pgBindPrimitives(_ sender: Any?) {
         let bound = canvas.bindPrimitives()
@@ -374,6 +384,10 @@ final class MainWindowController: NSWindowController, NSMenuItemValidation {
           bank below it is a curated LCARS / TNG palette.
         • Elbows + Ring Sectors + per-corner-radius boxes are your friends:
           that's how you get the Next Generation look.
+        • Name the controls, then Edit ▸ Label Selection… (⌘L) labels all of
+          them at once. The new labels stay selected, so Size in the inspector
+          re-sizes the whole set in one go.
+        • {ka} {ru} {te} … inside a label's text places an alien glyph inline.
 
         File ▸ Export SVG / PNG writes Rack-compatible artwork
         (1 HP = 15 px · 3U = 380 px · 1U = 127 px).

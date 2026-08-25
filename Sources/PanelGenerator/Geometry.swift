@@ -8,7 +8,9 @@ enum PanelMetrics {
     static let height3U: CGFloat = 380        // 3U panel height in px
     static let height1U: CGFloat = 127        // common 1U tile height in px
     static let minPanelWidthHP = 2
-    static let maxPanelWidthHP = 48
+    /// 84 HP is a full 19-inch rack row (426.7 mm), which is as wide as a
+    /// single panel gets in practice.
+    static let maxPanelWidthHP = 84
 
     static func height(for format: PanelFormat) -> CGFloat {
         switch format {
