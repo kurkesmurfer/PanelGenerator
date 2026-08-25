@@ -214,6 +214,129 @@ final class MainWindowController: NSWindowController, NSMenuItemValidation {
         }
     }
 
+    /// Read a module's C++ and rebuild its components: positions, widget types
+    /// and identifiers all at once. The panel SVG beside it supplies the
+    /// artwork, which is why this offers to import it in the same pass.
+    @objc func pgImportModuleCode(_ sender: Any?) {
+        let open = NSOpenPanel()
+        open.canChooseDirectories = false
+        open.allowsMultipleSelection = false
+        open.allowedContentTypes = [UTType(filenameExtension: "cpp") ?? .sourceCode,
+                                    UTType(filenameExtension: "cc") ?? .sourceCode,
+                                    UTType(filenameExtension: "hpp") ?? .sourceCode,
+                                    .sourceCode]
+        open.message = "Choose the source holding the ModuleWidget constructor."
+        guard open.runModal() == .OK, let url = open.url else { return }
+
+        do {
+            let source = try String(contentsOf: url, encoding: .utf8)
+            // Constants are routinely declared in a sibling header — a panel
+            // laid out on a named grid is unreadable without them.
+            let siblings = (try? FileManager.default.contentsOfDirectory(
+                at: url.deletingLastPathComponent(), includingPropertiesForKeys: [.fileSizeKey]))?
+                .filter { ["h", "hpp", "hh"].contains($0.pathExtension.lowercased()) }
+                .prefix(24) ?? []
+            let headers = siblings.compactMap { try? String(contentsOf: $0, encoding: .utf8) }
+
+            let outcome = CppImport.outcome(from: source, headers: headers)
+            let found = outcome.panelResource.flatMap { resolveResource($0, near: url) }
+            let answer = confirmModuleImport(outcome, source: url, panel: found)
+            guard answer.proceed else { return }
+            let panelURL = answer.includeArtwork ? found : nil
+
+            var doc = canvas.document
+            var report = outcome.warnings
+
+            // Artwork first, so the components land on top of it.
+            if let panelURL {
+                do {
+                    var options = SVGImport.Options()
+                    options.bindComponents = false      // the C++ is the authority here
+                    let art = try SVGImport.outcome(from: try Data(contentsOf: panelURL), options: options)
+                    doc.widthHP = art.widthHP
+                    doc.format = art.format
+                    if let bg = art.background { doc.background = bg }
+                    doc.elements.append(contentsOf: art.elements)
+                    report.append(contentsOf: art.warnings)
+                } catch {
+                    report.append("The panel \(panelURL.lastPathComponent) could not be read: "
+                        + error.localizedDescription)
+                }
+            }
+            if let hp = outcome.widthHP { doc.widthHP = hp }
+            if let slug = outcome.moduleSlug { doc.moduleSlug = slug }
+            doc.elements.append(contentsOf: outcome.elements)
+
+            canvas.applyDocument(doc, name: "Import Module Code")
+            canvas.setSelection(Set(outcome.elements.map(\.id)))
+            reloadInspector()
+
+            let done = NSAlert()
+            let n = outcome.elements.count
+            done.messageText = "Imported \(n) component\(n == 1 ? "" : "s")"
+            done.informativeText = report.isEmpty
+                ? "Everything in the file was understood."
+                : report.joined(separator: "\n\n")
+            done.runModal()
+        } catch {
+            showError("Could not read that source file", error)
+        }
+    }
+
+    /// Confirm before overwriting, and say what was found — including the
+    /// tallies, because "42 components" is the number you check against the
+    /// module you are looking at.
+    private func confirmModuleImport(_ outcome: CppImport.Outcome, source: URL,
+                                     panel: URL?) -> (proceed: Bool, includeArtwork: Bool) {
+        let params = outcome.elements.filter { $0.role == .param }.count
+        let inputs = outcome.elements.filter { $0.role == .input }.count
+        let outputs = outcome.elements.filter { $0.role == .output }.count
+        let lights = outcome.elements.filter { $0.role == .light }.count
+
+        let alert = NSAlert()
+        alert.messageText = "Import \(outcome.elements.count) components from \(source.lastPathComponent)?"
+        var lines = ["\(params) params · \(inputs) inputs · \(outputs) outputs · \(lights) lights"]
+        if let slug = outcome.moduleSlug { lines.append("Module slug: \(slug)") }
+        if panel == nil, let named = outcome.panelResource {
+            lines.append("The source names \(named), which is not where this reader looked. "
+                + "Import it separately with File ▸ Import SVG.")
+        }
+        if !canvas.document.elements.isEmpty {
+            lines.append("This adds to the panel you have open rather than replacing it.")
+        }
+        alert.informativeText = lines.joined(separator: "\n")
+        alert.addButton(withTitle: "Import")
+        alert.addButton(withTitle: "Cancel")
+
+        // Only offered when the artwork was actually found. Ticked by default:
+        // components with no panel behind them are a list of coordinates, and
+        // the point of reading the source is to get the module back whole.
+        var artwork: NSButton? = nil
+        if let panel {
+            let check = NSButton(checkboxWithTitle: "Also import \(panel.lastPathComponent) as artwork",
+                                 target: nil, action: nil)
+            check.state = .on
+            check.toolTip = "Untick if you have already imported the panel — otherwise you get it twice."
+            check.frame = CGRect(x: 0, y: 0, width: 320, height: 20)
+            alert.accessoryView = check
+            artwork = check
+        }
+
+        let proceed = alert.runModal() == .alertFirstButtonReturn
+        return (proceed, artwork?.state == .on)
+    }
+
+    /// `res/Muse.svg` as written in the source, found on disk. Plugins put the
+    /// source in the root or in src/, so both are worth a look.
+    private func resolveResource(_ relative: String, near source: URL) -> URL? {
+        let dir = source.deletingLastPathComponent()
+        let candidates = [
+            dir.appendingPathComponent(relative),
+            dir.deletingLastPathComponent().appendingPathComponent(relative),
+        ]
+        return candidates.first { FileManager.default.fileExists(atPath: $0.path) }
+    }
+
     /// What came in, and what did not. An importer that silently drops half a
     /// panel is worse than one that refuses: you would find out by noticing a
     /// hole in your own drawing a week later.
@@ -472,8 +595,9 @@ final class MainWindowController: NSWindowController, NSMenuItemValidation {
         • {ka} {ru} {te} … inside a label's text places an alien glyph inline.
 
         File ▸ Import SVG (⌘I) reads an existing panel — as a faint tracing
-        template you draw over, or as editable artwork. See Docs/IMPORT.md
-        for what survives the trip and what does not.
+        template you draw over, or as editable artwork.
+        File ▸ Import Module Code (⌥⌘I) reads a ModuleWidget constructor and
+        rebuilds its components, artwork included. See Docs/IMPORT.md.
 
         File ▸ Export SVG / PNG writes Rack-compatible artwork
         (1 HP = 15 px · 3U = 380 px · 1U = 127 px).

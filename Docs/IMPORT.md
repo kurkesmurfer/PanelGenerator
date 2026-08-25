@@ -94,14 +94,66 @@ wrong drawing:
   which means an imported panel's labels are shapes, not editable text. Retype
   them.
 
-## Reading positions out of a plugin instead
+## Reading positions out of a plugin
 
-For adopting an existing module, the SVG is usually the wrong file. Component
-positions live in the C++:
+`File ▸ Import Module Code…` (⌥⌘I) reads a `ModuleWidget` constructor. For
+adopting an existing module this is the file that matters — the SVG carries the
+artwork, the C++ carries everything else:
 
 ```cpp
 addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(15.24, 38.95)), module, Module::CUTOFF_PARAM));
 ```
 
-That gives positions, widget types and identifiers in one pass, where the SVG
-gives only artwork. A reader for that is a separate pass — see PLAN.md.
+One pass gives the position, the widget type and the identifier. If the source's
+`setPanel` names an SVG that sits beside it — in `res/` next to the file or one
+level up — the import offers to bring the artwork in at the same time.
+
+### What it understands
+
+- `createParam` / `createInput` / `createOutput` / `createLight`, with and
+  without `Centered`, plus `createWidget` for screws and other decoration.
+- `mm2px(Vec(x, y))` and bare `Vec(x, y)` in panel pixels. Mixing these up is
+  the mistake that puts every component at a third of its proper place.
+- Arithmetic: `RACK_GRID_WIDTH * 2`, `7.0f`, `panelW / 2`, `(a + b) * -1`.
+- **Named constants**, including from a sibling header. A panel laid out on a
+  grid — `mm2px(Vec(7.0f, grid::PRIMARY_Y))` — is unreadable without them, so
+  every `.h`/`.hpp` in the same directory is scanned for `constexpr`, `const`
+  and `#define` values. Qualified names resolve by their last component.
+- Nested widget templates: `MediumLight<GreenRedLight>` survives verbatim.
+- **Namespaced types are your own widgets.** `museui::IoJack` imports as a
+  custom widget named `IoJack`, not as a substituted Rack part, so generating
+  code again names it correctly.
+- `createModel<Module, Widget>("Slug")` for the module slug.
+- **Labels drawn from code.** A panel's text is often not in its SVG at all —
+  Muse draws every label with `museui::addCvLabel(this, 7.0f, grid::LABEL_Y,
+  "X CV")`. Any call shaped *(literally `this`, a number, a number, a string)*
+  is read as a label, centred on that position. The shape is what identifies
+  them, not the name, and it is tight enough that a draw call like
+  `nvgText(args.vg, x, y, "…")` cannot match. The font size is read from the
+  helper's own definition where it is the usual one-line forwarder
+  (`addLabel(w, x, y, text, font, 7.5f, …)`); otherwise it defaults and the
+  report says so.
+- `#ifdef METAMODULE`, resolved to the **Rack** branch. A ported module keeps
+  both builds in one file, and reading both would import the panel twice.
+  Other conditionals keep their first branch and say so.
+
+### The `Centered` distinction
+
+`createParamCentered<T>(pos, …)` takes a centre. `createParam<T>(pos, …)` takes
+a **top-left corner**, and the offset between the two is the widget's own size —
+which lives in Rack's SVG for that type, not in the source and not here.
+
+Uncentred calls are placed at the corner as given, at PanelGenerator's default
+size for the kind, and each one is reported with its line number. The
+alternative — a table of ComponentLibrary sizes — is more accurate on the day
+it is written and goes stale without telling anyone. Screws are exempt from the
+warning: `createWidget` is always corner-positioned, and flagging every one of
+them would bury the cases that matter.
+
+### What it does not do
+
+It is a reader, not a compiler. Positions built from anything it cannot
+evaluate — a function call, a member lookup, a loop counter — are skipped, with
+the line number and the expression in the report. A module that places its
+widgets in a `for` loop will import with holes; those are the ones to place by
+hand.

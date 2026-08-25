@@ -74,7 +74,7 @@ enum Selftest {
                 + widgetChecks() + uniformChecks() + presetChecks()
                 + colourChecks() + alignChecks() + bulkBindChecks()
                 + labelChecks() + svgPathChecks() + svgImportChecks()
-                + codegenChecks()
+                + cppImportChecks() + codegenChecks()
 
             print(failures.isEmpty ? "SELFTEST OK" : "SELFTEST FAILED")
             print("  elements : \(doc.elements.count)")
@@ -891,6 +891,216 @@ enum Selftest {
             _ = try SVGImport.outcome(from: noBox)
             failures.append("svgimport: an SVG without a viewBox should be refused")
         } catch {}
+
+        return failures
+    }
+
+    // MARK: - C++ reading checks
+
+    /// A module source in the shapes real ones are written in: a named grid in
+    /// constants, `7.0f` literals, a namespaced custom widget, a nested light
+    /// template, one uncentred call, and a METAMODULE fork.
+    private static let cppFixture = """
+    namespace grid {
+    constexpr float PRIMARY_Y = 27.2f;
+    constexpr float SECOND_Y = PRIMARY_Y + 14.0f;
+    }
+
+    inline void addKnobLabel(ModuleWidget* w, float xmm, float ymm, const std::string& text) {
+        addLabel(w, xmm, ymm, text, fontLabelSemiBold(), 7.5f, colorLabel(), 0.5f);
+    }
+
+    struct DemoWidget : ModuleWidget {
+        DemoWidget(Demo* module) {
+            setModule(module);
+    #ifdef METAMODULE
+            setPanel(createPanel(asset::plugin(pluginInstance, "res/Demo-mm.svg")));
+    #else
+            setPanel(themed(asset::plugin(pluginInstance, "res/Demo-light.svg"),
+                            asset::plugin(pluginInstance, "res/Demo.svg")));
+    #endif
+            addChild(createWidget<ScrewSilver>(Vec(RACK_GRID_WIDTH, 0)));
+
+            // The main frequency control.
+            addParam(createParamCentered<RoundLargeBlackKnob>(
+                mm2px(Vec(15.24, grid::PRIMARY_Y)), module, Demo::CUTOFF_PARAM));
+            addParam(createParam<Trimpot>(mm2px(Vec(5.0f, grid::SECOND_Y)), module, Demo::FINE_PARAM));
+            addInput(createInputCentered<PJ301MPort>(
+                mm2px(Vec(7.62f, 100.0f)), module, Demo::IN_INPUT));
+            addOutput(createOutputCentered<museui::IoJack>(
+                mm2px(Vec(22.86f, 100.0f)), module, Demo::OUT_OUTPUT));
+            addChild(createLightCentered<MediumLight<GreenRedLight>>(
+                mm2px(Vec(15.24f, 110.0f)), module, Demo::BUSY_LIGHT));
+            ui::addKnobLabel(this, 15.24f, 33.0f, "CUTOFF");
+            nvgText(args.vg, 1.0f, 2.0f, "not a label");
+        }
+    };
+
+    Model* modelDemo = createModel<Demo, DemoWidget>("Demo");
+    """
+
+    static func cppImportChecks() -> [String] {
+        var failures: [String] = []
+        let out = CppImport.outcome(from: cppFixture)
+
+        func near(_ a: CGFloat, _ b: CGFloat, _ tol: CGFloat = 0.05) -> Bool { abs(a - b) <= tol }
+        func px(_ mm: CGFloat) -> CGFloat { mm / PanelMetrics.mmPerPixel }
+
+        if out.elements.count != 7 {
+            failures.append("cpp: expected 7 elements, got \(out.elements.count)")
+        }
+        if out.moduleSlug != "Demo" {
+            failures.append("cpp: module slug should come from createModel, got \(out.moduleSlug ?? "nil")")
+        }
+        // The METAMODULE branch must not win: its panel is a different file,
+        // and importing it would bring in the wrong artwork silently.
+        if out.panelResource != "res/Demo.svg" {
+            failures.append("cpp: panel should be res/Demo.svg, got \(out.panelResource ?? "nil")")
+        }
+
+        func element(_ name: String) -> PanelElement? {
+            out.elements.first { $0.enumName == name }
+        }
+
+        // Named constants and mm2px together: the position that is unreadable
+        // without resolving grid::PRIMARY_Y.
+        if let cutoff = element("CUTOFF") {
+            if cutoff.role != .param { failures.append("cpp: CUTOFF should be a param") }
+            if cutoff.kind != .knobLarge { failures.append("cpp: RoundLargeBlackKnob should be a large knob") }
+            if !(near(cutoff.center.x, px(15.24)) && near(cutoff.center.y, px(27.2))) {
+                failures.append("cpp: CUTOFF centre \(cutoff.center), expected mm2px(15.24, 27.2)")
+            }
+            if cutoff.stockWidget != "RoundLargeBlackKnob" {
+                failures.append("cpp: the Rack type should be kept verbatim")
+            }
+        } else {
+            failures.append("cpp: CUTOFF_PARAM did not import (constant resolution?)")
+        }
+
+        // A constant defined in terms of another one.
+        if let fine = element("FINE") {
+            if !near(fine.y, px(41.2)) {
+                failures.append("cpp: SECOND_Y = PRIMARY_Y + 14 not resolved: y=\(fine.y)")
+            }
+            // createParam, not createParamCentered: a top-left position, and
+            // that difference has to be reported rather than absorbed.
+            if !near(fine.x, px(5.0)) {
+                failures.append("cpp: an uncentred call should be placed at the corner given")
+            }
+            if !out.warnings.contains(where: { $0.contains("top-left") }) {
+                failures.append("cpp: an uncentred call must warn that it is not a centre")
+            }
+        } else {
+            failures.append("cpp: FINE_PARAM did not import")
+        }
+
+        // A namespaced type is one of the plugin's own widgets, not Rack's.
+        if let output = element("OUT") {
+            if output.role != .output { failures.append("cpp: OUT should be an output") }
+            if output.widgetSource != .custom || output.customWidgetName != "IoJack" {
+                failures.append("cpp: museui::IoJack should import as a custom widget named IoJack")
+            }
+            if output.kind != .jack { failures.append("cpp: a Jack type should draw as a jack") }
+        } else {
+            failures.append("cpp: OUT_OUTPUT did not import")
+        }
+
+        // A nested light template must survive as written.
+        if let light = element("BUSY") {
+            if light.role != .light || light.kind != .led {
+                failures.append("cpp: BUSY_LIGHT should be an LED light")
+            }
+            if light.stockWidget != "MediumLight<GreenRedLight>" {
+                failures.append("cpp: nested light template mangled: \(light.stockWidget)")
+            }
+        } else {
+            failures.append("cpp: BUSY_LIGHT did not import")
+        }
+
+        // Screws are artwork: Rack draws them, but nothing binds to them.
+        if let screw = out.elements.first(where: { $0.kind == .screw }) {
+            if screw.role != .decoration { failures.append("cpp: a screw is not a component") }
+            if !near(screw.x, 15) { failures.append("cpp: RACK_GRID_WIDTH not evaluated: x=\(screw.x)") }
+        } else {
+            failures.append("cpp: createWidget<ScrewSilver> did not import")
+        }
+
+        if !out.warnings.contains(where: { $0.contains("MetaModule") }) {
+            failures.append("cpp: the METAMODULE fork should be reported")
+        }
+
+        // Panel text is often not in the SVG at all — Muse draws every label
+        // from code — so a reader that ignored helper calls would import a
+        // panel with nothing written on it.
+        let texts = out.elements.filter { $0.kind == .text }
+        if texts.count != 1 {
+            failures.append("cpp: expected 1 label from a helper call, got \(texts.count)")
+        }
+        if let label = texts.first {
+            if label.params.text != "CUTOFF" {
+                failures.append("cpp: label text wrong: \(label.params.text)")
+            }
+            // The size comes from the helper's own definition, not a guess.
+            if !near(label.params.fontSize, 7.5) {
+                failures.append("cpp: label size should come from the helper, got \(label.params.fontSize)")
+            }
+            if !(near(label.center.x, px(15.24)) && near(label.center.y, px(33.0))) {
+                failures.append("cpp: a label should be centred on its position, got \(label.center)")
+            }
+        }
+        // A switch's position count is only in its type name. Four is the
+        // palette default, and a three-way switch imported as four offers the
+        // module a value it has no case for.
+        if CppImport.switchPositions("Switch3Way") != 3 {
+            failures.append("cpp: Switch3Way should be a 3-position switch")
+        }
+        if CppImport.switchPositions("CKSSThree") != 3 {
+            failures.append("cpp: CKSSThree should be a 3-position switch")
+        }
+        if CppImport.switchPositions("CKSS") != 2 {
+            failures.append("cpp: a bare CKSS is a two-position switch")
+        }
+        if CppImport.switchPositions("RoundBlackKnob") != nil {
+            failures.append("cpp: a knob is not a switch")
+        }
+
+        // A draw call has the same arity as a label helper. The receiver is
+        // what tells them apart, and it has to.
+        if out.elements.contains(where: { $0.params.text == "not a label" }) {
+            failures.append("cpp: nvgText was mistaken for a label helper")
+        }
+
+        // The arithmetic the reader leans on.
+        let table = CppImport.builtinConstants
+        if Expression.evaluate("RACK_GRID_WIDTH * 2 + 1", constants: table) != 31 {
+            failures.append("cpp: expression arithmetic wrong")
+        }
+        if Expression.evaluate("(1 + 2) * -3", constants: table) != -9 {
+            failures.append("cpp: parentheses or unary minus wrong")
+        }
+        if Expression.evaluate("7.5f", constants: table) != 7.5 {
+            failures.append("cpp: float suffix not handled")
+        }
+        if Expression.evaluate("module->x", constants: table) != nil {
+            failures.append("cpp: an unresolvable expression must fail, not evaluate to something")
+        }
+
+        // Comments must not swallow code, and strings must survive them.
+        let stripped = CppImport.stripComments("""
+        int a = 1; // "not a string"
+        const char* s = "keep // this";
+        /* block
+           comment */ int b = 2;
+        """)
+        if !stripped.contains("keep // this") {
+            failures.append("cpp: comment stripping ate a string literal")
+        }
+        if stripped.contains("not a string") || stripped.contains("block") {
+            failures.append("cpp: comments were not stripped")
+        }
+        if !stripped.contains("int b = 2;") {
+            failures.append("cpp: code after a block comment was lost")
+        }
 
         return failures
     }

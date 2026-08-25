@@ -74,21 +74,13 @@ from what you see.
 - [x] Tracing template mode: faint, unclickable, never exported.
 - [x] helper.py components layer: roles by fill, identifiers from `data-name`,
       `#WidgetClass` suffix honoured.
-- [ ] **Component recovery from C++.** For adopting an existing plugin the SVG
-      is the wrong file: positions, widget types and enum names all live in the
-      ModuleWidget constructor.
-
-      ```cpp
-      addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(15.24, 38.95)), module, Module::CUTOFF_PARAM));
-      addInput(createInputCentered<PJ301MPort>(mm2px(Vec(7.62, 100.0)), module, Module::IN_INPUT));
-      ```
-
-      A reader wants: the `create*Centered<T>` vs `create*<T>` distinction
-      (the latter is a top-left position, not a centre — getting that wrong
-      shifts every component by half its size), `mm2px(Vec(x, y))` vs raw
-      `Vec(x, y)` in pixels, the enum name as the identifier, and `T` as the
-      stock widget. Pair it with the panel SVG imported as artwork and the
-      module comes back whole.
+- [x] **Component recovery from C++.** `CppImport` reads a ModuleWidget
+      constructor: positions (mm2px or px), widget types, identifiers, module
+      slug and the panel resource. Resolves named constants from sibling
+      headers and simple arithmetic; takes the Rack branch of an
+      `#ifdef METAMODULE` fork. Uncentred `createParam` calls are placed at the
+      corner given and reported by line number rather than offset by a guessed
+      widget size.
 
 - [ ] Gradients in the renderer. Still the one thing that stops Muse's
       `knob-large-bg.svg` round-tripping, and now also the reason an imported
