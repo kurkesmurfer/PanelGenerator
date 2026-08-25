@@ -50,7 +50,9 @@ final class MainWindowController: NSWindowController, NSMenuItemValidation {
 
         let palette = PaletteView()
         palette.translatesAutoresizingMaskIntoConstraints = false
-        palette.onInsert = { [weak self] kind in self?.canvas.insertAtCenter(kind) }
+        palette.onInsert = { [weak self] kind, symbol in
+            self?.canvas.insertAtCenter(kind, symbol: symbol)
+        }
         sidebar.addSubview(palette)
 
         layerList = LayerListView()

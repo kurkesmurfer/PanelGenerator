@@ -377,14 +377,46 @@ final class InspectorView: NSView {
     private func buildParamsSection(for el: PanelElement) {
         switch el.kind.category {
         case .primitive:
-            if el.kind == .knobLarge || el.kind == .knobMedium || el.kind == .knobSmall {
+            if el.kind.isKnob {
                 section("Knob")
+                let weakCanvas = canvas
+
                 label("Pointer °")
                 let s = makeSlider(min: 0, max: 360, value: Double(el.params.pointerAngle))
                 addControl(s)
-                handlers.append { [weak self] sender in
-                    guard let self, let sl = sender as? NSSlider else { return }
-                    self.canvas?.mutateSelection("Pointer Angle") { $0.params.pointerAngle = CGFloat(sl.doubleValue) }
+                handlers.append { sender in
+                    guard let sl = sender as? NSSlider else { return }
+                    weakCanvas?.mutateSelection("Pointer Angle") { $0.params.pointerAngle = CGFloat(sl.doubleValue) }
+                }
+
+                label("Indicator")
+                let style = NSPopUpButton(frame: .zero, pullsDown: false)
+                style.addItems(withTitles: ["Pointer", "Position ring", "Ring + pointer"])
+                style.selectItem(at: max(0, min(2, Int(el.params.knobStyle.rounded()))))
+                style.font = NSFont.systemFont(ofSize: 11)
+                addControl(style, width: 150)
+                handlers.append { sender in
+                    guard let p = sender as? NSPopUpButton else { return }
+                    let picked = CGFloat(max(0, min(2, p.indexOfSelectedItem)))
+                    weakCanvas?.mutateSelection("Knob Indicator") { $0.params.knobStyle = picked }
+                }
+
+                label("Sweep °")
+                let span = makeSlider(min: 90, max: 350, value: Double(el.params.arcSpan))
+                span.toolTip = "Total travel of the open ring. 298.8° is Rack's own ±0.83·π, "
+                    + "so a knob drawn at that sweep matches what Rack will render."
+                addControl(span)
+                handlers.append { sender in
+                    guard let sl = sender as? NSSlider else { return }
+                    weakCanvas?.mutateSelection("Knob Sweep") { $0.params.arcSpan = CGFloat(sl.doubleValue) }
+                }
+
+                label("Ring width")
+                let aw = makeSlider(min: 0.04, max: 0.22, value: Double(el.params.arcWidth))
+                addControl(aw)
+                handlers.append { sender in
+                    guard let sl = sender as? NSSlider else { return }
+                    weakCanvas?.mutateSelection("Knob Ring") { $0.params.arcWidth = CGFloat(sl.doubleValue) }
                 }
             }
             if el.kind == .faderVertical || el.kind == .faderHorizontal {
@@ -497,6 +529,54 @@ final class InspectorView: NSView {
                     weakCanvas?.mutateSelection("Elbow Flip") { $0.params.flipY = b.state == .on }
                 }
                 cursorY += rowH + gap
+            case .symbol:
+                let weakCanvas = canvas
+                let spec = SymbolCatalogue.spec(el.params.symbol)
+
+                label("Symbol")
+                let fill = el.fill
+                let choose = NSButton(frame: .zero)
+                choose.title = " " + spec.name
+                choose.image = SymbolSwatch.image(spec.id, size: CGSize(width: 17, height: 17), color: fill)
+                choose.imagePosition = .imageLeading
+                choose.bezelStyle = .rounded
+                choose.font = NSFont.systemFont(ofSize: 11)
+                addControl(choose)
+                handlers.append { [weak self] sender in
+                    guard let button = sender as? NSButton else { return }
+                    SymbolPicker.present(from: button, color: fill, selected: spec.id) { id in
+                        weakCanvas?.mutateSelection("Symbol") { $0.applySymbol(id) }
+                        // The parameter rows below belong to the old symbol.
+                        self?.scheduleRebuild()
+                    }
+                }
+
+                label("Weight")
+                let wt = makeSlider(min: Double(SymbolCatalogue.minWeight),
+                                    max: Double(SymbolCatalogue.maxWeight),
+                                    value: Double(el.params.weight))
+                addControl(wt)
+                handlers.append { sender in
+                    guard let s = sender as? NSSlider else { return }
+                    weakCanvas?.mutateSelection("Symbol Weight") { $0.params.weight = CGFloat(s.doubleValue) }
+                }
+
+                let slots: [WritableKeyPath<ElementParams, CGFloat>] =
+                    [\.symbolA, \.symbolB, \.symbolC, \.symbolD]
+                for (i, title) in spec.parameters.enumerated() {
+                    guard let title, i < slots.count else { continue }
+                    let kp = slots[i]
+                    label(title)
+                    let s = makeSlider(min: 0, max: 1, value: Double(el.params[keyPath: kp]))
+                    addControl(s)
+                    handlers.append { sender in
+                        guard let sl = sender as? NSSlider else { return }
+                        weakCanvas?.mutateSelection("Symbol Parameter") {
+                            $0.params[keyPath: kp] = CGFloat(sl.doubleValue)
+                        }
+                    }
+                }
+
             case .ringSector:
                 label("Start °")
                 let s0 = makeSlider(min: -180, max: 180, value: Double(el.params.startAngle))
@@ -647,6 +727,53 @@ final class InspectorView: NSView {
         cursorY += 44
     }
 
+    private func buildColourSection(for cv: CanvasView) {
+        let fills = cv.document.colourGroups(ids: cv.selection, strokes: false)
+        let strokes = cv.document.colourGroups(ids: cv.selection, strokes: true)
+        guard !fills.isEmpty || !strokes.isEmpty else { return }
+
+        section("Colours — \(cv.selection.count) selected")
+
+        func rows(_ groups: [(colour: ColorSpec, ids: [UUID])], isStroke: Bool, tag: String) {
+            // A selection with dozens of distinct colours would push everything
+            // else off the panel; the long tail is not what this is for.
+            let shown = groups.prefix(12)
+            for (i, group) in shown.enumerated() {
+                label("\(group.colour.hexString) ×\(group.ids.count)")
+                let well = makeColorWell(group.colour)
+                well.toolTip = "\(group.ids.count) element\(group.ids.count == 1 ? "" : "s") "
+                    + "share this \(isStroke ? "stroke" : "fill")."
+                addControl(well, width: 70)
+                let ids = group.ids
+                let weakCanvas = canvas
+                handlers.append { sender in
+                    guard let w = sender as? NSColorWell else { return }
+                    weakCanvas?.setColour(ColorSpec(color: w.color), ids: ids, strokes: isStroke,
+                                          name: "Recolour \(tag)\(i)")
+                }
+            }
+            if groups.count > shown.count {
+                let note = NSTextField(labelWithString: "+ \(groups.count - shown.count) more colours")
+                note.font = NSFont.systemFont(ofSize: 10)
+                note.textColor = NSColor.secondaryLabelColor
+                note.frame = CGRect(x: pad, y: cursorY, width: contentW, height: 14)
+                addSubview(note)
+                cursorY += 18
+            }
+        }
+
+        rows(fills, isStroke: false, tag: "f")
+        if !strokes.isEmpty {
+            let header = NSTextField(labelWithString: "STROKES")
+            header.font = NSFont.systemFont(ofSize: 9, weight: .bold)
+            header.textColor = ColorSpec.hex("#9A9AB0").nsColor
+            header.frame = CGRect(x: pad, y: cursorY + 2, width: contentW, height: 13)
+            addSubview(header)
+            cursorY += 18
+            rows(strokes, isStroke: true, tag: "s")
+        }
+    }
+
     /// One element cannot be aligned to itself, so it always falls back to the
     /// panel however the scope is set.
     private func applyAlign(_ mode: String) {
@@ -654,8 +781,26 @@ final class InspectorView: NSView {
         cv.alignSelection(mode, to: cv.selection.count > 1 ? alignTarget : "panel")
     }
 
+    /// Rebuild on the next pass rather than immediately: a control's own
+    /// handler must not tear down the control while it is still being used.
+    private func scheduleRebuild() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self, let cv = self.canvas else { return }
+            self.rebuild(document: cv.document, canvas: cv)
+        }
+    }
+
     private func buildLayerSection() {
         guard let cv = canvas, !cv.selection.isEmpty else { return }
+
+        // Colours across the selection. A group of glyphs, a bank of faders or
+        // a row of knobs is usually several elements sharing one colour, and
+        // recolouring them one at a time through the single-element Fill well
+        // is the tedium this removes. One well per distinct colour, so a mixed
+        // selection stays editable rather than being flattened to one colour.
+        if cv.selection.count > 1 {
+            buildColourSection(for: cv)
+        }
 
         // One set of align buttons with an explicit scope. Two separate rows
         // labelled identically (L/CX/R/T/M/B for the selection, and again for

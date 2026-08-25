@@ -236,8 +236,9 @@ final class CanvasView: NSView {
         setSelection(Set(remapped.map(\.id)))
     }
 
-    func insertAtCenter(_ kind: ElementKind) {
+    func insertAtCenter(_ kind: ElementKind, symbol: String? = nil) {
         var el = kind.defaultElement(at: .zero)
+        if let symbol { el.applySymbol(symbol) }
         el.frame.origin = CGPoint(
             x: Geo.snap(document.pixelSize.width / 2 - el.w / 2, to: Geo.defaultSnap),
             y: Geo.snap(document.pixelSize.height / 2 - el.h / 2, to: Geo.defaultSnap))
@@ -875,6 +876,14 @@ final class CanvasView: NSView {
     /// Align the selection. `to: "sel"` lines elements up with the selection's
     /// own bounding box (needs 2+ selected). `to: "panel"` aligns to the panel
     /// edges / center line and works with any selection size, even one element.
+    /// Undoable wrapper around `PanelDocument.setColour`.
+    func setColour(_ colour: ColorSpec, ids: [UUID], strokes: Bool, name: String) {
+        var doc = document
+        doc.setColour(colour, ids: ids, strokes: strokes)
+        guard doc.elements != document.elements else { return }
+        apply(elements: doc.elements, name: name)
+    }
+
     /// Undoable wrapper around `PanelDocument.align`.
     func alignSelection(_ mode: String, to target: String = "sel") {
         let toPanel = target == "panel"
@@ -1016,10 +1025,13 @@ final class CanvasView: NSView {
     override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation { .copy }
 
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
-        guard let raw = sender.draggingPasteboard.string(forType: Paste.elementType),
-              let kind = ElementKind(rawValue: raw) else { return false }
+        // "kind" or "kind#symbolID" — the symbol palette drags a specific glyph.
+        guard let raw = sender.draggingPasteboard.string(forType: Paste.elementType) else { return false }
+        let parts = raw.split(separator: "#", maxSplits: 1).map(String.init)
+        guard let kind = ElementKind(rawValue: parts[0]) else { return false }
 
         var el = kind.defaultElement(at: .zero)
+        if parts.count > 1 { el.applySymbol(parts[1]) }
         let p = panelPoint(fromWindowLocation: sender.draggingLocation)
         el.frame.origin = CGPoint(
             x: snapVal(Geo.snap(p.x - el.w / 2, to: Geo.defaultSnap)),

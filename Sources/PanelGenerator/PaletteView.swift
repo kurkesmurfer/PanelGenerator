@@ -4,7 +4,9 @@ import AppKit
 /// double-click inserts at the panel centre.
 final class PaletteView: NSView {
 
-    var onInsert: ((ElementKind) -> Void)?
+    /// The symbol id is nil for everything except a cell from the symbol grid,
+    /// which places the glyph you actually picked.
+    var onInsert: ((ElementKind, String?) -> Void)?
 
     private struct Entry {
         let title: String
@@ -41,7 +43,7 @@ final class PaletteView: NSView {
             for k in kinds {
                 let item = PaletteItemView(entry: (k.displayName, k))
                 item.frame = CGRect(x: 8, y: y, width: 184, height: 66)
-                item.onInsert = { [weak self] kind in self?.onInsert?(kind) }
+                item.onInsert = { [weak self] kind in self?.onInsert?(kind, nil) }
                 content.addSubview(item)
                 y += 70
             }
@@ -53,6 +55,23 @@ final class PaletteView: NSView {
                  .faderVertical, .faderHorizontal, .led, .screw, .pushButton, .buttonGroup])
         header("Shapes · Backdrop")
         section([.box, .ellipse, .triangle, .elbow, .ringSector])
+        func symbolGrid() {
+            let size: CGFloat = 42
+            let columns = 4
+            for (i, spec) in SymbolCatalogue.all.enumerated() {
+                let cell = SymbolPaletteCell(symbolID: spec.id)
+                cell.frame = CGRect(x: 8 + CGFloat(i % columns) * (size + 4),
+                                    y: y + CGFloat(i / columns) * (size + 4),
+                                    width: size, height: size)
+                cell.onInsert = { [weak self] id in self?.onInsert?(.symbol, id) }
+                content.addSubview(cell)
+            }
+            let rows = (SymbolCatalogue.all.count + columns - 1) / columns
+            y += CGFloat(rows) * (size + 4) + 6
+        }
+
+        header("Symbols")
+        symbolGrid()
         header("Text")
         section([.text])
 

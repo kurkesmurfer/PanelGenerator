@@ -80,6 +80,8 @@ enum Selftest {
                 print("  export   : text outlines · binding · components layer · codegen OK")
                 print("  bulk     : bind primitives · hand-set roles preserved OK")
                 print("  align    : selection bounds vs panel bounds OK")
+                print("  colours  : grouping stable, recolour scoped OK")
+                print("  symbols  : \(SymbolCatalogue.all.count) specs, geometry contained OK")
             } else {
                 for f in failures { print("  ✗ \(f)") }
             }
@@ -222,6 +224,90 @@ enum Selftest {
             failures.append("components layer: data-name should carry NAME#WidgetClass")
         }
 
+
+
+        // Every symbol must produce geometry, and it must stay inside its own
+        // frame. The content box is inset by half the weight precisely so the
+        // stroked outline — round caps included — cannot spill; test at the
+        // maximum weight, where that rule is under the most strain.
+        var seenIDs = Set<String>()
+        for spec in SymbolCatalogue.all {
+            if !seenIDs.insert(spec.id).inserted {
+                failures.append("symbol \(spec.id): duplicate id in the catalogue")
+            }
+            if spec.parameters.count != 4 || spec.defaults.count != 4 {
+                failures.append("symbol \(spec.id): needs exactly 4 parameter slots and defaults")
+            }
+            for (wide, tall) in [(CGFloat(60), CGFloat(30)), (CGFloat(24), CGFloat(60))] {
+                var el = ElementKind.symbol.defaultElement(at: CGPoint(x: 15, y: 40))
+                el.w = wide
+                el.h = tall
+                el.params.symbol = spec.id
+                el.params.weight = SymbolCatalogue.maxWeight
+                el.params.symbolA = spec.defaults[0]
+                el.params.symbolB = spec.defaults[1]
+                el.params.symbolC = spec.defaults[2]
+                el.params.symbolD = spec.defaults[3]
+
+                let box = SymbolCatalogue.path(for: el).boundingBoxOfPath
+                if box.isNull || box.isEmpty {
+                    failures.append("symbol \(spec.id): produced no geometry at \(Int(wide))×\(Int(tall))")
+                    continue
+                }
+                // A little slack for curve flattening in boundingBoxOfPath.
+                if !el.frame.insetBy(dx: -0.75, dy: -0.75).contains(box) {
+                    failures.append("symbol \(spec.id): outline escapes its frame at \(Int(wide))×\(Int(tall))")
+                }
+            }
+        }
+
+        // And a symbol has to survive the export path like anything else.
+        var symDoc = PanelDocument()
+        symDoc.elements = [ElementKind.symbol.defaultElement(at: CGPoint(x: 20, y: 20))]
+        if !SVGExporter.documentSVG(symDoc).contains("<path") {
+            failures.append("symbol export: a symbol element produced no path in the SVG")
+        }
+
+        // Colour grouping: distinct colours, most-used first, and recolouring
+        // touches only the elements that carried that colour.
+        var pal = PanelDocument()
+        var c1 = ElementKind.knobSmall.defaultElement(at: CGPoint(x: 10, y: 10))
+        var c2 = ElementKind.knobSmall.defaultElement(at: CGPoint(x: 30, y: 10))
+        var c3 = ElementKind.knobSmall.defaultElement(at: CGPoint(x: 50, y: 10))
+        var c4 = ElementKind.box.defaultElement(at: CGPoint(x: 10, y: 40))
+        c1.fill = .hex("#112233"); c2.fill = .hex("#112233"); c3.fill = .hex("#112233")
+        c4.fill = .hex("#AABBCC")
+        c4.stroke = .hex("#FFFFFF")
+        pal.elements = [c1, c2, c3, c4]
+        let palIDs = Set(pal.elements.map(\.id))
+
+        let groups = pal.colourGroups(ids: palIDs, strokes: false)
+        if groups.count != 2 {
+            failures.append("colours: expected 2 distinct fills, got \(groups.count)")
+        } else {
+            if groups[0].ids.count != 3 {
+                failures.append("colours: most-used fill should come first")
+            }
+            if groups[0].colour.hexString != "#112233" {
+                failures.append("colours: wrong colour ordered first")
+            }
+        }
+        if pal.colourGroups(ids: palIDs, strokes: true).count != 1 {
+            failures.append("colours: expected 1 distinct stroke")
+        }
+
+        var recoloured = pal
+        recoloured.setColour(.hex("#FF0000"), ids: groups.first?.ids ?? [], strokes: false)
+        if recoloured.elements[0].fill.hexString != "#FF0000"
+            || recoloured.elements[2].fill.hexString != "#FF0000" {
+            failures.append("colours: recolour did not reach every element in the group")
+        }
+        if recoloured.elements[3].fill.hexString != "#AABBCC" {
+            failures.append("colours: recolour touched an element outside the group")
+        }
+        if recoloured.elements[3].stroke?.hexString != "#FFFFFF" {
+            failures.append("colours: a fill recolour must not disturb strokes")
+        }
 
         // Align must use the selection's own bounds unless the panel is asked
         // for. Y grows downward, so "top" is the smallest y among the selected.

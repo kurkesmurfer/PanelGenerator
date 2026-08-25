@@ -12,6 +12,10 @@ struct ShapePart {
     var fill: ColorSpec?
     var stroke: ColorSpec?
     var lineWidth: CGFloat = 1
+    /// Marks the parts of a knob that turn with the parameter. Rack's SvgKnob
+    /// rotates one SVG over a static background, so the split has to be
+    /// declared here rather than guessed from part ordering.
+    var rotates: Bool = false
 }
 
 // MARK: - Renderer
@@ -138,8 +142,42 @@ enum Renderer {
             ]
 
         case .knobLarge, .knobMedium, .knobSmall:
-            let ringW = max(1.4, f.width * 0.07)
-            let body = f.insetBy(dx: f.width * 0.15, dy: f.height * 0.15)
+            var out: [ShapePart] = []
+
+            // Position ring. The track is an open circle with its gap at the
+            // bottom — the same ring-sector geometry the shape palette already
+            // provides — and the value is a second sector drawn over it from
+            // the track's start to the pointer.
+            let style = Int(el.params.knobStyle.rounded())
+            let showArc = style >= 1
+            let showPointer = style != 1
+            var seat = f
+            if showArc {
+                let track = max(1.5, el.params.arcWidth * min(f.width, f.height))
+                let gap = max(1.0, f.width * 0.05)
+                let span = min(max(el.params.arcSpan, 20), 350)
+                let start = -90 - span / 2
+
+                // Fold the stored angle into ±180 so 300° reads as −60° rather
+                // than running off the end of the track.
+                var rel = el.params.pointerAngle.truncatingRemainder(dividingBy: 360)
+                if rel > 180 { rel -= 360 }
+                if rel < -180 { rel += 360 }
+                let sweep = min(max(rel + span / 2, 0), span)
+
+                out.append(ShapePart(
+                    path: ringSectorPath(f, thickness: track, startDeg: start, sweepDeg: span),
+                    fill: accent.darkened(0.74)))
+                if sweep > 0.5 {
+                    out.append(ShapePart(
+                        path: ringSectorPath(f, thickness: track, startDeg: start, sweepDeg: sweep),
+                        fill: accent))
+                }
+                seat = f.insetBy(dx: track + gap, dy: track + gap)
+            }
+
+            let ringW = max(1.4, seat.width * 0.07)
+            let body = seat.insetBy(dx: seat.width * 0.15, dy: seat.height * 0.15)
             let a = Geo.deg2rad(el.params.pointerAngle - 90)
             let r = body.width / 2
             let c = CGPoint(x: body.midX, y: body.midY)
@@ -148,12 +186,16 @@ enum Renderer {
             p.addLine(to: CGPoint(x: c.x + cos(a) * r * 0.62, y: c.y + sin(a) * r * 0.62))
             let capR = body.width * 0.11
             let cap = CGRect(x: c.x - capR, y: c.y - capR, width: capR * 2, height: capR * 2)
-            return [
-                ShapePart(path: ellipsePath(f), fill: accent.darkened(0.75), stroke: accent, lineWidth: ringW),
-                ShapePart(path: ellipsePath(body), fill: accent.darkened(0.42)),
-                ShapePart(path: p, stroke: accent.lightened(0.55), lineWidth: max(1.4, f.width * 0.05)),
-                ShapePart(path: ellipsePath(cap), fill: accent.lightened(0.30)),
-            ]
+
+            out.append(ShapePart(path: ellipsePath(seat), fill: accent.darkened(0.75),
+                                 stroke: accent, lineWidth: ringW))
+            out.append(ShapePart(path: ellipsePath(body), fill: accent.darkened(0.42)))
+            if showPointer {
+                out.append(ShapePart(path: p, stroke: accent.lightened(0.55),
+                                     lineWidth: max(1.4, seat.width * 0.05), rotates: true))
+            }
+            out.append(ShapePart(path: ellipsePath(cap), fill: accent.lightened(0.30), rotates: true))
+            return out
 
         case .faderVertical:
             let trackW = min(7, f.width * 0.45)
@@ -311,6 +353,10 @@ enum Renderer {
                                      sweepDeg: el.params.sweepAngle),
                 fill: accent, stroke: el.stroke, lineWidth: el.strokeWidth)]
 
+        case .symbol:
+            return [ShapePart(path: SymbolCatalogue.path(for: el), fill: accent,
+                              stroke: el.stroke, lineWidth: el.strokeWidth)]
+
         case .text:
             return textParts(for: el)
         }
@@ -320,13 +366,17 @@ enum Renderer {
     /// mirroring `RoundKnob`: a background `SvgWidget` added below the
     /// TransformWidget, with only the foreground turning.
     ///
-    /// Tied to the `.knobLarge/.knobMedium/.knobSmall` case in `parts(for:)`,
-    /// which emits exactly four parts: outer ring, body, pointer, cap. The
-    /// pointer must rotate; the cap is centred so it rides along harmlessly
-    /// and keeps the on-canvas draw order.
+    /// Split on each part's own `rotates` flag rather than on part ordering,
+    /// so a knob can gain or lose pieces — a position ring, no pointer —
+    /// without the export quietly rotating the wrong thing.
+    ///
+    /// The value arc deliberately lands in the background: Rack turns one SVG
+    /// over a static one, and an arc that *grows* cannot be produced by
+    /// rotation. CodeGen warns when a custom knob relies on it.
     static func knobLayers(_ parts: [ShapePart]) -> (bg: [ShapePart], fg: [ShapePart])? {
-        guard parts.count == 4 else { return nil }
-        return (Array(parts.prefix(2)), Array(parts.suffix(2)))
+        let fg = parts.filter { $0.rotates }
+        guard !fg.isEmpty else { return nil }
+        return (parts.filter { !$0.rotates }, fg)
     }
 
     // MARK: Text → outlines

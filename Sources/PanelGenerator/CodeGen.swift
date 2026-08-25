@@ -134,6 +134,10 @@ enum CodeGen {
         for el in doc.components where el.widgetSource == .custom && el.customWidgetName.isEmpty {
             out.append("A custom \(el.kind.displayName) has no struct name — it will not generate.")
         }
+        for el in doc.components
+        where el.widgetSource == .custom && el.kind.isKnob && el.params.knobStyle >= 1 {
+            out.append("\(el.identifierStem) uses a position ring. Rack rotates one SVG over a static one, so a value arc cannot follow the parameter — the track exports, the filled arc freezes at its current angle. Use the pointer for the moving indicator.")
+        }
         for el in doc.components where el.rotation != 0 {
             out.append("\(el.identifierStem) is rotated \(Geo.fmt(el.rotation))° — component artwork exports unrotated; Rack rotates knobs itself.")
         }

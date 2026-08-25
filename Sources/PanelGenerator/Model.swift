@@ -170,6 +170,7 @@ enum ElementKind: String, Codable, CaseIterable {
     case triangle
     case elbow          // LCARS elbow: two arms joined by a curved corner
     case ringSector     // annulus arc — the big sweeping TNG curves
+    case symbol         // parametric synth iconography — see SymbolCatalogue
     // Text
     case text
 
@@ -179,7 +180,7 @@ enum ElementKind: String, Codable, CaseIterable {
 
     var category: Category {
         switch self {
-        case .box, .ellipse, .triangle, .elbow, .ringSector: return .shape
+        case .box, .ellipse, .triangle, .elbow, .ringSector, .symbol: return .shape
         case .text: return .text
         default: return .primitive
         }
@@ -202,6 +203,7 @@ enum ElementKind: String, Codable, CaseIterable {
         case .triangle: return "Triangle"
         case .elbow: return "LCARS Elbow"
         case .ringSector: return "Ring Sector"
+        case .symbol: return "Symbol"
         case .text: return "Text Label"
         }
     }
@@ -269,11 +271,11 @@ enum ElementKind: String, Codable, CaseIterable {
         case .jack:
             e.w = 22; e.h = 22; e.fill = .hex("#9AA0AB")
         case .knobLarge:
-            e.w = 30; e.h = 30; e.fill = .hex("#FF9C00")
+            e.w = 30; e.h = 30; e.fill = .hex("#FF9C00"); e.params.knobStyle = 2
         case .knobMedium:
-            e.w = 25; e.h = 25; e.fill = .hex("#FF9C00")
+            e.w = 25; e.h = 25; e.fill = .hex("#FF9C00"); e.params.knobStyle = 2
         case .knobSmall:
-            e.w = 19; e.h = 19; e.fill = .hex("#99CCFF")
+            e.w = 19; e.h = 19; e.fill = .hex("#99CCFF"); e.params.knobStyle = 2
         case .faderVertical:
             e.w = 17; e.h = 64; e.fill = .hex("#CC99CC")
         case .faderHorizontal:
@@ -301,6 +303,13 @@ enum ElementKind: String, Codable, CaseIterable {
         case .ringSector:
             e.w = 84; e.h = 84; e.fill = .hex("#99CCFF")
             e.params.thickness = 14; e.params.startAngle = -90; e.params.sweepAngle = 100
+        case .symbol:
+            e.w = 44; e.h = 30; e.fill = .hex("#99CCFF")
+            e.params.symbol = "sine"
+            e.params.weight = SymbolCatalogue.defaultWeight
+            let d = SymbolCatalogue.spec("sine").defaults
+            e.params.symbolA = d[0]; e.params.symbolB = d[1]
+            e.params.symbolC = d[2]; e.params.symbolD = d[3]
         case .text:
             e.w = 120; e.h = 20; e.fill = .hex("#E8E8F0")
             e.params.text = "LABEL"; e.params.fontSize = 12; e.params.bold = true
@@ -331,6 +340,14 @@ struct ElementParams: Codable, Hashable {
     var sweepAngle: CGFloat = 100
     // Knobs
     var pointerAngle: CGFloat = 45       // degrees, 0 = pointing up
+    /// 0 pointer only, 1 position ring only, 2 both. Defaults to 0 so panels
+    /// drawn before the ring existed keep the look they were designed with;
+    /// newly dropped knobs ask for 2.
+    var knobStyle: CGFloat = 0
+    /// Total sweep of the open ring, degrees. 298.8 is Rack's own ±0.83·π.
+    var arcSpan: CGFloat = 298.8
+    /// Ring thickness as a fraction of the knob's diameter.
+    var arcWidth: CGFloat = 0.10
     // Faders
     var value: CGFloat = 0.5             // 0..1
     // Button groups
@@ -340,6 +357,16 @@ struct ElementParams: Codable, Hashable {
     var text: String = "LABEL"
     var fontSize: CGFloat = 12
     var bold: Bool = true
+    // Symbols. `weight` is a fraction of the symbol's short side, so a glyph
+    // keeps its proportions at any size. The four slots are generic: what each
+    // means is declared by the symbol's SymbolSpec, which is what lets the
+    // catalogue grow without touching the model.
+    var symbol: String = "sine"
+    var weight: CGFloat = 0.16
+    var symbolA: CGFloat = 0.5
+    var symbolB: CGFloat = 0.5
+    var symbolC: CGFloat = 0.5
+    var symbolD: CGFloat = 0.5
 }
 
 // MARK: - Element
@@ -404,6 +431,18 @@ struct PanelElement: Codable, Hashable, Identifiable {
         return s.isEmpty ? "UNNAMED" : s
     }
 
+    /// Switch this element to a symbol, taking that symbol's own defaults for
+    /// the four parameter slots — otherwise a pulse's width would survive as
+    /// an ADSR's attack.
+    mutating func applySymbol(_ id: String) {
+        let spec = SymbolCatalogue.spec(id)
+        params.symbol = spec.id
+        params.symbolA = spec.defaults[0]
+        params.symbolB = spec.defaults[1]
+        params.symbolC = spec.defaults[2]
+        params.symbolD = spec.defaults[3]
+    }
+
     func contains(globalPoint p: CGPoint) -> Bool {
         frame.contains(Geo.rotate(p, around: center, degrees: -rotation))
     }
@@ -459,6 +498,39 @@ struct PanelDocument: Codable, Hashable {
     /// hatch. Only elements still sitting at `.decoration` whose kind actually
     /// implies a component are touched, so a role set by hand is never
     /// overwritten, and shapes, text and screws stay as artwork.
+    /// Distinct colours across `ids`, most-used first, each with the elements
+    /// carrying it.
+    ///
+    /// Ordering is stable — count, then the colour itself — because the
+    /// inspector rebuilds constantly and a well that jumps position between
+    /// rebuilds is worse than no well at all.
+    func colourGroups(ids: Set<UUID>, strokes: Bool) -> [(colour: ColorSpec, ids: [UUID])] {
+        var buckets: [ColorSpec: [UUID]] = [:]
+        for el in elements where ids.contains(el.id) {
+            guard let colour = strokes ? el.stroke : el.fill else { continue }
+            buckets[colour, default: []].append(el.id)
+        }
+        func key(_ c: ColorSpec) -> String { "\(c.hexString)-\(c.a)" }
+        return buckets
+            .map { (colour: $0.key, ids: $0.value) }
+            .sorted {
+                $0.ids.count != $1.ids.count
+                    ? $0.ids.count > $1.ids.count
+                    : key($0.colour) < key($1.colour)
+            }
+    }
+
+    /// Recolour exactly these elements. Addressed by id rather than by
+    /// matching the old colour: a colour well fires continuously while the
+    /// picker is open, and after the first change the old colour no longer
+    /// matches anything.
+    mutating func setColour(_ colour: ColorSpec, ids: [UUID], strokes: Bool) {
+        let wanted = Set(ids)
+        for i in elements.indices where wanted.contains(elements[i].id) {
+            if strokes { elements[i].stroke = colour } else { elements[i].fill = colour }
+        }
+    }
+
     /// Align the given elements, either to their own collective bounds or to
     /// the panel.
     ///
@@ -585,12 +657,21 @@ extension ElementParams {
         startAngle   = try c.decodeOr(.startAngle, startAngle)
         sweepAngle   = try c.decodeOr(.sweepAngle, sweepAngle)
         pointerAngle = try c.decodeOr(.pointerAngle, pointerAngle)
+        knobStyle    = try c.decodeOr(.knobStyle, knobStyle)
+        arcSpan      = try c.decodeOr(.arcSpan, arcSpan)
+        arcWidth     = try c.decodeOr(.arcWidth, arcWidth)
         value        = try c.decodeOr(.value, value)
         segments     = try c.decodeOr(.segments, segments)
         layout       = try c.decodeOr(.layout, layout)
         text         = try c.decodeOr(.text, text)
         fontSize     = try c.decodeOr(.fontSize, fontSize)
         bold         = try c.decodeOr(.bold, bold)
+        symbol       = try c.decodeOr(.symbol, symbol)
+        weight       = try c.decodeOr(.weight, weight)
+        symbolA      = try c.decodeOr(.symbolA, symbolA)
+        symbolB      = try c.decodeOr(.symbolB, symbolB)
+        symbolC      = try c.decodeOr(.symbolC, symbolC)
+        symbolD      = try c.decodeOr(.symbolD, symbolD)
     }
 }
 
