@@ -1408,8 +1408,113 @@ enum Selftest {
         if !header.contains("inline void addComponents(ModuleWidget* widget, Module* module) {") {
             failures.append("header: missing addComponents entry point")
         }
-        if !header.contains("widget->addParam(createParamCentered<RoundLargeBlackKnob>(mm2px(Vec(15.240, 38.947))") {
-            failures.append("header: component lines should be addressed to the widget, at the same position as the flat form")
+        let ui = CodeGen.uiNamespace(rig)
+        if !header.contains("widget->addParam(createParamCentered<\(ui)::RoundLargeBlackKnob>(mm2px(Vec(15.240, 38.947))") {
+            failures.append("header: component lines should be addressed to the widget, through the widget library, "
+                + "at the same position as the flat form")
+        }
+        // The header declares the ids and then places against them. Referring
+        // to the module's own enum instead would make a header that declares
+        // one enum and uses another — it compiles only if the module happens to
+        // declare a matching one, which is the drift this exists to remove.
+        if !header.contains("module, CUTOFF_PARAM))") {
+            failures.append("header: ids should be the ones it declares, not the module's")
+        }
+        if header.contains("TestModule::CUTOFF_PARAM") {
+            failures.append("header: the panel header must not depend on the module class")
+        }
+        if !header.contains("#include \"\(CodeGen.widgetsHeaderName(rig))\"") {
+            failures.append("header: should include the plugin's widget library")
+        }
+
+        // The widget library: one namespace for the plugin's own widgets and
+        // for the Rack types it uses, so placement code never has to know which
+        // is which.
+        let widgets = CodeGen.widgetsHeader(rig)
+        if !widgets.contains("namespace \(ui) {") {
+            failures.append("widgets: missing the plugin namespace")
+        }
+        if !widgets.contains("using RoundLargeBlackKnob = rack::componentlibrary::RoundLargeBlackKnob;") {
+            failures.append("widgets: a stock type should be aliased into the namespace")
+        }
+        // A template cannot be an alias name, and pretending otherwise produces
+        // a header that will not compile.
+        if CodeGen.widgetAlias("MediumLight<RedLight>") != "MediumLightRedLight" {
+            failures.append("widgets: a templated Rack type needs a usable alias name")
+        }
+
+        // Generated widgets derive from the plugin's own bases, not straight
+        // from Rack, so shared policy has one place to live that regeneration
+        // cannot reach.
+        var libRig = componentRig()
+        for i in libRig.elements.indices where libRig.elements[i].role == .param {
+            libRig.elements[i].widgetSource = .custom
+            libRig.elements[i].customWidgetName = "LcarsKnob"
+        }
+        let lib = CodeGen.widgetsHeader(libRig)
+        if !lib.contains("struct LcarsKnob : KnobBase {") {
+            failures.append("widgets: a generated knob should derive from the plugin's KnobBase")
+        }
+        if lib.contains("minAngle") {
+            failures.append("widgets: the sweep belongs in the base, not repeated in every struct")
+        }
+        if !lib.contains("#include \"\(CodeGen.widgetBaseHeaderName(libRig))\"") {
+            failures.append("widgets: the library should include the base header")
+        }
+        // The single-file export has no header to include, so it must still
+        // stand alone.
+        let flat = CodeGen.rackSource(libRig)
+        if !flat.contains("struct LcarsKnob : app::SvgKnob {") || !flat.contains("minAngle") {
+            failures.append("codegen: the one-file export must derive from Rack directly and carry its own sweep")
+        }
+
+        let baseHeader = CodeGen.widgetBaseHeader(libRig)
+        for family in CodeGen.WidgetFamily.allCases where !baseHeader.contains("struct \(family.rawValue)") {
+            failures.append("widgets: base header is missing \(family.rawValue)")
+        }
+
+        // The plugin slug names two headers and a namespace, so leaving it at
+        // the default is a mistake worth catching before the files are written.
+        var defaultSlug = componentRig()
+        defaultSlug.moduleSlug = "Thing"
+        if !CodeGen.warnings(defaultSlug).contains(where: { $0.contains("still \"MyPlugin\"") }) {
+            failures.append("codegen: an unset plugin slug should warn — it names the widget library")
+        }
+        var namedPlugin = defaultSlug
+        namedPlugin.pluginSlug = "Muse"
+        if CodeGen.warnings(namedPlugin).contains(where: { $0.contains("MyPlugin") }) {
+            failures.append("codegen: a set plugin slug should not warn")
+        }
+        if CodeGen.widgetsHeaderName(namedPlugin) != "MuseWidgets.hpp" {
+            failures.append("codegen: the widget library is named after the plugin, got "
+                + CodeGen.widgetsHeaderName(namedPlugin))
+        }
+        if CodeGen.uiNamespace(namedPlugin) != "museui" {
+            failures.append("codegen: the widget namespace follows the plugin slug, got "
+                + CodeGen.uiNamespace(namedPlugin))
+        }
+
+        // Filenames come from the class, so two classes reducing to one
+        // filename would overwrite each other's artwork in silence.
+        var clash = componentRig()
+        var a = ElementKind.jack.defaultElement(at: CGPoint(x: 10, y: 200))
+        a.role = .input; a.enumName = "A"
+        a.widgetSource = .custom; a.customWidgetName = "CvJack"
+        var b = ElementKind.jack.defaultElement(at: CGPoint(x: 40, y: 200))
+        b.role = .input; b.enumName = "B"
+        b.widgetSource = .custom; b.customWidgetName = "Cv_Jack"
+        clash.elements += [a, b]
+        if !CodeGen.warnings(clash).contains(where: { $0.contains("both export as cv-jack") }) {
+            failures.append("codegen: two widget names reducing to one filename should warn")
+        }
+
+        // Two panels in one plugin share one widget library: the same jack must
+        // compile to one struct and load one SVG.
+        var second = rig
+        second.moduleSlug = "OtherModule"
+        let shared = CodeGen.widgetsHeader(for: [rig, second])
+        if shared.components(separatedBy: "using RoundLargeBlackKnob =").count - 1 != 1 {
+            failures.append("widgets: a type used by two panels was aliased twice")
         }
         if header.contains("\ncreateModel<") {
             failures.append("header: registration belongs in the module source, not the generated header")

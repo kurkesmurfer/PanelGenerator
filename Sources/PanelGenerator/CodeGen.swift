@@ -80,6 +80,155 @@ enum CodeGen {
     }
 
     /// `museui::`, or empty when the document declares no namespace.
+    static func pluginIdentifier(_ doc: PanelDocument) -> String {
+        cppIdentifier(doc.pluginSlug, fallback: "MyPlugin")
+    }
+
+    /// Namespace holding the plugin's widget library.
+    ///
+    /// One per plugin, not one per module: two modules that both use the same
+    /// jack should compile to one struct and load one SVG, and a widget is a
+    /// property of the plugin's visual language rather than of any module.
+    static func uiNamespace(_ doc: PanelDocument) -> String {
+        doc.widgetNamespace.isEmpty
+            ? pluginIdentifier(doc).lowercased() + "ui"
+            : cppIdentifier(doc.widgetNamespace, fallback: "ui")
+    }
+
+    static func widgetsHeaderName(_ doc: PanelDocument) -> String {
+        pluginIdentifier(doc) + "Widgets.hpp"
+    }
+
+    static func widgetBaseHeaderName(_ doc: PanelDocument) -> String {
+        pluginIdentifier(doc) + "WidgetBase.hpp"
+    }
+
+    /// The Rack base a widget needs, and so which of the plugin's own bases it
+    /// derives from. One per family rather than one per widget: what a knob and
+    /// a port need from a plugin's visual language differs, what two knobs need
+    /// does not.
+    enum WidgetFamily: String, CaseIterable {
+        case knob = "KnobBase"
+        case port = "PortBase"
+        case toggle = "SwitchBase"
+        case slider = "SliderBase"
+        case plain = "PlainBase"
+
+        var rackBase: String {
+            switch self {
+            case .knob:   return "app::SvgKnob"
+            case .port:   return "app::SvgPort"
+            case .toggle: return "app::SvgSwitch"
+            case .slider: return "app::SvgSlider"
+            case .plain:  return "widget::SvgWidget"
+            }
+        }
+    }
+
+    static func family(for el: PanelElement, in doc: PanelDocument) -> WidgetFamily {
+        if doc.widgetMembers(of: el).count > 1 {
+            switch composedBase(for: el, in: doc) {
+            case "port":   return .port
+            case "knob":   return .knob
+            case "switch": return .toggle
+            default:       return .plain
+            }
+        }
+        switch el.role {
+        case .input, .output: return .port
+        case .param where el.kind.isKnob: return .knob
+        case .param where el.kind == .faderVertical || el.kind == .faderHorizontal: return .slider
+        case .param where isSwitch(el): return .toggle
+        default: return .plain
+        }
+    }
+
+    /// Written once and never overwritten. This is the seam: policy that every
+    /// widget of a family shares lives here and is yours to edit, while the
+    /// generated structs below hold only what PanelGenerator actually knows —
+    /// which files to load. Regeneration cannot touch your edits because it
+    /// never writes this file twice.
+    static func widgetBaseHeader(_ doc: PanelDocument) -> String {
+        let ns = uiNamespace(doc)
+        return lines([
+            "// Created once by PanelGenerator. YOURS TO EDIT — it is never overwritten.",
+            "//",
+            "// Every generated widget derives from one of these, so anything you put in a",
+            "// base reaches all of that family and survives every regeneration. Theme",
+            "// switching, shadows, tooltips, hover behaviour: here, not in the generated",
+            "// file, which is rewritten on every emit.",
+            "//",
+            "// Delete this file to have it written again from scratch.",
+            "",
+            "#pragma once",
+            "#include \"plugin.hpp\"",
+            "",
+            "namespace \(ns) {",
+            "",
+            "using namespace rack;",
+            "",
+            "/// Rack sweeps a knob from minAngle to maxAngle itself; ±0.83·π is its own",
+            "/// default and what every ComponentLibrary knob uses.",
+            "struct KnobBase : app::SvgKnob {",
+            "    KnobBase() {",
+            "        minAngle = -0.83f * M_PI;",
+            "        maxAngle =  0.83f * M_PI;",
+            "    }",
+            "};",
+            "",
+            "struct PortBase : app::SvgPort {};",
+            "",
+            "/// Flat panel artwork reads better without Rack's circular drop shadow.",
+            "struct SwitchBase : app::SvgSwitch {",
+            "    SwitchBase() {",
+            "        shadow->opacity = 0.f;",
+            "    }",
+            "};",
+            "",
+            "struct SliderBase : app::SvgSlider {};",
+            "",
+            "struct PlainBase : widget::SvgWidget {};",
+            "",
+            "} // namespace \(ns)",
+        ])
+    }
+
+    /// A C++ name for a Rack type, usable as a `using` alias.
+    ///
+    /// Templates are the reason this exists: `MediumLight<RedLight>` cannot be
+    /// an alias name, so it becomes `MediumLightRedLight`. Everything else
+    /// keeps the name you would have typed.
+    /// Whether a Rack type can be aliased into the plugin's namespace.
+    ///
+    /// Only ComponentLibrary types can: the alias resolves to
+    /// `rack::componentlibrary::<type>`, so anything already namespaced is
+    /// someone else's and anything not in that library would alias to a name
+    /// that does not exist. Those are named verbatim in placement code instead,
+    /// which is correct if less tidy — a header that does not compile is worse
+    /// than one that is inconsistent.
+    static func isAliasable(_ type: String) -> Bool {
+        guard !type.isEmpty, !type.contains("::"), type != "Widget" else { return false }
+        return type.allSatisfy { $0.isLetter || $0.isNumber || $0 == "_" || $0 == "<" || $0 == ">" }
+    }
+
+    /// Rack types used across these panels that can be aliased, as type → alias.
+    static func stockAliases(for docs: [PanelDocument]) -> [String: String] {
+        var out: [String: String] = [:]
+        for panel in docs {
+            for el in panel.components where el.widgetSource == .stock {
+                let type = widgetClass(el)
+                guard isAliasable(type) else { continue }
+                out[type] = widgetAlias(type)
+            }
+        }
+        return out
+    }
+
+    static func widgetAlias(_ type: String) -> String {
+        let mapped = type.map { $0.isLetter || $0.isNumber || $0 == "_" ? $0 : Character(" ") }
+        return String(mapped).split(separator: " ").joined()
+    }
+
     static func namespacePrefix(_ doc: PanelDocument) -> String {
         doc.widgetNamespace.isEmpty
             ? ""
@@ -184,6 +333,14 @@ enum CodeGen {
     static func warnings(_ doc: PanelDocument) -> [String] {
         var out: [String] = []
 
+        // The plugin slug names the widget library, its header and its
+        // namespace, so leaving it at the default quietly produces a
+        // MyPluginWidgets.hpp that no plugin wants to include.
+        if doc.pluginSlug == "MyPlugin" {
+            out.append("The plugin slug is still \"MyPlugin\". It names \(widgetsHeaderName(doc)), "
+                + "\(widgetBaseHeaderName(doc)) and the \(uiNamespace(doc)) namespace — set it in Panel settings.")
+        }
+
         for (label, slug) in [("Module", doc.moduleSlug), ("Plugin", doc.pluginSlug)]
         where !isValidSlug(slug) {
             out.append("\(label) slug \"\(slug)\" is not a valid Rack slug — letters, digits, - and _ only. Rack rejects the plugin at load. Try \"\(slugSuggestion(slug))\"."
@@ -214,6 +371,27 @@ enum CodeGen {
             out.append("\(el.identifierStem) is a \(n)-position switch. Its parameter must be configured "
                 + "0…\(n - 1) — configSwitch(\(el.identifierStem)\(el.role.enumSuffix), 0.f, \(n - 1).f, 0.f, …) "
                 + "— or Rack can only ever reach the first two positions.")
+        }
+
+        // Artwork filenames come from the class name, so two classes that
+        // reduce to the same filename overwrite each other's SVGs in silence
+        // and every instance of both draws whichever won.
+        var byFile: [String: Set<String>] = [:]
+        for el in doc.components where el.widgetSource == .custom && !el.customWidgetName.isEmpty {
+            byFile[kebab(el.customWidgetName), default: []].insert(el.customWidgetName)
+        }
+        for (file, names) in byFile.sorted(by: { $0.key < $1.key }) where names.count > 1 {
+            out.append("\(names.sorted().joined(separator: " and ")) both export as \(file)*.svg — "
+                + "one overwrites the other. Rename one of them.")
+        }
+
+        // A custom widget with no struct name falls back to the *instance*
+        // identifier, which breaks the rule the rest of this relies on: one
+        // class, one set of files, however many times it is placed.
+        for el in doc.components where el.widgetSource == .custom && el.customWidgetName.isEmpty {
+            out.append("\(el.identifierStem) is custom but unnamed, so its artwork is filed under its own "
+                + "identifier rather than a widget name. Two placements would write two sets of files "
+                + "for one control — give it a struct name.")
         }
 
         let unnamed = doc.components.filter(\.enumName.isEmpty)
@@ -301,14 +479,18 @@ enum CodeGen {
     /// here — a switch with three frames whose param is still 0…1 can only ever
     /// reach frames 0 and 1. The comment carries the call that fixes it, since
     /// this is the failure that looks like "the artwork is broken".
-    private static func switchStruct(name: String, files: [String], element el: PanelElement) -> String {
+    private static func switchStruct(name: String, files: [String], element el: PanelElement,
+                                     base: String? = nil) -> String {
         let momentary = el.kind == .pushButton
         var body = [
-            "struct \(name) : app::SvgSwitch {",
+            "struct \(name) : \(base ?? "app::SvgSwitch") {",
             "    \(name)() {",
         ]
         if momentary { body.append("        momentary = true;") }
-        body.append("        shadow->opacity = 0.f;   // flat artwork reads better without it")
+        // Without a base to carry it, each struct turns the shadow off itself.
+        if base == nil {
+            body.append("        shadow->opacity = 0.f;   // flat artwork reads better without it")
+        }
         for file in files { body.append("        addFrame(\(asset(file)));") }
         body.append("    }")
         body.append("};")
@@ -322,16 +504,30 @@ enum CodeGen {
         return lines(body)
     }
 
+    /// - Parameter base: the plugin's own base for this widget's family, when
+    ///   generating into a plugin that has one. nil derives straight from Rack,
+    ///   which is what the single-file export must do — it has no header to
+    ///   include.
     private static func structSource(for el: PanelElement, named name: String,
-                                     in doc: PanelDocument) -> String {
+                                     in doc: PanelDocument,
+                                     base: String? = nil) -> String {
         let files = componentFiles(for: el, in: doc).map(\.name)
         let composed = doc.widgetMembers(of: el).count > 1
+        // With a base, the shared settings live there and are not repeated.
+        let knobBase = base ?? "app::SvgKnob"
+        let portBase = base ?? "app::SvgPort"
+        let switchBase = base ?? "app::SvgSwitch"
+        let sliderBase = base ?? "app::SvgSlider"
+        let plainBase = base ?? "widget::SvgWidget"
+        let knobAngles = base == nil
+            ? ["        minAngle = -0.83f * M_PI;", "        maxAngle =  0.83f * M_PI;"]
+            : []
 
         if composed {
             switch composedBase(for: el, in: doc) {
             case "port":
                 return lines([
-                    "struct \(name) : app::SvgPort {",
+                    "struct \(name) : \(portBase) {",
                     "    \(name)() {",
                     "        setSvg(\(asset(files[0])));",
                     "    }",
@@ -339,11 +535,10 @@ enum CodeGen {
                 ])
             case "knob":
                 return lines([
-                    "struct \(name) : app::SvgKnob {",
+                    "struct \(name) : \(knobBase) {",
                     "    widget::SvgWidget* bg;",
                     "    \(name)() {",
-                    "        minAngle = -0.83f * M_PI;",
-                    "        maxAngle =  0.83f * M_PI;",
+                ] + knobAngles + [
                     "        bg = new widget::SvgWidget;",
                     "        fb->addChildBelow(bg, tw);",
                     "        bg->setSvg(\(asset(files[0])));",
@@ -352,10 +547,10 @@ enum CodeGen {
                     "};",
                 ])
             case "switch":
-                return switchStruct(name: name, files: files, element: el)
+                return switchStruct(name: name, files: files, element: el, base: switchBase)
             default:
                 return lines([
-                    "struct \(name) : widget::SvgWidget {",
+                    "struct \(name) : \(plainBase) {",
                     "    \(name)() {",
                     "        setSvg(\(asset(files[0])));",
                     "    }",
@@ -368,7 +563,7 @@ enum CodeGen {
 
         case .input, .output:
             return lines([
-                "struct \(name) : app::SvgPort {",
+                "struct \(name) : \(portBase) {",
                 "    \(name)() {",
                 "        setSvg(\(asset(files[0])));",
                 "    }",
@@ -379,11 +574,10 @@ enum CodeGen {
             // Rack's own RoundKnob shape: a static background below the
             // TransformWidget, and only the indicator turning above it.
             return lines([
-                "struct \(name) : app::SvgKnob {",
+                "struct \(name) : \(knobBase) {",
                 "    widget::SvgWidget* bg;",
                 "    \(name)() {",
-                "        minAngle = -0.83f * M_PI;",
-                "        maxAngle =  0.83f * M_PI;",
+            ] + knobAngles + [
                 "        bg = new widget::SvgWidget;",
                 "        fb->addChildBelow(bg, tw);",
                 "        bg->setSvg(\(asset(files[0])));",
@@ -403,7 +597,7 @@ enum CodeGen {
                 ? "Vec(\(Geo.fmt(el.w / 2)), \(Geo.fmt(handle / 2)))"
                 : "Vec(\(Geo.fmt(el.w - handle / 2)), \(Geo.fmt(el.h / 2)))"
             return lines([
-                "struct \(name) : app::SvgSlider {",
+                "struct \(name) : \(sliderBase) {",
                 "    \(name)() {",
                 "        // A slider needs two files; PanelGenerator exports the track.",
                 "        setBackgroundSvg(\(asset(files[0])));",
@@ -414,7 +608,7 @@ enum CodeGen {
             ])
 
         case .param where isSwitch(el):
-            return switchStruct(name: name, files: files, element: el)
+            return switchStruct(name: name, files: files, element: el, base: switchBase)
 
         case .light:
             return lines([
@@ -425,7 +619,7 @@ enum CodeGen {
 
         default:
             return lines([
-                "struct \(name) : widget::SvgWidget {",
+                "struct \(name) : \(plainBase) {",
                 "    \(name)() {",
                 "        setSvg(\(asset(files[0])));",
                 "    }",
@@ -439,9 +633,22 @@ enum CodeGen {
     /// `receiver` is empty for a bare constructor body, or "widget->" when the
     /// lines go inside a free function taking the widget. One body serves both
     /// so the two outputs cannot disagree about a position.
-    static func constructorBody(_ doc: PanelDocument, receiver: String = "") -> String {
+    /// - Parameters:
+    ///   - idPrefix: how the enum constants are reached. The one-file export
+    ///     puts them inside the module struct, so they need `Module::`; the
+    ///     generated header declares them in its own namespace alongside this
+    ///     body, where they are already in scope. Getting this wrong produces a
+    ///     header that declares an enum and then refers to a different one.
+    ///   - uiNamespace: when set, every widget — the plugin's own and Rack's —
+    ///     is named through that namespace, so placement code does not care
+    ///     which is which and swapping one for the other is a line in the
+    ///     widget header rather than an edit here.
+    static func constructorBody(_ doc: PanelDocument, receiver: String = "",
+                                idPrefix: String? = nil,
+                                uiNamespace ui: String? = nil) -> String {
         let mod = moduleIdentifier(doc)
         let ns = namespacePrefix(doc)
+        let prefix = idPrefix ?? "\(mod)::"
         let ids = identifiers(doc)
         var out = "\(receiver)setPanel(createPanel(asset::plugin(pluginInstance, \"res/\(doc.moduleSlug).svg\")));\n"
 
@@ -449,10 +656,22 @@ enum CodeGen {
         for el in doc.components {
             // Stock types live in Rack's global namespace; only our own structs
             // get the document's namespace prefix.
-            let cls = el.widgetSource == .custom ? ns + widgetClass(el) : widgetClass(el)
+            let cls: String
+            if let ui {
+                let type = widgetClass(el)
+                if el.widgetSource == .custom {
+                    cls = ui + "::" + type
+                } else {
+                    // A type that could not be aliased is named as written; the
+                    // widget library says why.
+                    cls = isAliasable(type) ? ui + "::" + widgetAlias(type) : type
+                }
+            } else {
+                cls = el.widgetSource == .custom ? ns + widgetClass(el) : widgetClass(el)
+            }
             let p = doc.componentCentreMM(el)
             let vec = "mm2px(Vec(\(mm3(p.x)), \(mm3(p.y))))"
-            let id = "\(mod)::\(ids[el.id] ?? el.identifierStem)\(el.role.enumSuffix)"
+            let id = "\(prefix)\(ids[el.id] ?? el.identifierStem)\(el.role.enumSuffix)"
             switch el.role {
             case .param:
                 byRole[.param, default: []].append("\(receiver)addParam(createParamCentered<\(cls)>(\(vec), module, \(id)));")
@@ -484,11 +703,94 @@ enum CodeGen {
     /// hand-written code, so revising a panel is one command with nothing to
     /// merge. The module, its DSP and its registration live in a file the
     /// generator never touches.
+    /// The plugin's widget library: every custom widget it draws, plus an
+    /// alias for every stock Rack type it uses.
+    ///
+    /// The aliases are the point, and they are what makes this a boundary
+    /// rather than a filing cabinet. Placement code names `museui::PJ301MPort`
+    /// whether that is Rack's port or yours, so replacing a stock widget with
+    /// your own artwork is one line changed here and nothing changed anywhere
+    /// else. Without them, swapping a widget means editing every placement that
+    /// mentions it — which is exactly the edit a generated file will overwrite.
+    static func widgetsHeader(_ doc: PanelDocument) -> String { widgetsHeader(for: [doc]) }
+
+    /// - Parameter docs: every panel in the plugin. A plugin's modules share a
+    ///   visual language, so two modules using the same jack must compile to
+    ///   one struct and load one SVG. Emitting this per document meant the
+    ///   second module's header overwrote the first's and took its widgets
+    ///   with it.
+    static func widgetsHeader(for docs: [PanelDocument]) -> String {
+        guard let doc = docs.first else { return "" }
+        let ns = uiNamespace(doc)
+
+        var out = lines([
+            "// Generated by PanelGenerator — do not edit.",
+            "//",
+            "// \(pluginIdentifier(doc)) widget library. One namespace for everything a panel",
+            "// places: the plugin's own widgets as structs, and the Rack types it uses as",
+            "// aliases, so placement code never has to know which is which.",
+            "//",
+            "// To replace a stock widget with your own artwork, draw it in PanelGenerator",
+            "// and mark it as a custom widget — the alias below becomes a struct and every",
+            "// panel that places it follows, with no edit to any placement code.",
+            "",
+            "#pragma once",
+            "#include \"\(widgetBaseHeaderName(doc))\"",
+            "",
+            "namespace \(ns) {",
+            "",
+            "using namespace rack;",
+            "using namespace rack::componentlibrary;",
+            "",
+        ])
+
+        // Stock types, deduplicated and in a stable order so the file does not
+        // churn between emits.
+        let stock = stockAliases(for: docs)
+        if !stock.isEmpty {
+            out += "// Rack's own, named through this namespace.\n"
+            for type in stock.keys.sorted() {
+                let alias = stock[type] ?? type
+                out += alias == type
+                    ? "using \(alias) = rack::componentlibrary::\(type);\n"
+                    : "using \(alias) = rack::componentlibrary::\(type);   // \(type)\n"
+            }
+            out += "\n"
+        }
+        let verbatim = docs.flatMap(\.components)
+            .filter { $0.widgetSource == .stock && !isAliasable(widgetClass($0)) }
+            .map { widgetClass($0) }
+        if !Set(verbatim).isEmpty {
+            out += "// Named as written in the panels, not aliased here: "
+                + Set(verbatim).sorted().joined(separator: ", ") + ".\n\n"
+        }
+
+        // Deduplicated across the whole plugin: the first panel to define a
+        // widget defines it for all of them.
+        var seen = Set<String>()
+        var structs = ""
+        for panel in docs {
+            for el in panel.components where el.widgetSource == .custom {
+                let name = el.customWidgetName
+                guard !name.isEmpty, seen.insert(name).inserted else { continue }
+                structs += structSource(for: el, named: name, in: panel,
+                                        base: family(for: el, in: panel).rawValue) + "\n"
+            }
+        }
+        out += structs.isEmpty
+            ? "// No custom widgets yet — everything is drawn by Rack's own.\n"
+            : structs
+        out += "\n} // namespace \(ns)\n"
+        return out
+    }
+
     static func panelHeader(_ doc: PanelDocument) -> String {
         let mod = moduleIdentifier(doc)
-        let ns = doc.widgetNamespace.isEmpty
-            ? mod + "Panel"
-            : cppIdentifier(doc.widgetNamespace, fallback: "ui")
+        // The panel's namespace is the module's; the widget library's is the
+        // plugin's. Conflating them meant two modules in one plugin could not
+        // both be included, and a shared widget had to be generated twice.
+        let ns = mod + "Panel"
+        let ui = uiNamespace(doc)
 
         var out = lines([
             "// Generated by PanelGenerator — do not edit.",
@@ -496,16 +798,18 @@ enum CodeGen {
             "// \(doc.name) · \(doc.widthHP)HP \(doc.format.rawValue) · \(doc.components.count) component\(doc.components.count == 1 ? "" : "s").",
             "// Overwritten on every emit, so nothing written here survives.",
             "//",
-            "// Include after plugin.hpp — the declarations below are unqualified and",
-            "// rely on the `using namespace rack;` that plugin.hpp brings in.",
+            "// This file owns the panel: the component ids, their positions, and the",
+            "// widgets that draw them. Your module owns the sound. The only thing the two",
+            "// share is the enum below, which is why it is generated rather than typed",
+            "// twice.",
             "//",
             "//   #include \"plugin.hpp\"",
             "//   #include \"\(mod)_panel.hpp\"",
+            "//   using namespace \(ns);        // ids unqualified, as Rack code expects",
             "//",
             "//   struct \(mod) : Module {",
             "//       \(mod)() {",
-            "//           config(\(ns)::PARAMS_LEN, \(ns)::INPUTS_LEN,",
-            "//                  \(ns)::OUTPUTS_LEN, \(ns)::LIGHTS_LEN);",
+            "//           config(PARAMS_LEN, INPUTS_LEN, OUTPUTS_LEN, LIGHTS_LEN);",
             "//       }",
             "//       void process(const ProcessArgs& args) override {}",
             "//   };",
@@ -526,14 +830,17 @@ enum CodeGen {
             for warning in warns { out += "//   ! \(warning)\n" }
         }
 
-        out += "\n#pragma once\n\nnamespace \(ns) {\n\n"
+        out += "\n#pragma once\n#include \"\(widgetsHeaderName(doc))\"\n\n"
+        out += "namespace \(ns) {\n\n"
+        out += "using namespace rack;\n\n"
         out += idEnums(doc)
 
-        let structs = customWidgetStructs(doc)
-        if !structs.isEmpty { out += "\n" + structs }
-
         out += "\ninline void addComponents(ModuleWidget* widget, Module* module) {\n"
-        for line in constructorBody(doc, receiver: "widget->").split(separator: "\n", omittingEmptySubsequences: false) {
+        // No module qualification on the ids: they are declared just above, in
+        // this same namespace. No bare widget names either — everything goes
+        // through the widget library.
+        for line in constructorBody(doc, receiver: "widget->", idPrefix: "", uiNamespace: ui)
+            .split(separator: "\n", omittingEmptySubsequences: false) {
             out += line.isEmpty ? "\n" : "    " + line + "\n"
         }
         out += "}\n\n} // namespace \(ns)\n\n"

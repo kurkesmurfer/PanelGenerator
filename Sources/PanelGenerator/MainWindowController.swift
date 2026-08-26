@@ -239,6 +239,11 @@ final class MainWindowController: NSWindowController, NSMenuItemValidation {
             let headers = siblings.compactMap { try? String(contentsOf: $0, encoding: .utf8) }
 
             let outcome = CppImport.outcome(from: source, headers: headers)
+            // The plugin slug is not in the source — it lives in plugin.json,
+            // beside it or one level up. It names the generated widget library
+            // and its namespace, so importing without it produces a plugin
+            // called MyPlugin.
+            let plugin = pluginManifest(near: url)
             let found = outcome.panelResource.flatMap { resolveResource($0, near: url) }
             let answer = confirmModuleImport(outcome, source: url, panel: found)
             guard answer.proceed else { return }
@@ -264,6 +269,7 @@ final class MainWindowController: NSWindowController, NSMenuItemValidation {
                 }
             }
             if let hp = outcome.widthHP { doc.widthHP = hp }
+            if let plugin { doc.pluginSlug = plugin }
             if let slug = outcome.moduleSlug {
                 doc.moduleSlug = slug
                 // Name the document after the module too, when it has no name
@@ -303,6 +309,9 @@ final class MainWindowController: NSWindowController, NSMenuItemValidation {
         alert.messageText = "Import \(outcome.elements.count) components from \(source.lastPathComponent)?"
         var lines = ["\(params) params · \(inputs) inputs · \(outputs) outputs · \(lights) lights"]
         if let slug = outcome.moduleSlug { lines.append("Module slug: \(slug)") }
+        if let plugin = pluginManifest(near: source) {
+            lines.append("Plugin slug: \(plugin), from plugin.json — it names the generated widget library.")
+        }
         if panel == nil, let named = outcome.panelResource {
             lines.append("The source names \(named), which is not where this reader looked. "
                 + "Import it separately with File ▸ Import SVG.")
@@ -330,6 +339,21 @@ final class MainWindowController: NSWindowController, NSMenuItemValidation {
 
         let proceed = alert.runModal() == .alertFirstButtonReturn
         return (proceed, artwork?.state == .on)
+    }
+
+    /// The plugin's slug, from the plugin.json Rack requires every plugin to
+    /// have. Looked for beside the source and one level up, the same two places
+    /// the panel artwork is.
+    private func pluginManifest(near source: URL) -> String? {
+        let dir = source.deletingLastPathComponent()
+        for candidate in [dir.appendingPathComponent("plugin.json"),
+                          dir.deletingLastPathComponent().appendingPathComponent("plugin.json")] {
+            guard let data = try? Data(contentsOf: candidate),
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let slug = json["slug"] as? String, !slug.isEmpty else { continue }
+            return slug
+        }
+        return nil
     }
 
     /// `res/Muse.svg` as written in the source, found on disk. Plugins put the

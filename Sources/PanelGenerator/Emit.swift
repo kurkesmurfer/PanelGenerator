@@ -43,12 +43,50 @@ enum Emit {
         }
 
         var allOK = true
-        for document in documents where !emit(document, to: out) { allOK = false }
+        var loaded: [PanelDocument] = []
+        for document in documents {
+            guard let doc = emit(document, to: out) else { allOK = false; continue }
+            loaded.append(doc)
+        }
+
+        // One widget library for the whole plugin, written after every panel so
+        // it holds all of their widgets. Emitting it per panel meant the last
+        // module overwrote the others and took their widgets with it.
+        if let first = loaded.first {
+            let name = CodeGen.widgetsHeaderName(first)
+            do {
+                try CodeGen.widgetsHeader(for: loaded)
+                    .write(to: out.appendingPathComponent(name), atomically: true, encoding: .utf8)
+                print("  → \(out.appendingPathComponent(name).path)")
+            } catch {
+                print("EMIT FAILED: \(name): \(error)")
+                allOK = false
+            }
+
+            // The editable seam, written once and then left alone. Overwriting
+            // it on every emit would throw away exactly the edits it exists to
+            // hold — so an existing one is reported as kept, never touched.
+            let baseName = CodeGen.widgetBaseHeaderName(first)
+            let baseURL = out.appendingPathComponent(baseName)
+            if FileManager.default.fileExists(atPath: baseURL.path) {
+                print("  · \(baseURL.path) (kept — yours to edit)")
+            } else {
+                do {
+                    try CodeGen.widgetBaseHeader(first)
+                        .write(to: baseURL, atomically: true, encoding: .utf8)
+                    print("  → \(baseURL.path) (created once; edit freely)")
+                } catch {
+                    print("EMIT FAILED: \(baseName): \(error)")
+                    allOK = false
+                }
+            }
+        }
+
         fflush(stdout)
         exit(allOK ? 0 : 1)
     }
 
-    private static func emit(_ docURL: URL, to out: URL) -> Bool {
+    private static func emit(_ docURL: URL, to out: URL) -> PanelDocument? {
         do {
             let doc = try PanelDocument.load(from: docURL)
             let res = out.appendingPathComponent("res")
@@ -96,10 +134,10 @@ enum Emit {
             for path in written { print("  → \(path)") }
             for warning in CodeGen.warnings(doc) { print("  ! \(warning)") }
             // Warnings are advice, not failure: the output is still usable.
-            return true
+            return doc
         } catch {
             print("EMIT FAILED: \(docURL.lastPathComponent): \(error)")
-            return false
+            return nil
         }
     }
 }
