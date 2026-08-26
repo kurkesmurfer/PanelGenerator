@@ -1366,6 +1366,32 @@ enum Selftest {
             failures.append("codegen: second same-named component should be numbered _2")
         }
 
+        // …but only inside one enum. Rack keeps ParamId and InputId apart, so a
+        // knob and the CV input feeding it may both be called ANIMATE — which
+        // is the normal way a module is named, not an accident. Numbering those
+        // apart renamed five identifiers on the first real module tried.
+        var sameName = PanelDocument()
+        var knob = ElementKind.knobLarge.defaultElement(at: CGPoint(x: 10, y: 10))
+        knob.role = .param
+        knob.enumName = "ANIMATE"
+        var jack = ElementKind.jack.defaultElement(at: CGPoint(x: 10, y: 60))
+        jack.role = .input
+        jack.enumName = "ANIMATE"
+        var outJack = ElementKind.jack.defaultElement(at: CGPoint(x: 10, y: 110))
+        outJack.role = .output
+        outJack.enumName = "ANIMATE"
+        sameName.elements = [knob, jack, outJack]
+        let sameSrc = CodeGen.rackSource(sameName)
+        for expected in ["ANIMATE_PARAM,", "ANIMATE_INPUT,", "ANIMATE_OUTPUT,"] where !sameSrc.contains(expected) {
+            failures.append("codegen: \(expected) should survive — different enums do not clash")
+        }
+        if sameSrc.contains("ANIMATE_2") {
+            failures.append("codegen: names in different enums were numbered apart")
+        }
+        if CodeGen.warnings(sameName).contains(where: { $0.contains("share the name") }) {
+            failures.append("codegen: a name reused across enums is not a clash and must not warn")
+        }
+
         // A document just written is current, whatever it was read from.
         var stamped = PanelDocument()
         stamped.schemaVersion = 0

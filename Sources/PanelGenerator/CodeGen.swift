@@ -137,12 +137,18 @@ enum CodeGen {
     /// subtlety. Numbering them keeps the output compiling; the warning tells
     /// you to name them properly.
     static func identifiers(_ doc: PanelDocument) -> [UUID: String] {
+        // Numbering is per enum, not per panel. Rack keeps ParamId, InputId,
+        // OutputId and LightId apart, so ANIMATE_PARAM and ANIMATE_INPUT are
+        // not a clash — and treating them as one renamed five perfectly legal
+        // identifiers on the first real module put through this. A CV input and
+        // the knob it feeds sharing a name is the normal case, not an accident.
         var used: [String: Int] = [:]
         var out: [UUID: String] = [:]
         for el in doc.components {
             let stem = el.identifierStem
-            let n = (used[stem] ?? 0) + 1
-            used[stem] = n
+            let key = "\(el.role.rawValue).\(stem)"
+            let n = (used[key] ?? 0) + 1
+            used[key] = n
             out[el.id] = n == 1 ? stem : "\(stem)_\(n)"
         }
         return out
@@ -161,10 +167,19 @@ enum CodeGen {
                 + (label == "Module" ? " It is also the panel's filename." : ""))
         }
 
-        var seen: [String: Int] = [:]
-        for el in doc.components { seen[el.identifierStem, default: 0] += 1 }
-        for (stem, n) in seen.sorted(by: { $0.key < $1.key }) where n > 1 {
-            out.append("\(n) components share the name \(stem); they were numbered \(stem)_2 … \(stem)_\(n) so this compiles, but name them yourself.")
+        // Same rule as `identifiers`: only a clash inside one enum is a clash.
+        var seen: [String: (role: ComponentRole, stem: String, count: Int)] = [:]
+        for el in doc.components {
+            let key = "\(el.role.rawValue).\(el.identifierStem)"
+            let previous = seen[key]?.count ?? 0
+            seen[key] = (el.role, el.identifierStem, previous + 1)
+        }
+        for (_, clash) in seen.sorted(by: { $0.key < $1.key }) where clash.count > 1 {
+            let renamed = clash.count == 2
+                ? "the second became \(clash.stem)_2"
+                : "the rest became \(clash.stem)_2 … \(clash.stem)_\(clash.count)"
+            out.append("\(clash.count) \(clash.role.rawValue)s share the name \(clash.stem) — "
+                + "the first keeps it, \(renamed). It compiles, but name them yourself.")
         }
 
         let unnamed = doc.components.filter(\.enumName.isEmpty)

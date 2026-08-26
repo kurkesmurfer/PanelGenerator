@@ -264,7 +264,13 @@ final class MainWindowController: NSWindowController, NSMenuItemValidation {
                 }
             }
             if let hp = outcome.widthHP { doc.widthHP = hp }
-            if let slug = outcome.moduleSlug { doc.moduleSlug = slug }
+            if let slug = outcome.moduleSlug {
+                doc.moduleSlug = slug
+                // Name the document after the module too, when it has no name
+                // of its own. Otherwise an emitted panel reports itself as
+                // "Untitled" for the rest of its life.
+                if doc.name.isEmpty || doc.name == "Untitled" { doc.name = slug }
+            }
             doc.elements.append(contentsOf: outcome.elements)
 
             canvas.applyDocument(doc, name: "Import Module Code")
