@@ -16,9 +16,11 @@ selftest: build
 	.build/debug/PanelGenerator --selftest Docs
 
 # make emit DOC=Panels/Thing.panelgen OUT=build/Thing
+# DOC may also be a folder — every panel in it is emitted, and the plugin's
+# widget library is written once across all of them.
 OUT ?= build/emit
 emit: build
-	@test -n "$(DOC)" || (echo "usage: make emit DOC=<file.panelgen> [OUT=<dir>]"; exit 1)
+	@test -n "$(DOC)" || (echo "usage: make emit DOC=<file.panelgen|folder> [OUT=<dir>]"; exit 1)
 	.build/debug/PanelGenerator --emit $(DOC) $(OUT)
 
 # Does the design still agree with the code? Each side may be a .panelgen, a

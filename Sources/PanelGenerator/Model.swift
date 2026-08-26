@@ -235,6 +235,26 @@ enum ElementKind: String, Codable, CaseIterable {
         }
     }
 
+    /// Identifier stem for an element still carrying its default layer name.
+    ///
+    /// The display name is written for the palette, not for C++, and using it
+    /// produced JACK_3_5_MM_7_INPUT — which names the widget you dropped rather
+    /// than the thing it controls. These at least read like a Rack enum while
+    /// you are still deciding what to call it.
+    var shortIdentifier: String {
+        switch self {
+        case .jack: return "JACK"
+        case .knobLarge, .knobMedium, .knobSmall: return "KNOB"
+        case .faderVertical, .faderHorizontal: return "FADER"
+        case .led: return "LED"
+        case .pushButton: return "BUTTON"
+        case .buttonGroup: return "SWITCH"
+        case .screw: return "SCREW"
+        case .text: return "LABEL"
+        default: return "PART"
+        }
+    }
+
     /// What a freshly dropped element most likely is. Jacks default to input
     /// because that is the commoner case; flip it in the inspector.
     var defaultRole: ComponentRole {
@@ -467,7 +487,10 @@ struct PanelElement: Codable, Hashable, Identifiable {
     /// `enumName` if set, otherwise something usable derived from the layer
     /// name — uppercased, non-alphanumerics collapsed to underscores.
     var identifierStem: String {
-        let raw = enumName.isEmpty ? name : enumName
+        var raw = enumName.isEmpty ? name : enumName
+        // An untouched layer name is the kind's display name — good in the
+        // palette, useless in an enum.
+        if enumName.isEmpty && name == kind.displayName { raw = kind.shortIdentifier }
         let mapped = raw.uppercased().map { ch -> Character in
             ch.isLetter || ch.isNumber ? ch : "_"
         }

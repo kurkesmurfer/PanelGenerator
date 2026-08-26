@@ -1161,6 +1161,31 @@ enum Selftest {
             failures.append("switch: a multi-position switch should warn about its parameter range")
         }
 
+        // A rotated piece of a composed widget must reach its own SVG rotated.
+        // Rotation is a transform on the panel and a CTM on the canvas, so it
+        // lives outside the parts — and a widget's SVG has no outer transform
+        // to carry it. Straight artwork in a file that should be turned is the
+        // kind of wrong that looks like a drawing mistake.
+        var turnDoc = PanelDocument()
+        var body = ElementKind.box.defaultElement(at: CGPoint(x: 40, y: 40))
+        body.w = 30; body.h = 12
+        var arm = ElementKind.box.defaultElement(at: CGPoint(x: 40, y: 60))
+        arm.w = 30; arm.h = 12
+        turnDoc.elements = [body, arm]
+        let turnIDs: Set<UUID> = [body.id, arm.id]
+        _ = turnDoc.makeWidget(ids: turnIDs, name: "Bracket", role: .param)
+        guard let turnAnchor = turnDoc.elements.first(where: { $0.widgetSource == .custom }) else {
+            return failures + ["switch: rotation fixture failed"]
+        }
+        let straight = SVGExporter.componentSVG(turnAnchor, in: turnDoc)
+        if let other = turnDoc.elements.firstIndex(where: { $0.id != turnAnchor.id }) {
+            turnDoc.elements[other].rotation = 90
+        }
+        let turned = SVGExporter.componentSVG(turnAnchor, in: turnDoc)
+        if straight == turned {
+            failures.append("widget art: rotating a member changed nothing in its exported SVG")
+        }
+
         // Cross is four by definition, whatever Count says.
         var cross = sw
         cross.params.layout = 2
@@ -1261,6 +1286,43 @@ enum Selftest {
         if renameDiffs.count != 1 || renameDiffs.first?.kind != .renamed {
             failures.append("compare: a component at the same position under a new name is a rename, got "
                 + "\(renameDiffs.map { "\($0.kind)" }.joined(separator: ", "))")
+        }
+
+        // Provenance. Comparing two generated files only means something when
+        // both came from the same panel; without a stamp, a stale file reads as
+        // a panel full of moved and missing components.
+        var stampRig = componentRig()
+        stampRig.name = "Stamped"
+        stampRig.moduleSlug = "Stamped"
+        let stampedHeader = CodeGen.panelHeader(stampRig)
+        guard let read = Compare.provenance(in: stampedHeader) else {
+            return failures + ["compare: a generated header carries no readable provenance stamp"]
+        }
+        if read.source != "Stamped" || read.digest != CodeGen.digest(stampRig) {
+            failures.append("compare: the stamp does not read back as written: \(read)")
+        }
+        if !CodeGen.rackSource(stampRig).contains("PanelGenerator-Source:") {
+            failures.append("compare: the one-file export should be stamped too")
+        }
+
+        // The digest is of the contract, not the artwork: a recoloured panel
+        // still places the same controls in the same places.
+        var recoloured = stampRig
+        recoloured.background = .hex("#FF00FF")
+        for i in recoloured.elements.indices { recoloured.elements[i].fill = .hex("#00FF00") }
+        if CodeGen.digest(recoloured) != CodeGen.digest(stampRig) {
+            failures.append("compare: a colour change must not change the component digest")
+        }
+        // Moving one does.
+        var nudged = stampRig
+        nudged.elements[nudged.elements.count - 1].x += 5
+        if CodeGen.digest(nudged) == CodeGen.digest(stampRig) {
+            failures.append("compare: moving a component must change the digest")
+        }
+        // And it is stable across runs — Swift seeds Hasher per process, which
+        // would make a stamp meaningless between two invocations.
+        if CodeGen.digest(stampRig) != CodeGen.digest(stampRig) {
+            failures.append("compare: the digest is not deterministic")
         }
 
         // Labels carry no identifier, so they match by their words — and a
@@ -1473,6 +1535,28 @@ enum Selftest {
             failures.append("widgets: base header is missing \(family.rawValue)")
         }
 
+        // Emitting into a plugin must land artwork and headers where a plugin
+        // keeps them, rather than piling headers next to plugin.json.
+        if let tmp = try? FileManager.default.url(for: .itemReplacementDirectory,
+                                                  in: .userDomainMask,
+                                                  appropriateFor: FileManager.default.temporaryDirectory,
+                                                  create: true) {
+            // Compared by path, not by URL: appendingPathComponent consults
+            // the file system and adds a trailing slash once the directory
+            // exists, so the same location gives two unequal URLs depending on
+            // when you asked.
+            if Emit.headerDirectory(tmp).path != tmp.path {
+                failures.append("emit: with no src/, headers belong beside the artwork")
+            }
+            let src = tmp.appendingPathComponent("src")
+            try? FileManager.default.createDirectory(at: src, withIntermediateDirectories: true)
+            if Emit.headerDirectory(tmp).path != src.path {
+                failures.append("emit: a plugin with src/ should take its headers there, got "
+                    + Emit.headerDirectory(tmp).lastPathComponent)
+            }
+            try? FileManager.default.removeItem(at: tmp)
+        }
+
         // The plugin slug names two headers and a namespace, so leaving it at
         // the default is a mistake worth catching before the files are written.
         var defaultSlug = componentRig()
@@ -1527,8 +1611,12 @@ enum Selftest {
         if !CodeGen.isValidSlug("Muse-ND") || !CodeGen.isValidSlug("Muse_ND2") {
             failures.append("slug: letters, digits, - and _ are valid")
         }
-        if CodeGen.slugSuggestion("Muse ND") != "Muse-ND" {
-            failures.append("slug: suggestion for \"Muse ND\" should be \"Muse-ND\", got \(CodeGen.slugSuggestion("Muse ND"))")
+        // Underscore, not hyphen. A slug names the panel file verbatim and the
+        // C++ identifiers derived from it, and a hyphen is not legal in an
+        // identifier — so the hyphen spells one panel two ways in one
+        // directory, and the underscore spells it once.
+        if CodeGen.slugSuggestion("Muse ND") != "Muse_ND" {
+            failures.append("slug: suggestion for \"Muse ND\" should be \"Muse_ND\", got \(CodeGen.slugSuggestion("Muse ND"))")
         }
         var badSlug = componentRig()
         badSlug.moduleSlug = "Muse ND"
@@ -1557,10 +1645,10 @@ enum Selftest {
         var dupDoc = PanelDocument()
         dupDoc.elements = [dupA, dupB]
         let dupSrc = CodeGen.rackSource(dupDoc)
-        if dupSrc.components(separatedBy: "FADER_VERTICAL_PARAM,").count - 1 != 1 {
+        if dupSrc.components(separatedBy: "FADER_PARAM,").count - 1 != 1 {
             failures.append("codegen: duplicate names produced duplicate enum entries")
         }
-        if !dupSrc.contains("FADER_VERTICAL_2_PARAM,") {
+        if !dupSrc.contains("FADER_2_PARAM,") {
             failures.append("codegen: second same-named component should be numbered _2")
         }
 

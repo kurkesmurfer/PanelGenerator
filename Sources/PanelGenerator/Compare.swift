@@ -26,6 +26,9 @@ enum Compare {
 
     struct Side {
         var label: String
+        /// The panel a generated file says it came from, if it says.
+        var source: String? = nil
+        var digest: String? = nil
         var items: [Item] = []
         /// Text by content: labels carry no identifier, so the words are the key.
         var labels: [(text: String, mm: CGPoint)] = []
@@ -54,7 +57,9 @@ enum Compare {
         switch url.pathExtension.lowercased() {
         case PanelDocument.fileExtension:
             let doc = try PanelDocument.load(from: url)
-            var side = Side(label: name)
+            // A document stamps itself, so a header can be checked against the
+            // panel it claims to come from and not merely against another file.
+            var side = Side(label: name, source: doc.name, digest: CodeGen.digest(doc))
             for el in doc.components {
                 side.items.append(Item(identifier: el.identifierStem + el.role.enumSuffix,
                                        role: el.role,
@@ -77,7 +82,9 @@ enum Compare {
             let headers = siblings.compactMap { try? String(contentsOf: $0, encoding: .utf8) }
 
             let outcome = CppImport.outcome(from: source, headers: headers)
-            var side = Side(label: name, notes: outcome.warnings)
+            let stamp = provenance(in: source)
+            var side = Side(label: name, source: stamp?.source, digest: stamp?.digest,
+                            notes: outcome.warnings)
             for el in outcome.elements where el.role.isComponent {
                 side.items.append(Item(identifier: el.identifierStem + el.role.enumSuffix,
                                        role: el.role,
@@ -197,6 +204,20 @@ enum Compare {
         return out
     }
 
+    /// Reads back the stamp `CodeGen.provenance` writes.
+    static func provenance(in text: String) -> (source: String, digest: String)? {
+        guard let line = text.split(separator: "\n", omittingEmptySubsequences: false)
+            .first(where: { $0.contains("PanelGenerator-Source:") }) else { return nil }
+        let parts = line.components(separatedBy: "·").map {
+            $0.trimmingCharacters(in: .whitespaces)
+        }
+        guard parts.count >= 3,
+              let name = parts.first?.components(separatedBy: "PanelGenerator-Source:").last?
+                  .trimmingCharacters(in: .whitespaces),
+              let digest = parts.last?.components(separatedBy: " ").last else { return nil }
+        return (name, digest)
+    }
+
     private static func distance(_ a: CGPoint, _ b: CGPoint) -> CGFloat {
         hypot(a.x - b.x, a.y - b.y)
     }
@@ -222,6 +243,23 @@ enum Compare {
             print("  B  \(b.label.padding(toLength: max(b.label.count, 28), withPad: " ", startingAt: 0))"
                 + "\(b.items.count) components, \(b.labels.count) labels")
             print("  tolerance \(mm(tolerance))")
+
+            // Said before anything else, because it decides whether the rest of
+            // the report is worth reading. Two files from different panels — or
+            // one of them stale — disagree in ways that look like a broken
+            // panel and are nothing of the kind.
+            switch (a.digest, b.digest) {
+            case let (x?, y?) where x == y:
+                print("  both generated from \(a.source ?? "the same panel") · digest \(x)")
+            case let (x?, y?):
+                print("")
+                print("  ⚠︎  DIFFERENT PANELS. A is \"\(a.source ?? "?")\" (digest \(x)), "
+                    + "B is \"\(b.source ?? "?")\" (digest \(y)).")
+                print("      Everything below is the difference between two panels, or between one")
+                print("      panel and a stale file — not a fault in either. Regenerate both first.")
+            default:
+                break
+            }
 
             let componentDiffs = differences(a, b, tolerance: tolerance)
             let labelDiffs = labels ? labelDifferences(a, b, tolerance: tolerance) : []

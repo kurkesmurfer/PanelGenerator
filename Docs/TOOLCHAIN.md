@@ -198,3 +198,65 @@ configSwitch(QUANT_PARAM, 0.f, 2.f, 0.f, "Quant", {"Free", "JI", "Octave"});
 and the export report warns about every switch with more than two positions.
 This is the failure that reads as broken artwork when it is a missing line of
 module code.
+
+## One panel or many
+
+`--emit` takes a document or a folder:
+
+```
+make emit DOC=Panels/MuseND.panelgen OUT=build/MuseND   # one panel
+make emit DOC=Panels OUT=build/MuseND                   # every panel in the folder
+```
+
+The difference used to matter more than it should have. The widget library
+belongs to the **plugin**, not to the panel being emitted — two modules sharing
+a jack must compile to one struct loading one SVG — so emitting one module at a
+time would write a library holding only that module's widgets, and the next
+module emitted into the same folder would replace it.
+
+So the library is now always built from every panel of that plugin the emitter
+can find: the ones in this run, plus any sibling `.panelgen` declaring the same
+**plugin slug**. The slug is what makes that safe rather than surprising — a
+folder of panels usually holds more than one plugin's work, and sweeping all of
+them in would put another plugin's jack in this one's namespace. When siblings
+contribute, the run says so:
+
+```
+· widget library covers 3 panels of plugin MuseND (2 not emitted this run)
+```
+
+A panel still on the default `MyPlugin` slug will group with every other panel
+still on that default. That is one more reason to set it.
+
+## Calling it from the plugin
+
+The plugin is the right place to drive this from: the design documents live
+with the code they generate, and a build can regenerate both.
+
+Emit puts artwork in `res/` under the output directory, and headers in `src/`
+when that directory exists — a standard Rack layout — or beside `res/` when it
+does not, which is what a flat plugin like Muse wants. So from the plugin root:
+
+```make
+PANELGEN ?= ../../PanelGenerator/.build/release/PanelGenerator
+PANELS   ?= panels
+
+# Regenerate every panel of this plugin: artwork, widget library, headers.
+panels:
+	$(PANELGEN) --emit $(PANELS) .
+
+# Fail the build when a panel has been edited and nobody re-emitted.
+check-panels:
+	@set -e; for p in $(PANELS)/*.panelgen; do \
+		$(PANELGEN) --compare "$$p" "$$(basename "$$p" .panelgen)_panel.hpp" --no-labels; \
+	done
+```
+
+`check-panels` relies on one convention: **name each document after its module
+slug**, so `panels/Muse.panelgen` pairs with `Muse_panel.hpp`. The document
+stamps its own digest into the header, so this check is exact — it cannot pass
+against a stale file and cannot fail against a current one.
+
+Keep `panels/` in the plugin's repository. The `.panelgen` is the source; the
+artwork and the headers are build output, and the only reason to commit them is
+so a contributor without PanelGenerator can still build.

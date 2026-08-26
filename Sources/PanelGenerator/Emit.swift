@@ -43,21 +43,51 @@ enum Emit {
         }
 
         var allOK = true
-        var loaded: [PanelDocument] = []
+        var loaded: [(url: URL, doc: PanelDocument)] = []
         for document in documents {
             guard let doc = emit(document, to: out) else { allOK = false; continue }
-            loaded.append(doc)
+            loaded.append((document, doc))
         }
 
-        // One widget library for the whole plugin, written after every panel so
-        // it holds all of their widgets. Emitting it per panel meant the last
-        // module overwrote the others and took their widgets with it.
-        if let first = loaded.first {
+        // Two documents with one module slug write the same panel SVG and the
+        // same header: whichever runs last wins, and nothing about the output
+        // says the other existed. Almost always a document saved twice under
+        // different names.
+        let bySlug = Dictionary(grouping: loaded, by: { $0.doc.moduleSlug })
+        for (slug, group) in bySlug.sorted(by: { $0.key < $1.key }) where group.count > 1 {
+            let names = group.map { $0.url.lastPathComponent }.sorted().joined(separator: ", ")
+            print("  ! \(names) all use the module slug \(slug), so they overwrite each other's "
+                  + "res/\(slug).svg and \(CodeGen.moduleIdentifier(group[0].doc))_panel.hpp. "
+                  + "Only the last survives.")
+            allOK = false
+        }
+
+        // One widget library per plugin, not per run. A folder of panels is not
+        // a plugin — this one holds several — and writing a single library
+        // named after whichever document happened to be first left every other
+        // plugin's header including a file that was never written.
+        let byPlugin = Dictionary(grouping: loaded, by: { $0.doc.pluginSlug })
+        if byPlugin.count > 1 {
+            print("  ! These panels belong to \(byPlugin.count) plugins "
+                  + "(\(byPlugin.keys.sorted().joined(separator: ", "))). They share one res/ "
+                  + "directory here, which no plugin would. Emit each plugin's panels separately.")
+        }
+
+        for (slug, group) in byPlugin.sorted(by: { $0.key < $1.key }) {
+            guard let first = group.first?.doc else { continue }
+            let family = plugin(of: first, near: URL(fileURLWithPath: path),
+                                emitted: group.map(\.doc))
+            if family.count > group.count {
+                print("  · \(slug): widget library covers \(family.count) panels "
+                      + "(\(family.count - group.count) not emitted this run)")
+            }
+
+            let headers = headerDirectory(out)
             let name = CodeGen.widgetsHeaderName(first)
             do {
-                try CodeGen.widgetsHeader(for: loaded)
-                    .write(to: out.appendingPathComponent(name), atomically: true, encoding: .utf8)
-                print("  → \(out.appendingPathComponent(name).path)")
+                try CodeGen.widgetsHeader(for: family)
+                    .write(to: headers.appendingPathComponent(name), atomically: true, encoding: .utf8)
+                print("  → \(headers.appendingPathComponent(name).path)")
             } catch {
                 print("EMIT FAILED: \(name): \(error)")
                 allOK = false
@@ -67,7 +97,7 @@ enum Emit {
             // it on every emit would throw away exactly the edits it exists to
             // hold — so an existing one is reported as kept, never touched.
             let baseName = CodeGen.widgetBaseHeaderName(first)
-            let baseURL = out.appendingPathComponent(baseName)
+            let baseURL = headers.appendingPathComponent(baseName)
             if FileManager.default.fileExists(atPath: baseURL.path) {
                 print("  · \(baseURL.path) (kept — yours to edit)")
             } else {
@@ -84,6 +114,50 @@ enum Emit {
 
         fflush(stdout)
         exit(allOK ? 0 : 1)
+    }
+
+    /// Every panel belonging to the same plugin as `doc`: the ones this run
+    /// emitted, plus any sibling document that declares the same plugin slug.
+    ///
+    /// The plugin slug is what makes this safe rather than surprising. A folder
+    /// of panels usually holds more than one plugin's work, and a widget
+    /// library that swept all of them in would put another plugin's jack in
+    /// this one's namespace.
+    private static func plugin(of doc: PanelDocument, near source: URL,
+                               emitted: [PanelDocument]) -> [PanelDocument] {
+        var isDirectory: ObjCBool = false
+        FileManager.default.fileExists(atPath: source.path, isDirectory: &isDirectory)
+        let folder = isDirectory.boolValue ? source : source.deletingLastPathComponent()
+
+        var out = emitted.filter { $0.pluginSlug == doc.pluginSlug }
+        let known = Set(out.map(\.moduleSlug))
+
+        let siblings = (try? FileManager.default.contentsOfDirectory(
+            at: folder, includingPropertiesForKeys: nil)) ?? []
+        for url in siblings.sorted(by: { $0.lastPathComponent < $1.lastPathComponent })
+        where url.pathExtension == PanelDocument.fileExtension {
+            guard let other = try? PanelDocument.load(from: url),
+                  other.pluginSlug == doc.pluginSlug,
+                  !known.contains(other.moduleSlug) else { continue }
+            out.append(other)
+        }
+        return out
+    }
+
+    /// Where generated headers go.
+    ///
+    /// A Rack plugin keeps artwork in `res/` at its root and sources in `src/`,
+    /// so emitting into a plugin should land each in its own place rather than
+    /// piling headers next to plugin.json. When there is no `src/`, the output
+    /// directory is a scratch folder and everything stays together.
+    static func headerDirectory(_ out: URL) -> URL {
+        var isDirectory: ObjCBool = false
+        let src = out.appendingPathComponent("src")
+        if FileManager.default.fileExists(atPath: src.path, isDirectory: &isDirectory),
+           isDirectory.boolValue {
+            return src
+        }
+        return out
     }
 
     private static func emit(_ docURL: URL, to out: URL) -> PanelDocument? {
@@ -125,7 +199,8 @@ enum Emit {
                 }
 
                 try write(CodeGen.panelHeader(doc),
-                          to: out.appendingPathComponent("\(CodeGen.moduleIdentifier(doc))_panel.hpp"))
+                          to: headerDirectory(out)
+                              .appendingPathComponent("\(CodeGen.moduleIdentifier(doc))_panel.hpp"))
             }
 
             print("EMIT OK  \(docURL.lastPathComponent) → \"\(doc.name)\" · "

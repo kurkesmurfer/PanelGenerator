@@ -208,7 +208,24 @@ enum SVGExporter {
             if case .switchFrame(let index, let count) = layer, member.id == anchor.id {
                 local.params.value = count > 1 ? CGFloat(index) / CGFloat(count - 1) : 0
             }
-            parts += Renderer.parts(for: local)
+            // Rotation is a transform on the panel and a CTM on the canvas, so
+            // it lives outside the parts — which meant a rotated piece of a
+            // composed widget exported straight, silently. Bake it in here:
+            // the widget's own SVG has no outer transform to carry it.
+            var made = Renderer.parts(for: local)
+            if local.rotation != 0 {
+                let c = local.center
+                var t = CGAffineTransform(translationX: c.x, y: c.y)
+                    .rotated(by: Geo.deg2rad(local.rotation))
+                    .translatedBy(x: -c.x, y: -c.y)
+                made = made.compactMap { part in
+                    guard let turned = part.path.copy(using: &t) else { return nil }
+                    var out = part
+                    out.path = turned
+                    return out
+                }
+            }
+            parts += made
         }
 
         let title = anchor.customWidgetName.isEmpty ? anchor.identifierStem : anchor.customWidgetName

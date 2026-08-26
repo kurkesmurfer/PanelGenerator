@@ -226,20 +226,14 @@ final class InspectorView: NSView {
         addControl(pslug)
         handlers.append { [weak self] sender in
             guard let self, let f = sender as? NSTextField else { return }
-            self.canvas?.mutateDocument(name: "Plugin Slug") { $0.pluginSlug = f.stringValue }
-        }
-
-        for (title, slug) in [("Plugin", document.pluginSlug), ("Module", document.moduleSlug)]
-        where !CodeGen.isValidSlug(slug) {
-            let note = NSTextField(labelWithString:
-                "⚠ \(title) slug: letters, digits, - and _ only. Try “\(CodeGen.slugSuggestion(slug))”.")
-            note.font = NSFont.systemFont(ofSize: 10)
-            note.textColor = ColorSpec.hex("#DD8844").nsColor
-            note.lineBreakMode = .byWordWrapping
-            note.maximumNumberOfLines = 2
-            note.frame = CGRect(x: pad, y: cursorY, width: contentW, height: 26)
-            addSubview(note)
-            cursorY += 30
+            // Corrected on entry rather than flagged afterwards. An invalid
+            // slug has no useful meaning — it cannot be a filename and cannot
+            // be a C++ identifier — so letting one exist only defers the same
+            // edit to a warning you have to act on later.
+            let clean = CodeGen.slugSuggestion(f.stringValue)
+            f.stringValue = clean
+            self.canvas?.mutateDocument(name: "Plugin Slug") { $0.pluginSlug = clean }
+            self.scheduleRebuild()
         }
 
         label("Module slug")
@@ -249,8 +243,10 @@ final class InspectorView: NSView {
         addControl(mslug)
         handlers.append { [weak self] sender in
             guard let self, let f = sender as? NSTextField else { return }
-            self.canvas?.mutateDocument(name: "Module Slug") { $0.moduleSlug = f.stringValue }
-            self.scheduleRebuild()   // so the validity note appears or clears
+            let clean = CodeGen.slugSuggestion(f.stringValue)
+            f.stringValue = clean
+            self.canvas?.mutateDocument(name: "Module Slug") { $0.moduleSlug = clean }
+            self.scheduleRebuild()   // so the names below follow
         }
 
         label("Widget ns")
@@ -262,6 +258,25 @@ final class InspectorView: NSView {
             guard let self, let f = sender as? NSTextField else { return }
             self.canvas?.mutateDocument(name: "Widget Namespace") { $0.widgetNamespace = f.stringValue }
         }
+
+        // What these two names actually produce. Plugin and module are both
+        // "the slug" until you can see that one names a shared widget library
+        // and the other names this panel's own files.
+        let names = [
+            "Plugin \(document.pluginSlug) →",
+            "   \(CodeGen.widgetsHeaderName(document)), namespace \(CodeGen.uiNamespace(document))",
+            "Module \(document.moduleSlug) →",
+            "   res/\(document.moduleSlug).svg, \(CodeGen.moduleIdentifier(document))_panel.hpp,",
+            "   namespace \(CodeGen.moduleIdentifier(document))Panel",
+        ].joined(separator: "\n")
+        let plan = NSTextField(labelWithString: names)
+        plan.font = NSFont.monospacedSystemFont(ofSize: 9, weight: .regular)
+        plan.textColor = ColorSpec.hex("#8A8AA0").nsColor
+        plan.lineBreakMode = .byWordWrapping
+        plan.maximumNumberOfLines = 6
+        plan.frame = CGRect(x: pad, y: cursorY + 2, width: contentW, height: 62)
+        addSubview(plan)
+        cursorY += 68
 
         label("SVG units")
         let units = NSPopUpButton(frame: .zero, pullsDown: false)
