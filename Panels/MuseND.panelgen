@@ -3108,7 +3108,7 @@
   "format" : "3U",
   "moduleSlug" : "Muse_ND",
   "name" : "Untitled",
-  "pluginSlug" : "Muse",
+  "pluginSlug" : "MuseND",
   "schemaVersion" : 1,
   "svgUnits" : "millimetres",
   "textAsPaths" : true,
