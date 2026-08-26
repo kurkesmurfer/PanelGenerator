@@ -166,3 +166,35 @@ Anything a reader could not resolve is printed as a **note** rather than a
 difference. That distinction matters: a component the C++ reader skipped would
 otherwise appear as "missing", and knowing it was skipped rather than absent is
 the difference between a bug in the panel and a gap in the reader.
+
+## Switches and buttons
+
+Rack draws both with `app::SvgSwitch`, which holds **one SVG per position** and
+picks between them by parameter value. A button is the two-position case of the
+same widget.
+
+PanelGenerator exports a frame per position — `switch3-way-0.svg`,
+`-1.svg`, `-2.svg` — by rendering the control once per position with the toggle
+moved. On the canvas, **Position** in the inspector selects which one you are
+looking at; a composed switch keeps its housing in every frame and moves only
+the anchor.
+
+Two things decide whether the result actually works in Rack, and both fail
+quietly:
+
+**`momentary`** is generated only for a button. A momentary widget snaps back
+on mouse-up, so a three-position rotary declared momentary can never rest
+anywhere but its first position — it looks like a switch that refuses to move.
+
+**The parameter range lives in the module, not in the widget.** A switch with
+three frames whose param is still the default 0…1 can only ever reach frames 0
+and 1. Nothing in the generated widget code can fix that, so the generated
+struct carries the call you need:
+
+```cpp
+configSwitch(QUANT_PARAM, 0.f, 2.f, 0.f, "Quant", {"Free", "JI", "Octave"});
+```
+
+and the export report warns about every switch with more than two positions.
+This is the failure that reads as broken artwork when it is a missing line of
+module code.

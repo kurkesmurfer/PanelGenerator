@@ -74,7 +74,8 @@ enum Selftest {
                 + widgetChecks() + uniformChecks() + presetChecks()
                 + colourChecks() + alignChecks() + bulkBindChecks()
                 + labelChecks() + svgPathChecks() + svgImportChecks()
-                + cppImportChecks() + compareChecks() + codegenChecks()
+                + cppImportChecks() + compareChecks() + switchChecks()
+                + codegenChecks()
 
             print(failures.isEmpty ? "SELFTEST OK" : "SELFTEST FAILED")
             print("  elements : \(doc.elements.count)")
@@ -1100,6 +1101,98 @@ enum Selftest {
         }
         if !stripped.contains("int b = 2;") {
             failures.append("cpp: code after a block comment was lost")
+        }
+
+        return failures
+    }
+
+    // MARK: - Switch frame checks
+
+    /// Rack's SvgSwitch holds one SVG per position and picks between them by
+    /// parameter value. Emitting a single frame — which is what this did until
+    /// a real 3-way switch went through the toolchain — produces a control that
+    /// loads and then cannot be moved.
+    static func switchChecks() -> [String] {
+        var failures: [String] = []
+
+        var doc = PanelDocument()
+        doc.moduleSlug = "Demo"
+        var sw = ElementKind.buttonGroup.defaultElement(at: CGPoint(x: 30, y: 100))
+        sw.role = .param
+        sw.enumName = "QUANT"
+        sw.widgetSource = .custom
+        sw.customWidgetName = "Switch3Way"
+        sw.params.segments = 3
+        sw.params.layout = 0
+        doc.elements = [sw]
+
+        let files = CodeGen.componentFiles(for: sw, in: doc)
+        if files.count != 3 {
+            failures.append("switch: a 3-position switch needs 3 frames, got \(files.count)")
+        }
+        let expected = ["switch3-way-0.svg", "switch3-way-1.svg", "switch3-way-2.svg"]
+        if files.map(\.name) != expected {
+            failures.append("switch: frame names \(files.map(\.name)) — expected \(expected)")
+        }
+
+        // The frames have to actually differ. Three identical files would pass
+        // every structural check and still be a switch that appears frozen.
+        let frames = files.map { SVGExporter.componentSVG(sw, in: doc, layer: $0.layer) }
+        if Set(frames).count != frames.count {
+            failures.append("switch: the exported frames are not distinct — the toggle does not move")
+        }
+
+        let src = CodeGen.rackSource(doc)
+        for file in expected where !src.contains(file) {
+            failures.append("switch: generated code does not load \(file)")
+        }
+        if src.contains("TODO") {
+            failures.append("switch: generated code still carries a TODO frame")
+        }
+        // momentary snaps back on mouse-up, so a rotary declared momentary can
+        // never rest anywhere but its first position.
+        if src.contains("struct Switch3Way : app::SvgSwitch {\n    Switch3Way() {\n        momentary = true;") {
+            failures.append("switch: a multi-position switch must not be momentary")
+        }
+        if !src.contains("configSwitch(QUANT_PARAM, 0.f, 2.f, 0.f,") {
+            failures.append("switch: generated code should carry the configSwitch range")
+        }
+        if !CodeGen.warnings(doc).contains(where: { $0.contains("3-position switch") }) {
+            failures.append("switch: a multi-position switch should warn about its parameter range")
+        }
+
+        // Cross is four by definition, whatever Count says.
+        var cross = sw
+        cross.params.layout = 2
+        cross.params.segments = 3
+        if CodeGen.switchPositions(cross) != 4 {
+            failures.append("switch: a cross layout is four positions regardless of Count")
+        }
+
+        // A button is the two-position case of the same widget, and it *is*
+        // momentary.
+        var button = ElementKind.pushButton.defaultElement(at: CGPoint(x: 10, y: 10))
+        button.role = .param
+        button.enumName = "TRIG"
+        button.widgetSource = .custom
+        button.customWidgetName = "TrigButton"
+        var buttonDoc = PanelDocument()
+        buttonDoc.elements = [button]
+        let buttonFiles = CodeGen.componentFiles(for: button, in: buttonDoc)
+        if buttonFiles.count != 2 {
+            failures.append("switch: a button needs two frames, got \(buttonFiles.count)")
+        }
+        let buttonSrc = CodeGen.rackSource(buttonDoc)
+        if !buttonSrc.contains("momentary = true;") {
+            failures.append("switch: a push button should be momentary")
+        }
+        if buttonSrc.contains("configSwitch(") {
+            failures.append("switch: a two-position button needs no configSwitch note")
+        }
+        let up = SVGExporter.componentSVG(button, in: buttonDoc, layer: buttonFiles[0].layer)
+        let down = SVGExporter.componentSVG(button, in: buttonDoc, layer: buttonFiles[1].layer)
+        if up == down {
+            failures.append("switch: a button's pressed frame is identical to its released frame")
         }
 
         return failures

@@ -170,6 +170,10 @@ enum SVGExporter {
         case knobBackground
         /// The part Rack rotates.
         case knobForeground
+        /// One position of a switch or button. Rack's SvgSwitch holds a frame
+        /// per position and picks between them by parameter value, so the
+        /// artwork is exported once per position with the toggle moved.
+        case switchFrame(index: Int, of: Int)
     }
 
     /// One component's artwork as a standalone SVG, sized to the element with
@@ -199,6 +203,11 @@ enum SVGExporter {
             local.x -= bounds.minX
             local.y -= bounds.minY
             if member.kind.isKnob { local.params.pointerAngle = 0 }
+            // Only the anchor knows which position it is in; the rest of the
+            // group is the housing and is the same in every frame.
+            if case .switchFrame(let index, let count) = layer, member.id == anchor.id {
+                local.params.value = count > 1 ? CGFloat(index) / CGFloat(count - 1) : 0
+            }
             parts += Renderer.parts(for: local)
         }
 
@@ -222,13 +231,16 @@ enum SVGExporter {
         // minAngle to maxAngle itself, so the editor's pointer angle baked into
         // the file would become a permanent offset on every instance.
         if el.kind.isKnob { local.params.pointerAngle = 0 }
+        if case .switchFrame(let index, let count) = layer {
+            local.params.value = count > 1 ? CGFloat(index) / CGFloat(count - 1) : 0
+        }
 
         let all = Renderer.parts(for: local)
         let parts: [ShapePart]
         switch layer {
-        case .whole:          parts = all
-        case .knobBackground: parts = Renderer.knobLayers(all)?.bg ?? all
-        case .knobForeground: parts = Renderer.knobLayers(all)?.fg ?? []
+        case .whole, .switchFrame: parts = all
+        case .knobBackground:      parts = Renderer.knobLayers(all)?.bg ?? all
+        case .knobForeground:      parts = Renderer.knobLayers(all)?.fg ?? []
         }
 
         let w = max(el.w, 1), h = max(el.h, 1)

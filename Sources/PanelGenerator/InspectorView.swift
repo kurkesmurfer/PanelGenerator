@@ -579,6 +579,23 @@ final class InspectorView: NSView {
                     }
                 }
 
+                // Which position is shown. It is not decoration: a switch
+                // exports one SVG per position, so this is how you see what
+                // each frame will look like before Rack swaps between them.
+                let count = max(2, isCross ? 4 : Int(el.params.segments.rounded()))
+                plabel("Position", \.params.value)
+                let pos = makeSlider(min: 0, max: Double(count - 1),
+                                     value: (Double(el.params.value) * Double(count - 1)).rounded())
+                pos.numberOfTickMarks = count
+                pos.allowsTickMarkValuesOnly = true
+                pos.toolTip = "The position drawn here and in frame 0…\(count - 1) of the exported switch."
+                addControl(pos)
+                handlers.append { sender in
+                    guard let sl = sender as? NSSlider else { return }
+                    let fraction = count > 1 ? CGFloat(sl.doubleValue.rounded()) / CGFloat(count - 1) : 0
+                    weakCanvas?.mutateSelection("Switch Position") { $0.params.value = fraction }
+                }
+
                 plabel("Layout", \.params.layout)
                 let lo = NSPopUpButton(frame: .zero, pullsDown: false)
                 lo.addItems(withTitles: ["Column", "Row", "Cross (4)", "Circular"])

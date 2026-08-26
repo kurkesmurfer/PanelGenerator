@@ -115,18 +115,41 @@ enum CodeGen {
 
         // A composed widget splits only if something in it actually turns.
         if let doc, doc.widgetMembers(of: el).count > 1 {
-            return doc.widgetMembers(of: el).contains(where: \.rotatesWithValue)
-                ? [(base + "-bg.svg", .knobBackground), (base + "-fg.svg", .knobForeground)]
-                : [(base + ".svg", .whole)]
+            if doc.widgetMembers(of: el).contains(where: \.rotatesWithValue) {
+                return [(base + "-bg.svg", .knobBackground), (base + "-fg.svg", .knobForeground)]
+            }
+            // A composed switch still needs a frame per position: the housing
+            // is the same in each, the anchor moves.
+            if el.role == .param, isSwitch(el) {
+                let n = switchPositions(el)
+                return (0..<n).map { (base + "-\($0).svg", .switchFrame(index: $0, of: n)) }
+            }
+            return [(base + ".svg", .whole)]
         }
 
         if el.role == .param && el.kind.isKnob {
             return [(base + "-bg.svg", .knobBackground), (base + "-fg.svg", .knobForeground)]
         }
-        if el.role == .param && (el.kind == .pushButton || el.kind == .buttonGroup) {
-            return [(base + "-0.svg", .whole)]
+        if el.role == .param, isSwitch(el) {
+            let n = switchPositions(el)
+            return (0..<n).map { (base + "-\($0).svg", .switchFrame(index: $0, of: n)) }
         }
         return [(base + ".svg", .whole)]
+    }
+
+    /// Anything Rack draws with an `SvgSwitch`: a button is the two-position
+    /// case of the same widget.
+    static func isSwitch(_ el: PanelElement) -> Bool {
+        el.kind == .pushButton || el.kind == .buttonGroup
+    }
+
+    /// Positions the switch has, and so frames it needs. A button has two; a
+    /// group has as many as it draws — and Cross is four by definition, which
+    /// is why the inspector disables Count for it.
+    static func switchPositions(_ el: PanelElement) -> Int {
+        guard el.kind == .buttonGroup else { return 2 }
+        if Int(el.params.layout.rounded()) == 2 { return 4 }
+        return max(2, min(12, Int(el.params.segments.rounded())))
     }
 
     // MARK: - Identifiers
@@ -182,6 +205,17 @@ enum CodeGen {
                 + "the first keeps it, \(renamed). It compiles, but name them yourself.")
         }
 
+        // A switch with more than two positions needs its parameter range set
+        // in the module, and nothing here can do that. Left unsaid, the module
+        // loads with a control that will not move past its second frame, which
+        // reads as broken artwork rather than a missing line of module code.
+        for el in doc.components where el.role == .param && isSwitch(el) && switchPositions(el) > 2 {
+            let n = switchPositions(el)
+            out.append("\(el.identifierStem) is a \(n)-position switch. Its parameter must be configured "
+                + "0…\(n - 1) — configSwitch(\(el.identifierStem)\(el.role.enumSuffix), 0.f, \(n - 1).f, 0.f, …) "
+                + "— or Rack can only ever reach the first two positions.")
+        }
+
         let unnamed = doc.components.filter(\.enumName.isEmpty)
         if !unnamed.isEmpty {
             out.append("\(unnamed.count) component\(unnamed.count == 1 ? " has" : "s have") no explicit Name, so identifiers were derived from layer names — they will change if you rename a layer.")
@@ -195,7 +229,8 @@ enum CodeGen {
                abs(bounds.width - bounds.height) > 0.5 {
                 out.append("\(el.identifierStem) is a composed knob whose bounds are \(Geo.fmt(bounds.width))×\(Geo.fmt(bounds.height)) — Rack rotates the artwork about the centre of its own box, so a knob that is not square will wobble as it turns.")
             }
-            if el.role == .param, !doc.widgetMembers(of: el).contains(where: \.rotatesWithValue) {
+            if el.role == .param, !isSwitch(el),
+               !doc.widgetMembers(of: el).contains(where: \.rotatesWithValue) {
                 out.append("\(el.identifierStem) is a composed param with no part marked as turning; it generates as a switch. Tick \"Rotates with value\" on the indicator if it is a knob.")
             }
         }
@@ -255,6 +290,38 @@ enum CodeGen {
         }
     }
 
+    /// An SvgSwitch with one frame per position.
+    ///
+    /// `momentary` is the difference between a button and a switch, and it is
+    /// not cosmetic: a momentary widget snaps back on mouse-up, so a
+    /// three-position rotary declared momentary can never rest anywhere but
+    /// its first position.
+    ///
+    /// The parameter's range matters just as much and lives in the module, not
+    /// here — a switch with three frames whose param is still 0…1 can only ever
+    /// reach frames 0 and 1. The comment carries the call that fixes it, since
+    /// this is the failure that looks like "the artwork is broken".
+    private static func switchStruct(name: String, files: [String], element el: PanelElement) -> String {
+        let momentary = el.kind == .pushButton
+        var body = [
+            "struct \(name) : app::SvgSwitch {",
+            "    \(name)() {",
+        ]
+        if momentary { body.append("        momentary = true;") }
+        body.append("        shadow->opacity = 0.f;   // flat artwork reads better without it")
+        for file in files { body.append("        addFrame(\(asset(file)));") }
+        body.append("    }")
+        body.append("};")
+        if !momentary && files.count > 2 {
+            let labels = (0..<files.count).map { "\"\($0)\"" }.joined(separator: ", ")
+            body.append("// \(name) has \(files.count) positions. In the module\'s constructor:")
+            body.append("//   configSwitch(\(el.identifierStem)\(el.role.enumSuffix), 0.f, "
+                + "\(files.count - 1).f, 0.f, \"\(el.identifierStem)\", {\(labels)});")
+            body.append("// Without that range the extra frames are unreachable.")
+        }
+        return lines(body)
+    }
+
     private static func structSource(for el: PanelElement, named name: String,
                                      in doc: PanelDocument) -> String {
         let files = componentFiles(for: el, in: doc).map(\.name)
@@ -285,16 +352,7 @@ enum CodeGen {
                     "};",
                 ])
             case "switch":
-                return lines([
-                    "struct \(name) : app::SvgSwitch {",
-                    "    \(name)() {",
-                    "        momentary = true;",
-                    "        shadow->opacity = 0.f;",
-                    "        addFrame(\(asset(files[0])));",
-                    "        addFrame(\(asset(kebab(name) + "-1.svg")));  // TODO: draw the second position",
-                    "    }",
-                    "};",
-                ])
+                return switchStruct(name: name, files: files, element: el)
             default:
                 return lines([
                     "struct \(name) : widget::SvgWidget {",
@@ -355,17 +413,8 @@ enum CodeGen {
                 "};",
             ])
 
-        case .param where el.kind == .pushButton || el.kind == .buttonGroup:
-            return lines([
-                "struct \(name) : app::SvgSwitch {",
-                "    \(name)() {",
-                "        momentary = true;",
-                "        shadow->opacity = 0.f;   // flat artwork reads better without it",
-                "        addFrame(\(asset(files[0])));",
-                "        addFrame(\(asset(kebab(name) + "-1.svg")));  // TODO: draw the pressed state",
-                "    }",
-                "};",
-            ])
+        case .param where isSwitch(el):
+            return switchStruct(name: name, files: files, element: el)
 
         case .light:
             return lines([

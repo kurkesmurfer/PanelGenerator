@@ -234,16 +234,26 @@ enum Renderer {
             ]
 
         case .pushButton:
-            let cap = f.insetBy(dx: f.width * 0.18, dy: f.height * 0.18)
-            let ps: [ShapePart] = [
+            // Value drives the pressed state, the same way it selects a button
+            // group's position: a button exports as two frames and Rack swaps
+            // them, so the artwork has to be able to draw both.
+            let down = el.params.value >= 0.5
+            let cap = f.insetBy(dx: f.width * (down ? 0.24 : 0.18),
+                                dy: f.height * (down ? 0.24 : 0.18))
+            var ps: [ShapePart] = [
                 ShapePart(path: roundedRectPath(f, tl: 2, tr: 2, br: 2, bl: 2),
                           fill: el.fill.darkened(0.6), stroke: ColorSpec.hex("#0B0C10")),
-                ShapePart(path: roundedRectPath(cap, tl: 1.5, tr: 1.5, br: 1.5, bl: 1.5), fill: el.fill),
-                ShapePart(path: roundedRectPath(
+                ShapePart(path: roundedRectPath(cap, tl: 1.5, tr: 1.5, br: 1.5, bl: 1.5),
+                          fill: down ? el.fill.lightened(0.18) : el.fill),
+            ]
+            if !down {
+                // The glint is what a raised cap looks like; a pressed one has
+                // no highlight to catch.
+                ps.append(ShapePart(path: roundedRectPath(
                     CGRect(x: cap.minX + cap.width * 0.2, y: cap.minY + cap.height * 0.14,
                            width: cap.width * 0.6, height: cap.height * 0.3),
-                    tl: 1, tr: 1, br: 1, bl: 1), fill: el.fill.lightened(0.35)),
-            ]
+                    tl: 1, tr: 1, br: 1, bl: 1), fill: el.fill.lightened(0.35)))
+            }
             return ps
         case .buttonGroup:
             let n = max(2, min(12, Int(el.params.segments.rounded())))
@@ -278,17 +288,27 @@ enum Renderer {
                     CGPoint(x: c.x, y: f.minY + r + span * CGFloat($0) / CGFloat(n - 1))
                 }
             }
+            // Which position is on. A switch is exported as one SVG per
+            // position — Rack's SvgSwitch picks the frame by parameter value —
+            // so the artwork has to be able to draw any of them, and Value is
+            // what selects it here and in the inspector.
+            let selected = Int((el.params.value * CGFloat(n - 1)).rounded())
+
             var gs: [ShapePart] = []
-            for p in positions {
+            for (index, p) in positions.enumerated() {
+                let on = index == selected
                 let outer = CGRect(x: p.x - r, y: p.y - r, width: r * 2, height: r * 2)
                 let capR = r * 0.74
                 let cap = CGRect(x: p.x - capR, y: p.y - capR, width: capR * 2, height: capR * 2)
                 let glint = CGRect(x: p.x - r * 0.34, y: p.y - r * 0.5, width: r * 0.68, height: r * 0.52)
                 gs.append(ShapePart(path: CGPath(ellipseIn: outer, transform: nil),
                                     fill: el.fill.darkened(0.55), stroke: ColorSpec.hex("#0B0C10")))
-                gs.append(ShapePart(path: CGPath(ellipseIn: cap, transform: nil), fill: el.fill))
-                gs.append(ShapePart(path: CGPath(ellipseIn: glint, transform: nil),
-                                    fill: el.fill.lightened(0.35)))
+                gs.append(ShapePart(path: CGPath(ellipseIn: cap, transform: nil),
+                                    fill: on ? el.fill : el.fill.darkened(0.42)))
+                if on {
+                    gs.append(ShapePart(path: CGPath(ellipseIn: glint, transform: nil),
+                                        fill: el.fill.lightened(0.35)))
+                }
             }
             return gs
         case .led:
