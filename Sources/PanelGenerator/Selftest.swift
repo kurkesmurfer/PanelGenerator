@@ -74,7 +74,7 @@ enum Selftest {
                 + widgetChecks() + uniformChecks() + presetChecks()
                 + colourChecks() + alignChecks() + bulkBindChecks()
                 + labelChecks() + svgPathChecks() + svgImportChecks()
-                + cppImportChecks() + codegenChecks()
+                + cppImportChecks() + compareChecks() + codegenChecks()
 
             print(failures.isEmpty ? "SELFTEST OK" : "SELFTEST FAILED")
             print("  elements : \(doc.elements.count)")
@@ -1100,6 +1100,94 @@ enum Selftest {
         }
         if !stripped.contains("int b = 2;") {
             failures.append("cpp: code after a block comment was lost")
+        }
+
+        return failures
+    }
+
+    // MARK: - Comparison checks
+
+    static func compareChecks() -> [String] {
+        var failures: [String] = []
+
+        func item(_ id: String, _ role: ComponentRole, _ widget: String,
+                  _ x: CGFloat, _ y: CGFloat) -> Compare.Item {
+            Compare.Item(identifier: id, role: role, widget: widget, mm: CGPoint(x: x, y: y))
+        }
+
+        let base = Compare.Side(label: "A", items: [
+            item("CUTOFF_PARAM", .param, "RoundBlackKnob", 15.24, 38.95),
+            item("IN_INPUT", .input, "PJ301MPort", 7.62, 100.0),
+            item("OUT_OUTPUT", .output, "PJ301MPort", 22.86, 100.0),
+        ])
+
+        // The three forms round differently, so agreement has to mean "within a
+        // tolerance". Zero would report every component as moved.
+        var rounded = base
+        rounded.label = "B"
+        rounded.items[0].mm.x += 0.004
+        if !Compare.differences(base, rounded, tolerance: 0.01).isEmpty {
+            failures.append("compare: a rounding-sized difference should not be a difference")
+        }
+
+        var moved = base
+        moved.items[1].mm.y += 0.5
+        let movedDiffs = Compare.differences(base, moved, tolerance: 0.01)
+        if movedDiffs.count != 1 || movedDiffs.first?.identifier != "IN_INPUT" {
+            failures.append("compare: expected one moved component, got \(movedDiffs.count)")
+        }
+
+        var changed = base
+        changed.items[0].widget = "Trimpot"
+        changed.items[2].role = .input
+        let changedDiffs = Compare.differences(base, changed, tolerance: 0.01)
+        if !changedDiffs.contains(where: { $0.kind == .widget }) {
+            failures.append("compare: a changed widget type should be reported")
+        }
+        // Role changes matter most of all: an output silently read as an input
+        // is the bug that shows up as a patch cable that will not connect.
+        if !changedDiffs.contains(where: { $0.kind == .role }) {
+            failures.append("compare: a changed role should be reported")
+        }
+
+        var dropped = base
+        dropped.items.removeLast()
+        let droppedDiffs = Compare.differences(base, dropped, tolerance: 0.01)
+        if droppedDiffs.filter({ $0.kind == .missing }).count != 1 {
+            failures.append("compare: a component missing from B should be reported once")
+        }
+        if Compare.differences(dropped, base, tolerance: 0.01).filter({ $0.kind == .added }).count != 1 {
+            failures.append("compare: the same difference the other way round should read as added")
+        }
+
+        // A rename is one edit, and reporting it as a deletion plus an addition
+        // buries it in a list of things that did not really change.
+        var renamed = base
+        renamed.items[0].identifier = "FREQ_PARAM"
+        let renameDiffs = Compare.differences(base, renamed, tolerance: 0.01)
+        if renameDiffs.count != 1 || renameDiffs.first?.kind != .renamed {
+            failures.append("compare: a component at the same position under a new name is a rename, got "
+                + "\(renameDiffs.map { "\($0.kind)" }.joined(separator: ", "))")
+        }
+
+        // Labels carry no identifier, so they match by their words — and a
+        // panel with four jacks all labelled "CV" must not shuffle them.
+        var left = Compare.Side(label: "A")
+        left.labels = [("CV", CGPoint(x: 10, y: 20)), ("CV", CGPoint(x: 30, y: 20)),
+                       ("GATE", CGPoint(x: 50, y: 20))]
+        var right = left
+        right.label = "B"
+        right.labels = [("CV", CGPoint(x: 30, y: 20)), ("CV", CGPoint(x: 10, y: 20)),
+                        ("GATE", CGPoint(x: 50, y: 20))]
+        if !Compare.labelDifferences(left, right, tolerance: 0.01).isEmpty {
+            failures.append("compare: identical labels in a different order are not a difference")
+        }
+
+        var missingLabel = left
+        missingLabel.labels.removeLast()
+        let labelDiffs = Compare.labelDifferences(left, missingLabel, tolerance: 0.01)
+        if labelDiffs.count != 1 || labelDiffs.first?.kind != .missing {
+            failures.append("compare: a dropped label should be reported once")
         }
 
         return failures
