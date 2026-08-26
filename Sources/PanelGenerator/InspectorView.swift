@@ -846,12 +846,20 @@ final class InspectorView: NSView {
             weakCanvas?.mutateSelection("Component Role") { $0.role = picked }
         }
 
-        label("Name")
+        // "Identifier", not "Name". This is the C++ enum stem — CUTOFF becomes
+        // CUTOFF_PARAM in the generated code — and it is neither the layer name
+        // in the list nor the label drawn on the panel. Three different things
+        // called Name was one too many.
+        label("Identifier")
         let nm = makeField(value: el.enumName, placeholder: el.identifierStem)
+        nm.toolTip = "The name this control has in the generated C++: \"\(el.identifierStem)\" becomes "
+            + "\(el.identifierStem)\(el.role.enumSuffix). Not the label drawn on the panel, and not "
+            + "the layer name. Empty means it is derived from the layer name, which will change if "
+            + "you rename the layer."
         addControl(nm)
         handlers.append { sender in
             guard let f = sender as? NSTextField else { return }
-            weakCanvas?.mutateSelection("Component Name") { $0.enumName = f.stringValue }
+            weakCanvas?.mutateSelection("Component Identifier") { $0.enumName = f.stringValue }
         }
 
         label("Artwork")

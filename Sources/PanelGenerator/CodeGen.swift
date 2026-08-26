@@ -458,8 +458,27 @@ enum CodeGen {
         where el.widgetSource == .custom && el.kind.isKnob && el.params.knobStyle >= 1 {
             out.append("\(el.identifierStem) uses a position ring. Rack rotates one SVG over a static one, so a value arc cannot follow the parameter — the track exports, the filled arc freezes at its current angle. Use the pointer for the moving indicator.")
         }
-        for el in doc.components where el.rotation != 0 {
-            out.append("\(el.identifierStem) is rotated \(Geo.fmt(el.rotation))° — component artwork exports unrotated; Rack rotates knobs itself.")
+        // Only worth saying when there is artwork to be wrong. A stock widget
+        // is drawn by Rack from its own SVG and never sees this rotation, so
+        // warning about it is noise on a panel built from Rack's components.
+        for el in doc.components where el.rotation != 0 && el.widgetSource == .custom && el.kind.isKnob {
+            out.append("\(el.identifierStem) is rotated \(Geo.fmt(el.rotation))° — knob artwork exports "
+                + "unrotated because Rack sweeps it from minAngle to maxAngle itself, so this rotation "
+                + "is lost. Draw the indicator pointing up instead.")
+        }
+
+        // A switch drawn with more positions than the Rack type it is bound to
+        // can show. The panel says three, Rack draws two, and the third is
+        // unreachable — visible only once it is loaded.
+        for el in doc.components where el.role == .param && isSwitch(el) && el.widgetSource == .stock {
+            let drawn = switchPositions(el)
+            guard drawn > 2, !el.stockWidget.isEmpty else { continue }
+            let offered = CppImport.switchPositions(el.stockWidget).map { Int($0) }
+            guard offered != drawn else { continue }
+            let says = offered.map { "\($0) positions" } ?? "two positions and springs back"
+            out.append("\(el.identifierStem) is drawn with \(drawn) positions but is bound to "
+                + "\(el.stockWidget), which Rack draws with \(says). Use CKSSThree for three, "
+                + "or draw your own artwork and set it to a custom widget.")
         }
         if doc.svgUnits == .pixels {
             out.append("SVG export is in pixels. Rasterisers that read width=\"…mm\" will reject the artwork; Panel ▸ SVG units ▸ Millimetres fixes it.")

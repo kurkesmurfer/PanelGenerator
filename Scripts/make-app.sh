@@ -34,5 +34,33 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 </plist>
 PLIST
 
+# --- Icon -------------------------------------------------------------------
+# A panel, drawn by the thing that draws panels. ICON_PANEL may be any
+# .panelgen; the default is whichever the repository ships.
+ICON_PANEL="${ICON_PANEL:-$HOME/Development/Muse/vcv-nd/panels/Muse_ND.panelgen}"
+
+if [ -f "$ICON_PANEL" ]; then
+    ICONSET="$(mktemp -d)/PanelGenerator.iconset"
+    mkdir -p "$ICONSET"
+    # macOS wants every size rendered, not one scaled down: a panel at 32 px is
+    # a silhouette, and letting sips reduce a 1024 px render turns it to mush.
+    for pair in "16 16x16" "32 16x16@2x" "32 32x32" "64 32x32@2x" \
+                "128 128x128" "256 128x128@2x" "256 256x256" "512 256x256@2x" \
+                "512 512x512" "1024 512x512@2x"; do
+        set -- $pair
+        "$BIN" --icon "$ICON_PANEL" "$ICONSET/icon_$2.png" "$1" >/dev/null
+    done
+    if iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/PanelGenerator.icns" 2>/dev/null; then
+        /usr/libexec/PlistBuddy -c "Add :CFBundleIconFile string PanelGenerator" \
+            "$APP/Contents/Info.plist" >/dev/null 2>&1 || true
+        echo "Icon from $(basename "$ICON_PANEL")"
+    else
+        echo "iconutil failed — bundle built without an icon"
+    fi
+    rm -rf "$(dirname "$ICONSET")"
+else
+    echo "No icon panel at $ICON_PANEL — bundle built without an icon"
+fi
+
 codesign --force --deep -s - "$APP" 2>/dev/null || true
 echo "Built $APP — launch with: open $APP"

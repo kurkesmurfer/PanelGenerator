@@ -1337,6 +1337,34 @@ enum Selftest {
             failures.append("widget art: rotating a member changed nothing in its exported SVG")
         }
 
+        // A switch drawn with three positions but bound to a two-frame Rack
+        // type shows two: the panel and the widget disagree, and nothing says
+        // so until it is loaded.
+        var mismatched = PanelDocument()
+        var stockSwitch = ElementKind.buttonGroup.defaultElement(at: CGPoint(x: 20, y: 20))
+        stockSwitch.role = .param
+        stockSwitch.enumName = "QUANT"
+        stockSwitch.params.segments = 3
+        stockSwitch.widgetSource = .stock
+        stockSwitch.stockWidget = "VCVButton"
+        mismatched.elements = [stockSwitch]
+        if !CodeGen.warnings(mismatched).contains(where: { $0.contains("bound to VCVButton") }) {
+            failures.append("switch: a 3-position switch bound to a 2-frame Rack type should warn")
+        }
+        var corrected = mismatched
+        corrected.elements[0].stockWidget = "CKSSThree"
+        if CodeGen.warnings(corrected).contains(where: { $0.contains("bound to") }) {
+            failures.append("switch: CKSSThree offers three positions and must not warn")
+        }
+        // A rotated stock component is drawn by Rack from its own SVG, so the
+        // rotation warning is noise there.
+        var rotatedStock = mismatched
+        rotatedStock.elements[0].stockWidget = "CKSSThree"
+        rotatedStock.elements[0].rotation = -180
+        if CodeGen.warnings(rotatedStock).contains(where: { $0.contains("rotated") }) {
+            failures.append("switch: a stock component's rotation is not artwork and must not warn")
+        }
+
         // Cross is four by definition, whatever Count says.
         var cross = sw
         cross.params.layout = 2

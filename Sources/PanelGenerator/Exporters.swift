@@ -3,6 +3,76 @@ import AppKit
 import CoreGraphics
 import UniformTypeIdentifiers
 
+
+// MARK: - App icon
+
+/// A panel as a square app icon.
+///
+/// A 3U panel is roughly one to two, so it cannot fill a square without being
+/// stretched into something that is no longer a panel. It is drawn at its own
+/// proportions on a plate instead — which is what a module looks like in a
+/// rack, and reads at 32 px because the silhouette is the recognisable part.
+enum IconExporter {
+
+    static func pngData(_ doc: PanelDocument, size: Int) throws -> Data {
+        let side = max(16, size)
+        guard let rep = NSBitmapImageRep(bitmapDataPlanes: nil,
+                                         pixelsWide: side, pixelsHigh: side,
+                                         bitsPerSample: 8, samplesPerPixel: 4,
+                                         hasAlpha: true, isPlanar: false,
+                                         colorSpaceName: .deviceRGB,
+                                         bytesPerRow: 0, bitsPerPixel: 0),
+              let cg = NSGraphicsContext(bitmapImageRep: rep)?.cgContext else {
+            throw PNGExporter.PNGError(message: "Could not create the icon bitmap.")
+        }
+
+        let s = CGFloat(side)
+        // macOS insets an app icon inside its own tile; matching that keeps it
+        // the same visual weight as everything else in the Dock.
+        let margin = s * 0.10
+        let plate = CGRect(x: margin, y: margin, width: s - margin * 2, height: s - margin * 2)
+
+        cg.saveGState()
+        cg.setFillColor(ColorSpec.hex("#0B0B10").nsColor.cgColor)
+        let backing = CGPath(roundedRect: plate, cornerWidth: s * 0.18, cornerHeight: s * 0.18,
+                             transform: nil)
+        cg.addPath(backing)
+        cg.fillPath()
+        cg.restoreGState()
+
+        // The panel, at its own aspect ratio, as tall as the plate allows.
+        let panel = doc.pixelSize
+        guard panel.width > 0, panel.height > 0 else { throw PNGExporter.PNGError(message: "Empty panel.") }
+        let scale = (plate.height * 0.86) / panel.height
+        let drawn = CGSize(width: panel.width * scale, height: panel.height * scale)
+        let origin = CGPoint(x: plate.midX - drawn.width / 2, y: plate.midY - drawn.height / 2)
+
+        cg.saveGState()
+        let clip = CGPath(roundedRect: CGRect(origin: origin, size: drawn),
+                          cornerWidth: s * 0.03, cornerHeight: s * 0.03, transform: nil)
+        cg.addPath(clip)
+        cg.clip()
+
+        // y-down panel space, like every other renderer here.
+        cg.translateBy(x: origin.x, y: origin.y + drawn.height)
+        cg.scaleBy(x: scale, y: -scale)
+
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(cgContext: cg, flipped: true)
+        Renderer.drawBackground(doc, in: cg)
+        for el in doc.elements where el.isHidden != true && el.isTemplate != true {
+            Renderer.draw(el, in: cg)
+        }
+        NSGraphicsContext.restoreGraphicsState()
+        cg.restoreGState()
+
+        guard let data = rep.representation(using: .png, properties: [:]) else {
+            throw PNGExporter.PNGError(message: "Icon PNG encoding failed.")
+        }
+        return data
+    }
+}
+
 // MARK: - SVG export
 
 enum SVGExporter {
