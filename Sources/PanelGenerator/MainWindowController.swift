@@ -561,6 +561,101 @@ final class MainWindowController: NSWindowController, NSMenuItemValidation {
         inspector.labelSelectionFromMenu()
     }
 
+    /// Turn the labels drawn on the panel into component identifiers.
+    ///
+    /// A label and an identifier are different fields — one is drawn, the other
+    /// reaches the generated enum — and a panel can be fully labelled while
+    /// every component is still unnamed. On a labelled panel the label is what
+    /// you would have typed anyway.
+    @objc func pgNameFromLabels(_ sender: Any?) {
+        let result = canvas.nameFromLabels(within: labelReach)
+        reloadInspector()
+        let alert = NSAlert()
+        alert.messageText = result.named == 0
+            ? "No labels close enough to name anything"
+            : "Named \(result.named) component\(result.named == 1 ? "" : "s") from their labels"
+        alert.informativeText = result.skipped == 0
+            ? "Every component in scope had a label beside it."
+            : "\(result.skipped) had no label within \(Geo.fmt(PanelMetrics.mm(labelReach))) mm. "
+                + "Label them, or set their Identifier by hand."
+        alert.runModal()
+    }
+
+    /// Copy identifiers from another panel, matched on the label beside each
+    /// control.
+    ///
+    /// What a redesign needs: the same module in a new layout has the same
+    /// controls in different places, so position cannot pair them — but the
+    /// label under a knob says what the knob is in both panels, and that is
+    /// what the identifier records. It also means two documents never have to
+    /// be open at once.
+    @objc func pgAdoptIdentifiers(_ sender: Any?) {
+        let open = NSOpenPanel()
+        open.canChooseDirectories = false
+        open.allowsMultipleSelection = false
+        open.allowedContentTypes = [UTType(filenameExtension: PanelDocument.fileExtension) ?? .json,
+                                    UTType(filenameExtension: "cpp") ?? .sourceCode]
+        open.message = "Take identifiers from this panel or module source, matching by label."
+        guard open.runModal() == .OK, let url = open.url else { return }
+
+        do {
+            let source: PanelDocument
+            if url.pathExtension == PanelDocument.fileExtension {
+                source = try PanelDocument.load(from: url)
+            } else {
+                // A module's source carries both halves too: the identifiers in
+                // its create* calls and the labels in its helper calls.
+                let text = try String(contentsOf: url, encoding: .utf8)
+                let siblings = (try? FileManager.default.contentsOfDirectory(
+                    at: url.deletingLastPathComponent(), includingPropertiesForKeys: nil))?
+                    .filter { ["h", "hpp", "hh"].contains($0.pathExtension.lowercased()) }
+                    .prefix(24) ?? []
+                var doc = PanelDocument()
+                doc.elements = CppImport.outcome(
+                    from: text,
+                    headers: siblings.compactMap { try? String(contentsOf: $0, encoding: .utf8) }).elements
+                source = doc
+            }
+
+            let result = canvas.adoptIdentifiers(from: source, within: labelReach)
+            reloadInspector()
+
+            let alert = NSAlert()
+            let n = result.adopted.count
+            alert.messageText = n == 0
+                ? "Nothing matched"
+                : "Adopted \(n) identifier\(n == 1 ? "" : "s") from \(url.lastPathComponent)"
+
+            var lines: [String] = []
+            // Every loose match is listed. A redesign renames as it goes, so
+            // some of these are guesses — and a guess you cannot see is worse
+            // than no guess at all.
+            let loose = result.adopted.filter { $0.kind != .exact }
+            if !loose.isEmpty {
+                lines.append("Matched by abbreviation, worth checking:\n"
+                    + loose.map { "   \($0.label) → \($0.identifier)" }.joined(separator: "\n"))
+            }
+            if !result.unmatched.isEmpty {
+                lines.append("No match for:\n"
+                    + result.unmatched.prefix(14).map { "   \($0)" }.joined(separator: "\n")
+                    + (result.unmatched.count > 14 ? "\n   …" : ""))
+                lines.append("Those keep the identifier they had. A control the old panel did not "
+                    + "have is expected; a label that was reworded is not — rename it to match, "
+                    + "or set Identifier by hand.")
+            }
+            if lines.isEmpty { lines.append("Every control matched exactly.") }
+            alert.informativeText = lines.joined(separator: "\n\n")
+            alert.runModal()
+        } catch {
+            showError("Could not read that panel", error)
+        }
+    }
+
+    /// How far from a control a label may sit and still be about it. Eight
+    /// millimetres is wider than any panel puts a label from its knob and
+    /// narrower than the gap to the next row.
+    private var labelReach: CGFloat { 8 / PanelMetrics.mmPerPixel }
+
     @objc func pgBindPrimitives(_ sender: Any?) {
         let bound = canvas.bindPrimitives()
         reloadInspector()

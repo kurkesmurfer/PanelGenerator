@@ -936,6 +936,29 @@ final class CanvasView: NSView {
         return result
     }
 
+    /// Undoable wrapper around `PanelDocument.nameFromLabels`.
+    @discardableResult
+    func nameFromLabels(within limit: CGFloat) -> (named: Int, skipped: Int) {
+        var doc = document
+        let scope = selection.isEmpty ? Set(document.elements.map(\.id)) : selection
+        let result = doc.nameFromLabels(ids: scope, within: limit)
+        guard result.named > 0 else { return result }
+        apply(elements: doc.elements, name: "Name from Labels")
+        return result
+    }
+
+    /// Undoable wrapper around `PanelDocument.adoptIdentifiers`.
+    @discardableResult
+    func adoptIdentifiers(from source: PanelDocument, within limit: CGFloat)
+    -> (adopted: [PanelDocument.Adoption], unmatched: [String]) {
+        var doc = document
+        let scope = selection.isEmpty ? Set(document.elements.map(\.id)) : selection
+        let result = doc.adoptIdentifiers(from: source, ids: scope, within: limit)
+        guard !result.adopted.isEmpty else { return result }
+        apply(elements: doc.elements, name: "Adopt Identifiers")
+        return result
+    }
+
     /// Undoable wrapper around `PanelDocument.makeWidget`.
     @discardableResult
     func makeWidget(name: String, role: ComponentRole) -> Bool {

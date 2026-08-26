@@ -74,7 +74,7 @@ enum Selftest {
                 + widgetChecks() + uniformChecks() + presetChecks()
                 + colourChecks() + alignChecks() + bulkBindChecks()
                 + labelChecks() + svgPathChecks() + svgImportChecks()
-                + cppImportChecks() + compareChecks() + switchChecks()
+                + cppImportChecks() + compareChecks() + switchChecks() + identifierChecks()
                 + codegenChecks()
 
             print(failures.isEmpty ? "SELFTEST OK" : "SELFTEST FAILED")
@@ -669,6 +669,157 @@ enum Selftest {
         if bulk.elements[1].role != .decoration { failures.append("bind: a box must stay artwork") }
         if bulk.elements[2].role != .output { failures.append("bind: a hand-set role was overwritten") }
         if bulk.bindPrimitives() != 0 { failures.append("bind: a second pass should be a no-op") }
+
+        return failures
+    }
+
+    // MARK: - Identifier transfer checks
+
+    /// A panel two ways: `spread` moves the controls apart so nothing can be
+    /// matched by position, which is the case a redesign actually presents.
+    private static func labelledPanel(spread: CGFloat, named: Bool) -> PanelDocument {
+        var doc = PanelDocument()
+        let rows: [(ElementKind, ComponentRole, String, String)] = [
+            (.jack, .input, "X CV", "X"),
+            (.knobSmall, .param, "PITCH", "PITCH"),
+            (.jack, .output, "OUT L", "LEFT"),
+        ]
+        for (index, row) in rows.enumerated() {
+            let y = 40 + CGFloat(index) * 40 + spread * CGFloat(index)
+            var control = row.0.defaultElement(at: CGPoint(x: 30, y: y))
+            control.role = row.1
+            if named { control.enumName = row.3 }
+            var label = ElementKind.text.defaultElement(at: CGPoint(x: 26, y: y + 26))
+            label.w = 30; label.h = 8
+            label.params.text = row.2
+            doc.elements.append(control)
+            doc.elements.append(label)
+        }
+        return doc
+    }
+
+    static func identifierChecks() -> [String] {
+        var failures: [String] = []
+        let reach: CGFloat = 8 / PanelMetrics.mmPerPixel
+
+        // Labels are drawn on the panel; identifiers reach the enum. On a
+        // labelled panel the label is what you would have typed anyway.
+        var fresh = labelledPanel(spread: 0, named: false)
+        let all = Set(fresh.elements.map(\.id))
+        let named = fresh.nameFromLabels(ids: all, within: reach)
+        if named.named != 3 {
+            failures.append("labels: expected 3 components named from labels, got \(named.named)")
+        }
+        if fresh.components.first(where: { $0.role == .input })?.enumName != "X_CV" {
+            failures.append("labels: \"X CV\" should become the identifier X_CV")
+        }
+
+        // A redesign moves everything, so position cannot pair the two panels —
+        // the label under a control is what says which control it is.
+        let original = labelledPanel(spread: 0, named: true)
+        var redesign = labelledPanel(spread: 25, named: false)
+        let scope = Set(redesign.elements.map(\.id))
+        let adopted = redesign.adoptIdentifiers(from: original, ids: scope, within: reach)
+        if adopted.adopted.count != 3 {
+            failures.append("adopt: expected 3 identifiers carried across, got \(adopted.adopted.count) "
+                + "(unmatched: \(adopted.unmatched.joined(separator: ", ")))")
+        }
+        if redesign.components.first(where: { $0.role == .input })?.enumName != "X" {
+            failures.append("adopt: the original identifier should win, not the label text")
+        }
+        if redesign.components.first(where: { $0.role == .output })?.enumName != "LEFT" {
+            failures.append("adopt: an output's identifier did not carry across")
+        }
+
+        // "LFO 1" and "LFO1" are one control named twice. Punctuation and case
+        // are not something two panels can be expected to agree on.
+        var respelled = PanelDocument()
+        var src = ElementKind.jack.defaultElement(at: CGPoint(x: 30, y: 40))
+        src.role = .output; src.enumName = "LFO1"
+        var srcLabel = ElementKind.text.defaultElement(at: CGPoint(x: 26, y: 66))
+        srcLabel.w = 30; srcLabel.h = 8; srcLabel.params.text = "LFO1"
+        respelled.elements = [src, srcLabel]
+        var mine = PanelDocument()
+        var dst = ElementKind.jack.defaultElement(at: CGPoint(x: 90, y: 200))
+        dst.role = .output
+        var dstLabel = ElementKind.text.defaultElement(at: CGPoint(x: 86, y: 226))
+        dstLabel.w = 30; dstLabel.h = 8; dstLabel.params.text = "LFO 1"
+        mine.elements = [dst, dstLabel]
+        let respell = mine.adoptIdentifiers(from: respelled,
+                                            ids: Set(mine.elements.map(\.id)), within: reach)
+        if mine.components.first?.enumName != "LFO1" {
+            failures.append("adopt: \"LFO 1\" and \"LFO1\" are the same label, got "
+                + (respell.adopted.first?.identifier ?? "nothing"))
+        }
+
+        // One source label serving two controls — Muse labels both its V/OCT
+        // jacks "V OCT" — must hand out both identifiers, not one twice.
+        var twin = PanelDocument()
+        for (index, name) in ["VOCT1", "VOCT2"].enumerated() {
+            var jack = ElementKind.jack.defaultElement(at: CGPoint(x: 30 + CGFloat(index) * 40, y: 40))
+            jack.role = .input; jack.enumName = name
+            var text = ElementKind.text.defaultElement(at: CGPoint(x: 26 + CGFloat(index) * 40, y: 66))
+            text.w = 30; text.h = 8; text.params.text = "V OCT"
+            twin.elements.append(jack); twin.elements.append(text)
+        }
+        var twinCopy = twin
+        for i in twinCopy.elements.indices { twinCopy.elements[i].enumName = "" }
+        _ = twinCopy.adoptIdentifiers(from: twin, ids: Set(twinCopy.elements.map(\.id)), within: reach)
+        if Set(twinCopy.components.map(\.enumName)) != ["VOCT1", "VOCT2"] {
+            failures.append("adopt: one label for two controls should hand out both identifiers, got "
+                + twinCopy.components.map(\.enumName).joined(separator: ", "))
+        }
+
+        // A big control pushes its own label out of range if distance is
+        // measured from the centre — which lost every large knob on a real
+        // panel. Measured from the edge, size does not matter.
+        var wide = PanelDocument()
+        var big = ElementKind.knobLarge.defaultElement(at: CGPoint(x: 30, y: 40))
+        big.w = 40; big.h = 40; big.role = .param
+        var under = ElementKind.text.defaultElement(at: CGPoint(x: 34, y: 86))
+        under.w = 32; under.h = 8; under.params.text = "CUTOFF"
+        wide.elements = [big, under]
+        if wide.nameFromLabels(ids: Set(wide.elements.map(\.id)), within: reach).named != 1 {
+            failures.append("labels: a large knob's own label should still be in reach")
+        }
+
+        // Role has to agree: a panel can label an input and an output alike,
+        // and pairing them would silently swap two jacks.
+        var swapped = labelledPanel(spread: 0, named: false)
+        for i in swapped.elements.indices where swapped.elements[i].role == .output {
+            swapped.elements[i].role = .input
+        }
+        let confused = swapped.adoptIdentifiers(from: original,
+                                                ids: Set(swapped.elements.map(\.id)), within: reach)
+        if confused.adopted.count != 2 {
+            failures.append("adopt: a role change should stop a match, got \(confused.adopted.count)")
+        }
+
+        // A label too far away is about something else.
+        var distant = labelledPanel(spread: 0, named: false)
+        for i in distant.elements.indices where distant.elements[i].kind == .text {
+            distant.elements[i].y += 200
+        }
+        if distant.nameFromLabels(ids: Set(distant.elements.map(\.id)), within: reach).named != 0 {
+            failures.append("labels: a distant label should not name a control")
+        }
+
+        // Two controls in a row must not both claim the label between them.
+        var pair = PanelDocument()
+        var left = ElementKind.knobSmall.defaultElement(at: CGPoint(x: 20, y: 40))
+        left.role = .param
+        var right = ElementKind.knobSmall.defaultElement(at: CGPoint(x: 60, y: 40))
+        right.role = .param
+        var one = ElementKind.text.defaultElement(at: CGPoint(x: 20, y: 62))
+        one.w = 20; one.h = 8; one.params.text = "A"
+        var two = ElementKind.text.defaultElement(at: CGPoint(x: 60, y: 62))
+        two.w = 20; two.h = 8; two.params.text = "B"
+        pair.elements = [left, right, one, two]
+        _ = pair.nameFromLabels(ids: Set(pair.elements.map(\.id)), within: reach)
+        let stems = pair.components.map(\.enumName).sorted()
+        if stems != ["A", "B"] {
+            failures.append("labels: each control should take its own label, got \(stems)")
+        }
 
         return failures
     }
