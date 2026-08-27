@@ -278,6 +278,28 @@ final class InspectorView: NSView {
         addSubview(plan)
         cursorY += 68
 
+        // Only when there is something to fix. A panel narrowed under its
+        // contents leaves components Rack will place outside the module's box,
+        // and the width control right above is how you get there.
+        if let cv = canvas {
+            let strays = cv.document.strayComponents().count
+            if strays > 0 {
+                let note = NSTextField(wrappingLabelWithString:
+                    "⚠ \(strays) component\(strays == 1 ? "" : "s") outside the panel — Rack draws "
+                    + "\(strays == 1 ? "it" : "them") beyond the module's edge, unseen and unclickable.")
+                note.font = NSFont.systemFont(ofSize: 10)
+                note.textColor = ColorSpec.hex("#DD8844").nsColor
+                note.maximumNumberOfLines = 3
+                note.frame = CGRect(x: pad, y: cursorY, width: contentW, height: 40)
+                addSubview(note)
+                cursorY += 44
+                buttonRow(["Fit to Panel…"], handlers: [
+                    { [weak self] in self?.window?.windowController?
+                        .tryToPerform(#selector(MainWindowController.pgFitToPanel(_:)), with: nil) },
+                ], columns: 1)
+            }
+        }
+
         label("SVG units")
         let units = NSPopUpButton(frame: .zero, pullsDown: false)
         units.addItems(withTitles: SVGUnits.allCases.map(\.displayName))

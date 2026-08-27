@@ -101,6 +101,7 @@ enum MenuBuilder {
         edit.addItem(item("Label Selection…", #selector(MainWindowController.pgLabelSelection(_:)), key: "l", target: wc))
         edit.addItem(item("Name from Labels", #selector(MainWindowController.pgNameFromLabels(_:)), key: "L", target: wc))
         edit.addItem(item("Adopt Identifiers…", #selector(MainWindowController.pgAdoptIdentifiers(_:)), target: wc))
+        edit.addItem(item("Fit to Panel…", #selector(MainWindowController.pgFitToPanel(_:)), target: wc))
         editItem.submenu = edit
 
         // View

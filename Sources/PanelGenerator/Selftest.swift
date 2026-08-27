@@ -930,6 +930,11 @@ enum Selftest {
       <circle cx="10" cy="20" r="3" fill="#99ccff"/>
       <defs><clipPath id="c"><rect x="0" y="0" width="1" height="1"/></clipPath></defs>
       <g transform="translate(5 40)"><path d="M0 0 L8 0 L8 8 Z" fill="#cc99cc"/></g>
+      <g font-size="2.6" text-anchor="middle" fill="#e8e8f0">
+        <text x="15.24" y="60">PITCH</text>
+        <text x="15.24" y="70" font-weight="bold">GRAIN</text>
+      </g>
+      <text x="4" y="80" text-anchor="start" font-size="3">LEFT</text>
       <g id="components">
         <circle cx="6" cy="100" r="2" fill="#00ff00" data-name="CV_IN"/>
         <circle cx="20" cy="100" r="2" fill="#0000ff" data-name="OUT#PJ3410Port"/>
@@ -948,6 +953,10 @@ enum Selftest {
             return ["svgimport: fixture failed to import: \(error)"]
         }
 
+        let scale = 75.0 / 25.4 as CGFloat
+        func near(_ a: CGFloat, _ b: CGFloat, _ tol: CGFloat = 0.05) -> Bool { abs(a - b) <= tol }
+        func px(_ mm: CGFloat) -> CGFloat { mm * scale }
+
         // Millimetre user units are the whole ballgame. 30.48 mm is 6 HP; at
         // 1:1 it would come in as 2 HP and every position would be a third of
         // where it belongs.
@@ -956,12 +965,48 @@ enum Selftest {
         if outcome.background?.hexString.lowercased() != "#1d1713" {
             failures.append("svgimport: the full-bleed rect should become the panel background")
         }
-        if outcome.elements.count != 5 {
-            failures.append("svgimport: expected 5 elements, got \(outcome.elements.count)")
+        if outcome.elements.count != 8 {
+            failures.append("svgimport: expected 8 elements, got \(outcome.elements.count)")
         }
 
-        let scale = 75.0 / 25.4 as CGFloat
-        func near(_ a: CGFloat, _ b: CGFloat, _ tol: CGFloat = 0.05) -> Bool { abs(a - b) <= tol }
+        // Live <text> is rare in a Rack panel — nanosvg drops it, so panels are
+        // converted — but a plugin keeping a MetaModule panel of the same design
+        // has it, and reading it gives editable labels instead of outlines.
+        let labels = outcome.elements.filter { $0.kind == .text }
+        if labels.count != 3 {
+            failures.append("svgimport: expected 3 text labels, got \(labels.count)")
+        }
+        if !labels.contains(where: { $0.params.text == "PITCH" }) {
+            failures.append("svgimport: label content was lost")
+        }
+        if labels.first(where: { $0.params.text == "GRAIN" })?.params.bold != true {
+            failures.append("svgimport: font-weight bold should carry across")
+        }
+        if labels.first(where: { $0.params.text == "PITCH" })?.params.bold != false {
+            failures.append("svgimport: weight must not leak between siblings")
+        }
+        // Font size is inherited from the group and scaled with the units.
+        if let pitch = labels.first(where: { $0.params.text == "PITCH" }),
+           abs(pitch.params.fontSize - 2.6 * scale) > 0.2 {
+            failures.append("svgimport: label size \(pitch.params.fontSize), expected 2.6 mm scaled")
+        }
+        // text-anchor decides where the baseline point sits in the label.
+        if let mid = labels.first(where: { $0.params.text == "PITCH" }),
+           abs(mid.center.x - px(15.24)) > 0.6 {
+            failures.append("svgimport: a middle-anchored label should centre on its x")
+        }
+        if let start = labels.first(where: { $0.params.text == "LEFT" }) {
+            // Where the glyphs begin, not where the frame does: the frame
+            // carries a little padding on each side so a label stays grabbable
+            // on canvas, and that padding is not part of the text.
+            let advance = start.w - start.params.fontSize * 0.3
+            let textStart = start.center.x - advance / 2
+            if abs(textStart - px(4)) > 0.6 {
+                failures.append("svgimport: a start-anchored label should begin at its x, "
+                    + "got \(textStart) for \(px(4))")
+            }
+        }
+
 
         // A rounded rect is a Box, with its radius scaled like everything else.
         if let box = outcome.elements.first(where: { $0.kind == .box }) {
@@ -1072,6 +1117,7 @@ enum Selftest {
                             asset::plugin(pluginInstance, "res/Demo.svg")));
     #endif
             addChild(createWidget<ScrewSilver>(Vec(RACK_GRID_WIDTH, 0)));
+            addChild(createWidget<ScrewSilver>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, 0)));
 
             // The main frequency control.
             addParam(createParamCentered<RoundLargeBlackKnob>(
@@ -1098,8 +1144,27 @@ enum Selftest {
         func near(_ a: CGFloat, _ b: CGFloat, _ tol: CGFloat = 0.05) -> Bool { abs(a - b) <= tol }
         func px(_ mm: CGFloat) -> CGFloat { mm / PanelMetrics.mmPerPixel }
 
+        // Without the panel's size, box.size.x cannot be evaluated and that
+        // screw is skipped — reported, not guessed.
         if out.elements.count != 7 {
             failures.append("cpp: expected 7 elements, got \(out.elements.count)")
+        }
+        if !out.warnings.contains(where: { $0.contains("could not work out the position") }) {
+            failures.append("cpp: an unresolvable position should be reported")
+        }
+
+        // Rack's own module template positions the right-hand screws from
+        // box.size.x, so a reader that cannot resolve it loses two screws on
+        // nearly every third-party plugin.
+        let sized = CppImport.outcome(from: cppFixture,
+                                      panelSize: CGSize(width: 150, height: 380))
+        if sized.elements.count != 8 {
+            failures.append("cpp: with the panel size known, box.size.x should resolve — "
+                + "got \(sized.elements.count) elements")
+        }
+        if let right = sized.elements.filter({ $0.kind == .screw }).max(by: { $0.x < $1.x }),
+           abs(right.x - (150 - 30)) > 0.01 {
+            failures.append("cpp: box.size.x screw at \(right.x), expected 120")
         }
         if out.moduleSlug != "Demo" {
             failures.append("cpp: module slug should come from createModel, got \(out.moduleSlug ?? "nil")")
@@ -1734,6 +1799,85 @@ enum Selftest {
                     + Emit.headerDirectory(tmp).lastPathComponent)
             }
             try? FileManager.default.removeItem(at: tmp)
+        }
+
+        // Narrowing a panel under its contents leaves components beyond the
+        // module's edge: Rack still places them, still counts them in the enum,
+        // and you can neither see nor click them.
+        var narrow = componentRig()
+        narrow.widthHP = 4                       // 60 px wide
+        narrow.elements.append({
+            var stray = ElementKind.jack.defaultElement(at: CGPoint(x: 200, y: 100))
+            stray.role = .input
+            stray.enumName = "OFFPANEL"
+            return stray
+        }())
+        if !CodeGen.warnings(narrow).contains(where: { $0.contains("outside the 4HP panel") }) {
+            failures.append("codegen: a component beyond the panel edge should warn")
+        }
+        var wide = narrow
+        wide.widthHP = 20                        // 300 px — everything fits
+        if CodeGen.warnings(wide).contains(where: { $0.contains("outside the") }) {
+            failures.append("codegen: a component inside the panel must not warn")
+        }
+
+        // Squeeze keeps the column structure: two knobs a fixed distance apart
+        // stay in the same order and the same relative spacing, just closer.
+        var squeeze = PanelDocument()
+        squeeze.widthHP = 4                      // 60 px
+        for (index, x) in [10.0, 90.0, 170.0].enumerated() {
+            var knob = ElementKind.knobSmall.defaultElement(at: CGPoint(x: CGFloat(x), y: 100))
+            knob.role = .param
+            knob.enumName = "K\(index)"
+            squeeze.elements.append(knob)
+        }
+        let before = squeeze.components.map(\.center.x).sorted()
+        let movedSqueeze = squeeze.fitToPanel(.squeeze, margin: 6)
+        let after = squeeze.components.map(\.center.x).sorted()
+        if movedSqueeze == 0 { failures.append("fit: squeeze should have moved something") }
+        if !squeeze.strayComponents().isEmpty {
+            failures.append("fit: squeeze left \(squeeze.strayComponents().count) outside")
+        }
+        // Order preserved, and gaps still equal because they started equal.
+        if after != after.sorted() { failures.append("fit: squeeze reordered the controls") }
+        if abs((after[1] - after[0]) - (after[2] - after[1])) > 0.01 {
+            failures.append("fit: squeeze did not keep even spacing even")
+        }
+        if (after[2] - after[0]) >= (before[2] - before[0]) {
+            failures.append("fit: squeeze should have brought the outer controls closer")
+        }
+
+        // Nudge disturbs only what is out.
+        var nudge = PanelDocument()
+        nudge.widthHP = 8                        // 120 px
+        var inside = ElementKind.jack.defaultElement(at: CGPoint(x: 20, y: 100))
+        inside.role = .input; inside.enumName = "IN"
+        var outside = ElementKind.jack.defaultElement(at: CGPoint(x: 300, y: 100))
+        outside.role = .input; outside.enumName = "OUT"
+        nudge.elements = [inside, outside]
+        let keptX = nudge.elements[0].x
+        _ = nudge.fitToPanel(.nudge, margin: 6)
+        if nudge.elements[0].x != keptX {
+            failures.append("fit: nudge moved a component that already fitted")
+        }
+        if !nudge.strayComponents().isEmpty {
+            failures.append("fit: nudge left a component outside")
+        }
+
+        // A composed widget moves as one piece — scaling its members apart
+        // would pull a knob's artwork off the knob.
+        var widget = PanelDocument()
+        widget.widthHP = 4
+        var body = ElementKind.knobLarge.defaultElement(at: CGPoint(x: 150, y: 100))
+        body.role = .param
+        var ring = ElementKind.ringSector.defaultElement(at: CGPoint(x: 144, y: 94))
+        widget.elements = [body, ring]
+        _ = widget.makeWidget(ids: Set(widget.elements.map(\.id)), name: "Composed", role: .param)
+        let gapBefore = widget.elements[1].x - widget.elements[0].x
+        _ = widget.fitToPanel(.squeeze, margin: 6)
+        let gapAfter = widget.elements[1].x - widget.elements[0].x
+        if abs(gapBefore - gapAfter) > 0.01 {
+            failures.append("fit: a widget's parts drifted apart — they must move as one unit")
         }
 
         // The plugin slug names two headers and a namespace, so leaving it at

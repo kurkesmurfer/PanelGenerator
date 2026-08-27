@@ -936,6 +936,16 @@ final class CanvasView: NSView {
         return result
     }
 
+    /// Undoable wrapper around `PanelDocument.fitToPanel`.
+    @discardableResult
+    func fitToPanel(_ mode: PanelDocument.FitMode, margin: CGFloat) -> Int {
+        var doc = document
+        let moved = doc.fitToPanel(mode, margin: margin)
+        guard moved > 0 else { return 0 }
+        apply(elements: doc.elements, name: "Fit to Panel")
+        return moved
+    }
+
     /// Undoable wrapper around `PanelDocument.nameFromLabels`.
     @discardableResult
     func nameFromLabels(within limit: CGFloat) -> (named: Int, skipped: Int) {

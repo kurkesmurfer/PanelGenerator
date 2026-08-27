@@ -46,13 +46,24 @@ enum CppImport {
     ///   - headers: sibling headers to scan for constants. A module that
     ///     writes `mm2px(Vec(7.0f, grid::PRIMARY_Y))` is unreadable without
     ///     them, and that style is common in any panel laid out on a grid.
-    static func outcome(from source: String, headers: [String] = []) -> Outcome {
+    /// - Parameter panelSize: the module's own box, in panel pixels, when it is
+    ///   known. Rack's module template positions its screws with
+    ///   `Vec(box.size.x - 2 * RACK_GRID_WIDTH, 0)`, so without this the two
+    ///   right-hand screws of nearly every third-party plugin are unreadable.
+    ///   `setPanel` names the panel it is taken from, which is how the caller
+    ///   knows it.
+    static func outcome(from source: String, headers: [String] = [],
+                        panelSize: CGSize? = nil) -> Outcome {
         var out = Outcome()
 
         let (text, preprocessorWarnings) = preprocess(source)
         out.warnings.append(contentsOf: preprocessorWarnings)
 
         var table = builtinConstants
+        if let panelSize {
+            table["box.size.x"] = panelSize.width
+            table["box.size.y"] = panelSize.height
+        }
         for header in headers {
             merge(&table, constants(in: preprocess(header).text))
         }
@@ -783,7 +794,12 @@ enum Expression {
 
             if chars[i].isLetter || chars[i] == "_" {
                 let start = i
-                while i < chars.count, chars[i].isLetter || chars[i].isNumber || chars[i] == "_" || chars[i] == ":" {
+                // Dots belong to the name: `box.size.x` is one thing to look
+                // up, not an identifier followed by punctuation. A number never
+                // reaches here — the digit branch above takes it — so this
+                // cannot swallow a decimal point.
+                while i < chars.count, chars[i].isLetter || chars[i].isNumber
+                    || chars[i] == "_" || chars[i] == ":" || chars[i] == "." {
                     i += 1
                 }
                 let raw = String(chars[start..<i])

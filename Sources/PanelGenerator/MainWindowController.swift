@@ -238,33 +238,45 @@ final class MainWindowController: NSWindowController, NSMenuItemValidation {
                 .prefix(24) ?? []
             let headers = siblings.compactMap { try? String(contentsOf: $0, encoding: .utf8) }
 
-            let outcome = CppImport.outcome(from: source, headers: headers)
+            // Read once to learn which panel the widget sets, then again
+            // knowing how big that panel is. Rack's own module template
+            // positions its screws from box.size.x, and a module widget's box
+            // is whatever setPanel gave it — so the second pass is what makes
+            // the two right-hand screws of nearly every plugin readable.
+            let first = CppImport.outcome(from: source, headers: headers)
+            let panelURL = first.panelResource.flatMap { resolveResource($0, near: url) }
+            let panelSize = panelURL
+                .flatMap { try? Data(contentsOf: $0) }
+                .flatMap { SVGImport.panelSize(from: $0) }
+            let outcome = panelSize == nil
+                ? first
+                : CppImport.outcome(from: source, headers: headers, panelSize: panelSize)
+
             // The plugin slug is not in the source — it lives in plugin.json,
             // beside it or one level up. It names the generated widget library
             // and its namespace, so importing without it produces a plugin
             // called MyPlugin.
             let plugin = pluginManifest(near: url)
-            let found = outcome.panelResource.flatMap { resolveResource($0, near: url) }
-            let answer = confirmModuleImport(outcome, source: url, panel: found)
+            let answer = confirmModuleImport(outcome, source: url, panel: panelURL)
             guard answer.proceed else { return }
-            let panelURL = answer.includeArtwork ? found : nil
+            let artworkURL = answer.includeArtwork ? panelURL : nil
 
             var doc = canvas.document
             var report = outcome.warnings
 
             // Artwork first, so the components land on top of it.
-            if let panelURL {
+            if let artworkURL {
                 do {
                     var options = SVGImport.Options()
                     options.bindComponents = false      // the C++ is the authority here
-                    let art = try SVGImport.outcome(from: try Data(contentsOf: panelURL), options: options)
+                    let art = try SVGImport.outcome(from: try Data(contentsOf: artworkURL), options: options)
                     doc.widthHP = art.widthHP
                     doc.format = art.format
                     if let bg = art.background { doc.background = bg }
                     doc.elements.append(contentsOf: art.elements)
                     report.append(contentsOf: art.warnings)
                 } catch {
-                    report.append("The panel \(panelURL.lastPathComponent) could not be read: "
+                    report.append("The panel \(artworkURL.lastPathComponent) could not be read: "
                         + error.localizedDescription)
                 }
             }
@@ -655,6 +667,59 @@ final class MainWindowController: NSWindowController, NSMenuItemValidation {
     /// millimetres is wider than any panel puts a label from its knob and
     /// narrower than the gap to the next row.
     private var labelReach: CGFloat { 8 / PanelMetrics.mmPerPixel }
+
+    /// Bring a panel's contents back inside its edges after it has been
+    /// narrowed. Offers the two operations that are defensible; anything
+    /// cleverer is a design decision, and this is not the thing to make it.
+    @objc func pgFitToPanel(_ sender: Any?) {
+        let strays = canvas.document.strayComponents()
+
+        let alert = NSAlert()
+        alert.messageText = strays.isEmpty
+            ? "Everything is already inside the panel"
+            : "\(strays.count) component\(strays.count == 1 ? " sits" : "s sit") outside the "
+              + "\(canvas.document.widthHP)HP panel"
+        alert.informativeText = "Rack draws a component exactly where the code puts it, so one beyond "
+            + "the module's edge cannot be seen or clicked — while still occupying a parameter.\n\n"
+            + "Both moves are undoable, and neither changes any size: a component's size comes from "
+            + "Rack's own artwork."
+        alert.addButton(withTitle: "Fit")
+        alert.addButton(withTitle: "Cancel")
+
+        let box = NSView(frame: CGRect(x: 0, y: 0, width: 380, height: 78))
+        let modes = PanelDocument.FitMode.allCases
+        var buttons: [NSButton] = []
+        for (i, mode) in modes.enumerated() {
+            let b = NSButton(radioButtonWithTitle: mode.displayName, target: nil, action: nil)
+            b.frame = CGRect(x: 0, y: 52 - CGFloat(i) * 24, width: 380, height: 20)
+            b.state = i == 0 ? .on : .off
+            box.addSubview(b)
+            buttons.append(b)
+        }
+        let marginLabel = NSTextField(labelWithString: "Margin (px)")
+        marginLabel.font = NSFont.systemFont(ofSize: 11)
+        marginLabel.frame = CGRect(x: 0, y: 2, width: 80, height: 18)
+        let margin = NSTextField(string: "6")
+        margin.frame = CGRect(x: 84, y: 0, width: 56, height: 22)
+        margin.toolTip = "Kept clear inside every edge. Rack's own panels leave room for the screws."
+        box.addSubview(marginLabel)
+        box.addSubview(margin)
+        alert.accessoryView = box
+
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        let picked = modes[buttons.firstIndex { $0.state == .on } ?? 0]
+        let inset = CGFloat(Double(margin.stringValue) ?? 6)
+        let moved = canvas.fitToPanel(picked, margin: max(0, inset))
+        reloadInspector()
+
+        let done = NSAlert()
+        done.messageText = moved == 0 ? "Nothing needed moving" : "Moved \(moved) elements"
+        done.informativeText = canvas.document.strayComponents().isEmpty
+            ? "Every component is inside the panel."
+            : "\(canvas.document.strayComponents().count) still sit outside — the panel may be too "
+              + "narrow for the layout at any spacing. Widen it, or move those by hand."
+        done.runModal()
+    }
 
     @objc func pgBindPrimitives(_ sender: Any?) {
         let bound = canvas.bindPrimitives()

@@ -436,6 +436,23 @@ enum CodeGen {
                 + "for one control — give it a struct name.")
         }
 
+        // A component off the edge of the panel. Rack places it where the code
+        // says, so it is drawn outside the module's own box: invisible, still
+        // in the enum, still consuming a parameter. Narrowing a panel under its
+        // contents is the usual way to get here.
+        let bounds = CGRect(origin: .zero, size: doc.pixelSize)
+        let strays = doc.components.filter {
+            let box = doc.widgetBounds(of: $0)
+            return !bounds.contains(CGPoint(x: box.midX, y: box.midY))
+        }
+        if !strays.isEmpty {
+            let names = strays.prefix(6).map { $0.identifierStem }.joined(separator: ", ")
+            out.append("\(strays.count) component\(strays.count == 1 ? " sits" : "s sit") outside the "
+                + "\(doc.widthHP)HP panel (\(names)\(strays.count > 6 ? " …" : "")). Rack draws them "
+                + "beyond the module's edge, where they cannot be seen or clicked — widen the panel or "
+                + "move them back.")
+        }
+
         let unnamed = doc.components.filter(\.enumName.isEmpty)
         if !unnamed.isEmpty {
             out.append("\(unnamed.count) component\(unnamed.count == 1 ? " has" : "s have") no explicit Name, so identifiers were derived from layer names — they will change if you rename a layer.")

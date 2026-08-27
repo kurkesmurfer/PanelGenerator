@@ -72,6 +72,21 @@ enum SVGImport {
         return try build(reader, viewBox: viewBox, options: options)
     }
 
+    /// A panel SVG's size in panel pixels, without building any elements.
+    ///
+    /// Cheap enough to run just to learn how wide a module is — which is what
+    /// resolves `box.size.x` in a module's constructor.
+    static func panelSize(from data: Data) -> CGSize? {
+        let reader = Reader()
+        let parser = XMLParser(data: data)
+        parser.delegate = reader
+        parser.shouldProcessNamespaces = false
+        guard parser.parse(), let viewBox = reader.viewBox,
+              viewBox.width > 0, viewBox.height > 0 else { return nil }
+        let (unitScale, _) = scale(viewBox: viewBox, declaredWidth: Length.parse(reader.widthAttribute))
+        return CGSize(width: viewBox.width * unitScale, height: viewBox.height * unitScale)
+    }
+
     // MARK: - Geometry
 
     /// Panel pixels per SVG user unit.
@@ -203,6 +218,57 @@ enum SVGImport {
             elements.append(el)
         }
 
+        // Labels, placed by their baseline.
+        //
+        // A Rack panel has its text converted to outlines because nanosvg drops
+        // <text>, so this used to be dead code — until a plugin turned up
+        // keeping a MetaModule panel of the same design with the text still
+        // live. Reading it gives editable labels instead of dumb outlines, and
+        // labels are what Adopt Identifiers matches on.
+        var labels = 0
+        for run in reader.texts {
+            let ctm = run.ctm.concatenating(place)
+            let baseline = run.origin.applying(ctm)
+            // Scale carried by the transform, so a label inside a scaled group
+            // keeps its drawn size.
+            let carried = sqrt(abs(ctm.a * ctm.d - ctm.b * ctm.c))
+            let size = run.fontSize * (carried.isFinite && carried > 0 ? carried : 1)
+
+            var el = ElementKind.text.defaultElement(at: .zero)
+            el.params.text = run.text
+            el.params.fontSize = max(4, size)
+            el.params.bold = run.bold
+            el.fill = run.fill ?? .hex("#E8E8F0")
+            el.name = "Label · \(run.text)"
+            el.role = .decoration
+            if options.asTemplate { el.isTemplate = true }
+
+            let measured = Renderer.textSize(for: el)
+            el.w = max(measured.width, 4)
+            el.h = max(measured.height, 4)
+
+            // PanelGenerator centres the cap-height box in the frame; SVG puts
+            // the baseline at y. Line them up rather than leaving every label a
+            // half cap-height too low.
+            let capHeight = el.h / 1.5
+            let advance = max(el.w - el.params.fontSize * 0.3, 1)
+            let dx: CGFloat
+            switch run.anchor {
+            case "middle": dx = 0
+            case "end":    dx = -advance / 2
+            default:       dx = advance / 2
+            }
+            el.x = baseline.x + dx - el.w / 2
+            el.y = baseline.y - capHeight / 2 - el.h / 2
+            elements.append(el)
+            labels += 1
+        }
+        if labels > 0 {
+            out.warnings.append("\(labels) label\(labels == 1 ? "" : "s") came in as editable text. "
+                + "Rack cannot draw <text> — nanosvg has no text support — so these export as outlines, "
+                + "which is what a Rack panel needs anyway.")
+        }
+
         guard !elements.isEmpty || out.background != nil else { throw Failure.empty }
 
         if bound > 0 {
@@ -311,13 +377,34 @@ enum SVGImport {
             var stroke: ColorSpec? = nil
             var strokeWidth: CGFloat? = nil
             var inComponents = false
+            // Text inherits down the tree like everything else: a group can
+            // carry the size and the anchor for every label inside it.
+            var fontSize: CGFloat = 3
+            var anchor: String = "start"
+            var bold = false
+        }
+
+        /// A label as the file gives it: a baseline position, an anchor, and
+        /// the words. Kept separate from shapes because it is placed by its
+        /// baseline, not by a bounding box.
+        struct TextRun {
+            var text: String
+            var origin: CGPoint          // the SVG's x,y — a baseline point
+            var ctm: CGAffineTransform
+            var fontSize: CGFloat        // user units
+            var anchor: String
+            var bold: Bool
+            var fill: ColorSpec?
         }
 
         var viewBox: CGRect?
         var widthAttribute: String?
         var heightAttribute: String?
         var shapes: [Shape] = []
+        var texts: [TextRun] = []
         var warnings: [String] = []
+        private var pendingText: TextRun? = nil
+        private var textDepth = 0
 
         private var stack: [State] = [State()]
         private var skipDepth = 0
@@ -358,6 +445,9 @@ enum SVGImport {
             if let f = style.fill { state.fill = f.isNone ? nil : f.colour }
             if let s = style.stroke { state.stroke = s.isNone ? nil : s.colour }
             if let w = style.strokeWidth { state.strokeWidth = w }
+            if let size = style.fontSize { state.fontSize = size }
+            if let anchor = style.anchor { state.anchor = anchor }
+            if let weight = style.weight { state.bold = weight }
             if isComponentsLayer(a) { state.inComponents = true }
 
             switch tag.lowercased() {
@@ -417,9 +507,28 @@ enum SVGImport {
                 }
                 append(tag: "path", path: p, state: state, attrs: a, radius: nil)
 
-            case "text", "tspan":
-                warnOnce("text", "Text was skipped. Rack panels have their labels converted to outlines "
-                    + "anyway, because nanosvg drops <text>; if this file has live text, retype it here.")
+            case "text":
+                // The baseline, not a box. A tspan carrying its own x/y is a
+                // second line; the first one wins and the reader says so.
+                textDepth = 1
+                pendingText = TextRun(text: "",
+                                      origin: CGPoint(x: num(a["x"]) ?? 0, y: num(a["y"]) ?? 0),
+                                      ctm: state.ctm,
+                                      fontSize: state.fontSize,
+                                      anchor: state.anchor,
+                                      bold: state.bold,
+                                      fill: state.fill)
+
+            case "tspan":
+                if pendingText != nil {
+                    textDepth += 1
+                    if a["x"] != nil || a["y"] != nil {
+                        warnOnce("tspan", "A label is split across positioned tspans — multi-line text "
+                            + "came in as one line. Split it by hand if it should be two.")
+                    }
+                } else {
+                    warnOnce("tspan", "A tspan outside any <text> was skipped.")
+                }
 
             case "use":
                 warnOnce("use", "<use> references were skipped — that artwork is missing from the import.")
@@ -443,7 +552,21 @@ enum SVGImport {
         func parser(_ parser: XMLParser, didEndElement name: String, namespaceURI: String?,
                     qualifiedName: String?) {
             if skipDepth > 0 { skipDepth -= 1; return }
+            let tag = (name.contains(":") ? String(name.split(separator: ":").last!) : name).lowercased()
+            if tag == "text" || tag == "tspan", textDepth > 0 {
+                textDepth -= 1
+                if textDepth == 0, var run = pendingText {
+                    run.text = run.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !run.text.isEmpty { texts.append(run) }
+                    pendingText = nil
+                }
+            }
             if stack.count > 1 { stack.removeLast() }
+        }
+
+        func parser(_ parser: XMLParser, foundCharacters string: String) {
+            guard skipDepth == 0, pendingText != nil else { return }
+            pendingText?.text += string
         }
 
         private func append(tag: String, path: CGPath, state: State,
@@ -496,6 +619,9 @@ enum SVGImport {
             var fill: Paint?
             var stroke: Paint?
             var strokeWidth: CGFloat?
+            var fontSize: CGFloat?
+            var anchor: String?
+            var weight: Bool?
         }
 
         /// Presentation attributes, with `style="…"` overriding them — which is
@@ -510,13 +636,19 @@ enum SVGImport {
                 case "fill":           out.fill = paint(value)
                 case "stroke":         out.stroke = paint(value)
                 case "stroke-width":   out.strokeWidth = num(value)
+                case "font-size":      out.fontSize = num(value)
+                case "text-anchor":    out.anchor = value
+                case "font-weight":
+                    // "bold", or any numeric weight at or above semibold.
+                    out.weight = value == "bold" || (num(value).map { $0 >= 600 } ?? false)
                 case "opacity":        opacity = num(value) ?? 1
                 case "fill-opacity":   fillOpacity = num(value) ?? 1
                 default: break
                 }
             }
 
-            for key in ["fill", "stroke", "stroke-width", "opacity", "fill-opacity"] {
+            for key in ["fill", "stroke", "stroke-width", "opacity", "fill-opacity",
+                        "font-size", "text-anchor", "font-weight"] {
                 if let v = a[key] { take(key, v) }
             }
             if let style = a["style"] {
