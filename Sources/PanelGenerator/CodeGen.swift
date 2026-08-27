@@ -453,6 +453,16 @@ enum CodeGen {
                 + "move them back.")
         }
 
+        // Template artwork reaches no export — that is the point of it — but a
+        // panel imported as a template and then drawn on exports as an empty
+        // rectangle, and nothing about the canvas says why.
+        let templates = doc.templateElements.count
+        if templates > 0 {
+            out.append("\(templates) element\(templates == 1 ? " is" : "s are") tracing template artwork "
+                + "and will not be exported. Select them in the layer list and Make Editable to keep "
+                + "them, or delete them if the tracing is done.")
+        }
+
         let unnamed = doc.components.filter(\.enumName.isEmpty)
         if !unnamed.isEmpty {
             out.append("\(unnamed.count) component\(unnamed.count == 1 ? " has" : "s have") no explicit Name, so identifiers were derived from layer names — they will change if you rename a layer.")

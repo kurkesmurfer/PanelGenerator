@@ -1821,6 +1821,28 @@ enum Selftest {
             failures.append("codegen: a component inside the panel must not warn")
         }
 
+        // A template is deliberately hard to touch while you trace over it, and
+        // that is wrong the moment you decide to keep it. Without a way back,
+        // the only route is to import the file again and lose the work since.
+        var traced = componentRig()
+        for i in traced.elements.indices { traced.elements[i].isTemplate = true }
+        if traced.templateElements.count != traced.elements.count {
+            failures.append("template: every element should read as template artwork")
+        }
+        if !CodeGen.warnings(traced).contains(where: { $0.contains("will not be exported") }) {
+            failures.append("template: a panel that is all template should warn that it exports empty")
+        }
+        let freed = traced.setTemplate(false, ids: Set(traced.elements.map(\.id)))
+        if freed != traced.elements.count || !traced.templateElements.isEmpty {
+            failures.append("template: Make Editable should clear every one, freed \(freed)")
+        }
+        if traced.setTemplate(false, ids: Set(traced.elements.map(\.id))) != 0 {
+            failures.append("template: clearing twice should change nothing the second time")
+        }
+        if CodeGen.warnings(traced).contains(where: { $0.contains("will not be exported") }) {
+            failures.append("template: editable artwork must not warn")
+        }
+
         // Squeeze keeps the column structure: two knobs a fixed distance apart
         // stay in the same order and the same relative spacing, just closer.
         var squeeze = PanelDocument()
@@ -1870,7 +1892,7 @@ enum Selftest {
         widget.widthHP = 4
         var body = ElementKind.knobLarge.defaultElement(at: CGPoint(x: 150, y: 100))
         body.role = .param
-        var ring = ElementKind.ringSector.defaultElement(at: CGPoint(x: 144, y: 94))
+        let ring = ElementKind.ringSector.defaultElement(at: CGPoint(x: 144, y: 94))
         widget.elements = [body, ring]
         _ = widget.makeWidget(ids: Set(widget.elements.map(\.id)), name: "Composed", role: .param)
         let gapBefore = widget.elements[1].x - widget.elements[0].x

@@ -1171,6 +1171,45 @@ final class InspectorView: NSView {
     private func buildLayerSection() {
         guard let cv = canvas, !cv.selection.isEmpty else { return }
 
+        // An element you can select but cannot grab reads as a bug. Say what it
+        // is, and offer the way out — otherwise the only route back is to
+        // import the file again and lose everything drawn since.
+        let selected = cv.document.elements.filter { cv.selection.contains($0.id) }
+        let templates = selected.filter { $0.isTemplate == true }.count
+        if templates > 0 {
+            section("Template")
+            let note = NSTextField(wrappingLabelWithString:
+                "\(templates) of \(selected.count) selected \(templates == 1 ? "is" : "are") tracing "
+                + "template artwork: drawn faintly, not clickable on the canvas, and never exported. "
+                + "Make it editable to keep it.")
+            note.font = NSFont.systemFont(ofSize: 10)
+            note.textColor = ColorSpec.hex("#9A9AB0").nsColor
+            note.maximumNumberOfLines = 5
+            note.frame = CGRect(x: pad, y: cursorY, width: contentW, height: 58)
+            addSubview(note)
+            cursorY += 62
+            buttonRow(["Make Editable"], handlers: [
+                { [weak self] in
+                    self?.canvas?.setTemplate(false)
+                    self?.scheduleRebuild()
+                },
+            ], columns: 1)
+        } else {
+            section("Template")
+            let note = NSTextField(labelWithString: "Turn the selection into tracing reference.")
+            note.font = NSFont.systemFont(ofSize: 10)
+            note.textColor = ColorSpec.hex("#9A9AB0").nsColor
+            note.frame = CGRect(x: pad, y: cursorY, width: contentW, height: 14)
+            addSubview(note)
+            cursorY += 18
+            buttonRow(["Make Template"], handlers: [
+                { [weak self] in
+                    self?.canvas?.setTemplate(true)
+                    self?.scheduleRebuild()
+                },
+            ], columns: 1)
+        }
+
         // Colours across the selection. A group of glyphs, a bank of faders or
         // a row of knobs is usually several elements sharing one colour, and
         // recolouring them one at a time through the single-element Fill well

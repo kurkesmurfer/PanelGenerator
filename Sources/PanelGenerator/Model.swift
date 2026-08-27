@@ -615,6 +615,27 @@ struct PanelDocument: Codable, Hashable {
         return uppercase ? raw.uppercased() : raw
     }
 
+    /// Turn tracing template artwork into ordinary artwork, or back.
+    ///
+    /// A template is deliberately hard to touch — faint, unclickable, out of
+    /// Select All — which is right while you are drawing over it and wrong the
+    /// moment you decide to keep it. Without this the only way back is to
+    /// import the file again and lose the work done since.
+    @discardableResult
+    mutating func setTemplate(_ on: Bool, ids: Set<UUID>) -> Int {
+        var changed = 0
+        for i in elements.indices where ids.contains(elements[i].id) {
+            let now = elements[i].isTemplate == true
+            guard now != on else { continue }
+            elements[i].isTemplate = on ? true : nil
+            changed += 1
+        }
+        return changed
+    }
+
+    /// Elements that will not reach any export because they are templates.
+    var templateElements: [PanelElement] { elements.filter { $0.isTemplate == true } }
+
     // MARK: - Fitting a panel
 
     /// How to bring a panel's contents back inside its edges.

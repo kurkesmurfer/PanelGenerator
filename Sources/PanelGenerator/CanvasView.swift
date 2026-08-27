@@ -936,6 +936,17 @@ final class CanvasView: NSView {
         return result
     }
 
+    /// Undoable wrapper around `PanelDocument.setTemplate`.
+    @discardableResult
+    func setTemplate(_ on: Bool, ids: Set<UUID>? = nil) -> Int {
+        var doc = document
+        let scope = ids ?? (selection.isEmpty ? Set(document.elements.map(\.id)) : selection)
+        let changed = doc.setTemplate(on, ids: scope)
+        guard changed > 0 else { return 0 }
+        apply(elements: doc.elements, name: on ? "Make Template" : "Make Editable")
+        return changed
+    }
+
     /// Undoable wrapper around `PanelDocument.fitToPanel`.
     @discardableResult
     func fitToPanel(_ mode: PanelDocument.FitMode, margin: CGFloat) -> Int {
