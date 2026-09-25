@@ -20,5 +20,10 @@ let package = Package(
             dependencies: ["PanelKit"],
             path: "Sources/PanelGenerator"
         ),
+        .testTarget(
+            name: "PanelKitTests",
+            dependencies: ["PanelKit"],
+            path: "Tests/PanelKitTests"
+        ),
     ]
 )
