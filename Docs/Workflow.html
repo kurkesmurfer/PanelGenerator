@@ -1,0 +1,785 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Panel to Plugin</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Antonio:wght@300;500;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap">
+<style>
+/* ---------------------------------------------------------------------------
+   Tokens. Light is the bare :root; dark redefines the same names twice so the
+   un-stamped (system) state and the explicit toggle both resolve.
+   The two working colours come from the panels themselves: the ochre of the
+   painted corner mark, and the warm grey the labels are set in.
+--------------------------------------------------------------------------- */
+:root {
+  --ground:  #E9E7E1;
+  --surface: #FDFCFA;
+  --sunk:    #DFDCD4;
+  --ink:     #191920;
+  --muted:   #5B5963;
+  --faint:   #8B8892;
+  --line:    #D2CEC5;
+  --hair:    #C4BFB4;
+  --mark:    #B4520F;   /* the painted mark, darkened for light grounds */
+  --label:   #6E6355;   /* the wordmark grey, darkened for light grounds */
+  --code-bg: #F1EEE8;
+
+  --measure: 68ch;
+  --rail: 168px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ground:  #16161B;
+    --surface: #1E1E26;
+    --sunk:    #121217;
+    --ink:     #E7E4DC;
+    --muted:   #9C99A5;
+    --faint:   #6E6B78;
+    --line:    #30303B;
+    --hair:    #3C3C48;
+    --mark:    #EA7418;
+    --label:   #B7AC9D;
+    --code-bg: #191920;
+  }
+}
+:root[data-theme="dark"] {
+  --ground:  #16161B;
+  --surface: #1E1E26;
+  --sunk:    #121217;
+  --ink:     #E7E4DC;
+  --muted:   #9C99A5;
+  --faint:   #6E6B78;
+  --line:    #30303B;
+  --hair:    #3C3C48;
+  --mark:    #EA7418;
+  --label:   #B7AC9D;
+  --code-bg: #191920;
+}
+
+* { box-sizing: border-box; }
+
+html { scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+
+body {
+  margin: 0;
+  background: var(--ground);
+  color: var(--ink);
+  font: 400 16px/1.62 "IBM Plex Sans", ui-sans-serif, -apple-system, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* --- shell ---------------------------------------------------------------- */
+
+.shell {
+  display: grid;
+  grid-template-columns: var(--rail) minmax(0, 1fr);
+  gap: 0 48px;
+  max-width: 1160px;
+  margin: 0 auto;
+  padding: 0 32px 120px;
+}
+@media (max-width: 900px) {
+  .shell { grid-template-columns: minmax(0, 1fr); gap: 0; padding: 0 22px 90px; }
+  .rail { display: none; }
+}
+
+/* --- the HP ruler --------------------------------------------------------- */
+/* A panel is measured in HP. The rail is that ruler: a tick per stage, the
+   numbers in the same condensed face the panels are lettered in. */
+
+.rail {
+  position: sticky;
+  top: 0;
+  align-self: start;
+  height: 100vh;
+  padding: 88px 0 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border-right: 1px solid var(--line);
+}
+.rail a {
+  display: grid;
+  grid-template-columns: 30px 1fr;
+  align-items: baseline;
+  gap: 10px;
+  padding: 5px 14px 5px 0;
+  text-decoration: none;
+  color: var(--muted);
+  border-right: 2px solid transparent;
+  margin-right: -1px;
+  transition: color .15s, border-color .15s;
+}
+.rail a:hover { color: var(--ink); }
+.rail a:focus-visible { outline: 2px solid var(--mark); outline-offset: 2px; }
+.rail a .n {
+  font: 500 13px/1 "Antonio", "Oswald", sans-serif;
+  letter-spacing: .06em;
+  color: var(--faint);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.rail a .t {
+  font: 500 13.5px/1.25 "Antonio", "Oswald", sans-serif;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+}
+.rail a.on { color: var(--ink); border-right-color: var(--mark); }
+.rail a.on .n { color: var(--mark); }
+.rail .gap { height: 18px; }
+
+/* --- masthead ------------------------------------------------------------- */
+
+header.top {
+  grid-column: 1 / -1;
+  padding: 76px 0 40px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 52px;
+}
+.eyebrow {
+  font: 500 12px/1 "IBM Plex Mono", ui-monospace, monospace;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  color: var(--label);
+  margin: 0 0 18px;
+}
+h1 {
+  font: 300 clamp(46px, 8vw, 82px)/0.92 "Antonio", "Oswald", sans-serif;
+  letter-spacing: -0.005em;
+  text-transform: uppercase;
+  margin: 0;
+  text-wrap: balance;
+}
+h1 em { font-style: normal; color: var(--mark); font-weight: 500; }
+.standfirst {
+  max-width: 60ch;
+  margin: 22px 0 0;
+  font-size: 18.5px;
+  color: var(--muted);
+}
+.metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 26px;
+  margin: 30px 0 0;
+  padding: 0;
+  list-style: none;
+  font: 400 12.5px/1.6 "IBM Plex Mono", ui-monospace, monospace;
+  color: var(--faint);
+}
+.metrics li { display: flex; gap: 8px; }
+.metrics b { color: var(--label); font-weight: 500; }
+
+/* --- sections ------------------------------------------------------------- */
+
+main { grid-column: 2; min-width: 0; }
+@media (max-width: 900px) { main { grid-column: 1; } }
+
+section { max-width: var(--measure); margin: 0 0 62px; scroll-margin-top: 24px; }
+
+.stage-head { display: grid; grid-template-columns: 46px 1fr; gap: 14px; align-items: start; margin: 0 0 18px; }
+.stage-num {
+  font: 500 30px/0.85 "Antonio", "Oswald", sans-serif;
+  color: var(--mark);
+  font-variant-numeric: tabular-nums;
+  padding-top: 4px;
+}
+h2 {
+  font: 500 clamp(26px, 3.4vw, 34px)/1.05 "Antonio", "Oswald", sans-serif;
+  text-transform: uppercase;
+  letter-spacing: .015em;
+  margin: 0;
+  text-wrap: balance;
+}
+h2 + .sub { margin: 6px 0 0; color: var(--faint); font-size: 14.5px; }
+
+h3 {
+  font: 600 14px/1.4 "IBM Plex Sans", sans-serif;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--label);
+  margin: 30px 0 8px;
+}
+section > p, section > ul, section > ol { margin: 0 0 14px; }
+section p:last-child { margin-bottom: 0; }
+ul, ol { padding-left: 1.15em; }
+li { margin: 0 0 7px; }
+li::marker { color: var(--faint); }
+
+a { color: var(--ink); text-decoration-color: var(--hair); text-underline-offset: 3px; }
+a:hover { text-decoration-color: var(--mark); }
+
+strong { font-weight: 600; }
+em.term { font-style: normal; font-weight: 600; color: var(--ink); }
+
+/* keys and code */
+kbd {
+  font: 500 12.5px/1 "IBM Plex Mono", ui-monospace, monospace;
+  background: var(--code-bg);
+  border: 1px solid var(--hair);
+  border-radius: 4px;
+  padding: 3px 6px;
+  white-space: nowrap;
+  color: var(--ink);
+}
+code {
+  font: 400 13.5px/1.5 "IBM Plex Mono", ui-monospace, monospace;
+  background: var(--code-bg);
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+pre {
+  background: var(--sunk);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--label);
+  border-radius: 3px;
+  padding: 15px 18px;
+  margin: 0 0 16px;
+  overflow-x: auto;
+}
+pre code { background: none; padding: 0; font-size: 13px; line-height: 1.6; color: var(--ink); }
+.cmt { color: var(--faint); }
+
+/* the "one rule" plate */
+.plate {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-top: 3px solid var(--mark);
+  padding: 24px 26px;
+  margin: 0 0 56px;
+  max-width: var(--measure);
+}
+.plate p { margin: 0; }
+.plate p + p { margin-top: 10px; }
+.plate .lead { font-size: 19px; line-height: 1.45; }
+
+/* callouts — a warning has a different job from a note, so it looks different */
+.note, .warn {
+  border-left: 3px solid var(--hair);
+  padding: 2px 0 2px 16px;
+  margin: 0 0 16px;
+  color: var(--muted);
+  font-size: 15px;
+}
+.warn { border-left-color: var(--mark); }
+.warn strong { color: var(--ink); }
+
+/* tables */
+table { width: 100%; border-collapse: collapse; margin: 0 0 16px; font-size: 14.5px; }
+.scroller { overflow-x: auto; margin: 0 0 16px; }
+.scroller table { margin: 0; min-width: 460px; }
+th {
+  text-align: left;
+  font: 600 11.5px/1.3 "IBM Plex Sans", sans-serif;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+  color: var(--faint);
+  padding: 0 14px 7px 0;
+  border-bottom: 1px solid var(--line);
+}
+td { padding: 9px 14px 9px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+tr:last-child td { border-bottom: 0; }
+td code { font-size: 12.5px; }
+
+/* the file-ownership grid */
+.owns { display: grid; gap: 1px; background: var(--line); border: 1px solid var(--line); margin: 0 0 16px; }
+.owns > div { background: var(--surface); padding: 14px 16px; }
+.owns dt { font: 400 13px/1.4 "IBM Plex Mono", ui-monospace, monospace; color: var(--ink); margin: 0 0 5px; }
+.owns dd { margin: 0; font-size: 14px; color: var(--muted); }
+.owns .tag {
+  display: inline-block;
+  font: 500 10.5px/1 "IBM Plex Mono", monospace;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  padding: 4px 6px;
+  border-radius: 2px;
+  margin-bottom: 8px;
+}
+.tag.src { background: var(--mark); color: var(--surface); }
+.tag.gen { background: var(--sunk); color: var(--faint); border: 1px solid var(--hair); }
+.tag.once { background: var(--label); color: var(--surface); }
+
+/* reference sections read as reference, not as more stages */
+.ref { border-top: 1px solid var(--line); padding-top: 34px; }
+.ref h2 { font-size: clamp(22px, 2.8vw, 27px); color: var(--muted); }
+
+footer {
+  grid-column: 1 / -1;
+  border-top: 1px solid var(--line);
+  margin-top: 24px;
+  padding-top: 22px;
+  color: var(--faint);
+  font-size: 13.5px;
+  max-width: var(--measure);
+}
+footer code { font-size: 12.5px; }
+</style>
+</head>
+<body>
+<div class="shell">
+
+<header class="top">
+  <p class="eyebrow">PanelGenerator · workflow manual</p>
+  <h1>Panel <em>to</em> Plugin</h1>
+  <p class="standfirst">Drawing a VCV Rack front panel, naming what is on it, and generating the artwork and
+  C++ that a module compiles against — in the order you actually do it.</p>
+  <ul class="metrics">
+    <li><b>1 HP</b> 15 px · 5.08 mm</li>
+    <li><b>3U</b> 380 px · 128.5 mm</li>
+    <li><b>SVG</b> 75 dpi</li>
+    <li><b>mm → px</b> ×2.953</li>
+  </ul>
+</header>
+
+<nav class="rail" aria-label="Stages">
+  <a href="#source"><span class="n">§</span><span class="t">One source</span></a>
+  <div class="gap"></div>
+  <a href="#start"><span class="n">1</span><span class="t">Start</span></a>
+  <a href="#draw"><span class="n">2</span><span class="t">Draw</span></a>
+  <a href="#name"><span class="n">3</span><span class="t">Name</span></a>
+  <a href="#import"><span class="n">4</span><span class="t">Import</span></a>
+  <a href="#emit"><span class="n">5</span><span class="t">Emit</span></a>
+  <a href="#wire"><span class="n">6</span><span class="t">Wire up</span></a>
+  <a href="#prove"><span class="n">7</span><span class="t">Prove it</span></a>
+  <div class="gap"></div>
+  <a href="#bites"><span class="n">§</span><span class="t">What bites</span></a>
+  <a href="#limits"><span class="n">§</span><span class="t">Limits</span></a>
+  <a href="#keys"><span class="n">§</span><span class="t">Keys</span></a>
+</nav>
+
+<main>
+
+<div class="plate" id="source">
+  <p class="lead">The <code>.panelgen</code> document is the only source. Artwork and headers are build
+  output — regenerate them, never edit them.</p>
+  <p>Everything below is one loop around that rule: draw, name, emit, and then <em class="term">compare</em>,
+  which is what proves the output still matches the document it claims to come from.</p>
+</div>
+
+<section id="start">
+  <div class="stage-head">
+    <div class="stage-num">1</div>
+    <div>
+      <h2>Start the document</h2>
+      <p class="sub">File ▸ New Panel</p>
+    </div>
+  </div>
+
+  <p>Set the width in HP and the format (3U or 1U) in the Panel section of the inspector, then fill in the
+  two slugs. They are not the same thing and getting them the wrong way round is the most common
+  first mistake.</p>
+
+  <div class="scroller"><table>
+    <thead><tr><th>Field</th><th>Comes from</th><th>Names</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Plugin slug</strong></td><td><code>plugin.json</code></td>
+          <td>the shared widget library and its namespace — one per repository</td></tr>
+      <tr><td><strong>Module slug</strong></td><td><code>createModel&lt;…&gt;("Muse")</code></td>
+          <td>this panel's <code>res/&lt;slug&gt;.svg</code>, its <code>&lt;Slug&gt;_panel.hpp</code> and
+              its namespace — one per panel</td></tr>
+    </tbody>
+  </table></div>
+
+  <p>Slugs use underscores. A module slug names a file verbatim <em>and</em> the C++ identifiers derived
+  from it, where a hyphen is not legal and becomes an underscore anyway; choose the hyphen and one panel
+  ends up spelled two ways in one directory. The field corrects spaces to <code>_</code> as you type, and
+  the inspector previews what each slug will name.</p>
+
+  <p>Save the document into a <code>panels/</code> folder inside the plugin's own repository, named after
+  its module slug — <code>panels/Muse.panelgen</code> pairs with <code>Muse_panel.hpp</code>. The
+  <code>panels-check</code> target relies on that pairing.</p>
+</section>
+
+<section id="draw">
+  <div class="stage-head">
+    <div class="stage-num">2</div>
+    <div>
+      <h2>Draw the panel</h2>
+      <p class="sub">Drag from the palette · double-click to drop in the centre</p>
+    </div>
+  </div>
+
+  <p>The left palette is banked by what things become, not by how they look:</p>
+
+  <ul>
+    <li><strong>Primitives</strong> — jacks, knobs, faders, LEDs, buttons, button groups, screws.
+      These are the things that can carry a component role and reach the generated code.</li>
+    <li><strong>Knobs · Position Ring</strong> — the same three knobs with the ring switched on.
+      Deliberately separate entries: the plain ones stay what Rack draws, so a panel built from them
+      still matches its stock widgets.</li>
+    <li><strong>Shapes · Backdrop</strong> — boxes with per-corner radii, ellipses, triangles,
+      LCARS elbows and ring sectors. Elbows plus ring sectors plus per-corner radii is how you get
+      the Next Generation look; nothing else in the palette does it for you.</li>
+    <li><strong>Symbols</strong> — waveforms, arrows, glyphs. <code>{ka}</code> inside a label's text
+      places one inline at cap height.</li>
+    <li><strong>Text</strong> — labels, which are artwork, not identifiers. See stage 3.</li>
+    <li><strong>Stamps</strong> — your own saved fragments. Below.</li>
+  </ul>
+
+  <h3>Stamps: the parts of your house style</h3>
+
+  <p>A brand mark, a wordmark, a jack pair with its labels already set — the fragments every panel of
+  yours repeats. Select them, then <strong>Edit ▸ Add Selection to Palette…</strong> and give the stamp
+  a name. It appears under Stamps and drops like any other palette item: drag onto the panel, or
+  double-click to drop it in the centre.</p>
+
+  <p>A stamp carries shapes, sizes and colours — never identity. Component identifiers, group and label
+  bindings are all stripped on save, so dropping the same stamp on two panels can never make them claim
+  the same enum name. Each drop gets fresh element ids and one shared group, so it moves as a piece.</p>
+
+  <p>Stamps live in your library, not in the document:
+  <code>~/Library/Application Support/PanelGenerator/Stamps</code>. They are plain JSON —
+  <strong>Edit ▸ Reveal Palette Stamps in Finder</strong> to rename, delete or hand one to someone else,
+  then <strong>Reload Palette Stamps</strong> to pick up the change. The kurkesmurfer corner mark
+  (5.41 × 10.94 mm, the approved painted size) and the wordmark are installed on first launch.</p>
+
+  <div class="note"><strong>The wordmark is drawn, not typeset by Rack.</strong> The runtime wordmark
+  uses the plugin's own semibold face with 0.75 px of tracking; the stamp is a text element in the
+  system semibold and PanelGenerator has no letter-spacing parameter. Same words, same size, slightly
+  different width. If the panel is the one being generated, that is fine — the stamp <em>is</em> the
+  wordmark. If it has to sit beside a runtime-drawn one, nudge it.</div>
+
+  <h3>Placing things</h3>
+
+  <ul>
+    <li>Snap-to-grid aligns to the HP grid — <kbd>⇧⌘G</kbd> toggles it, and View ▸ Snap Step sets the
+      division.</li>
+    <li>Arrow keys nudge; <kbd>⇧</kbd> + arrow moves a whole grid step. <kbd>⌘D</kbd> duplicates.</li>
+    <li>The blue <strong>↻</strong> badge above a selection rotates it (<kbd>⇧</kbd> snaps 15°); the
+      orange <strong>⇄ ⇅</strong> badges mirror it, which is how elbows get their four orientations.</li>
+    <li><strong>Edit ▸ Insert Corner Screws</strong> places all four. Screws are decoration — they never
+      reach an enum, so their "screw" identifier is a placeholder, not a clash.</li>
+  </ul>
+
+  <div class="warn"><strong>Something you can select but cannot grab</strong> is a template element —
+  imported as a tracing underlay, drawn at half strength and deliberately immovable. Select it in the
+  layer list and use <strong>Make Editable</strong> in the inspector to promote it to real artwork.
+  Emit warns about any template left in a document.</div>
+</section>
+
+<section id="name">
+  <div class="stage-head">
+    <div class="stage-num">3</div>
+    <div>
+      <h2>Name what is on it</h2>
+      <p class="sub">Three different things have been called "name"</p>
+    </div>
+  </div>
+
+  <div class="scroller"><table>
+    <thead><tr><th>Where</th><th>Field</th><th>What it is</th></tr></thead>
+    <tbody>
+      <tr><td>Component section</td><td><strong>Identifier</strong></td>
+          <td><code>QUANT</code> → <code>QUANT_PARAM</code> in the generated enum</td></tr>
+      <tr><td>Text element</td><td><strong>Content</strong></td>
+          <td>the words drawn on the panel</td></tr>
+      <tr><td>Layer list</td><td>layer name</td>
+          <td>organisational; feeds the identifier only when Identifier is empty</td></tr>
+    </tbody>
+  </table></div>
+
+  <p>A fully labelled panel can still have every component unnamed. First give each control its
+  <strong>role</strong> — Param, Input, Output, Light, Custom, or Decoration for anything that is
+  purely artwork — then get identifiers onto them by whichever of these fits:</p>
+
+  <ul>
+    <li><strong>Label Selection…</strong> <kbd>⌘L</kbd> — creates text labels from the component names,
+      one font size for the whole set. The new labels stay selected, so the inspector's Size field
+      re-sizes all of them at once.</li>
+    <li><strong>Name from Labels</strong> <kbd>⇧⌘L</kbd> — the reverse: turns the labels you already drew
+      into identifiers, pairing each control with the nearest label within 8 mm.</li>
+    <li><strong>Adopt Identifiers…</strong> — copies identifiers from another <code>.panelgen</code> or
+      straight from a module's <code>.cpp</code>, matching on the label beside each control plus its role.
+      This is what a redesign needs: the same controls in a new layout, where position cannot pair them
+      but the label under a knob says what the knob is in both. Matching is exact, then
+      punctuation-insensitive (<code>LFO 1</code> = <code>LFO1</code>), then by shared leading run
+      (<code>ANIM</code> = <code>ANIMATE</code>, three characters minimum). Every loose match is reported.</li>
+  </ul>
+
+  <div class="note">Identifiers are numbered <strong>per enum</strong>, not per panel. Rack keeps
+  <code>ParamId</code>, <code>InputId</code>, <code>OutputId</code> and <code>LightId</code> apart, so
+  <code>ANIMATE_PARAM</code> and <code>ANIMATE_INPUT</code> are not a clash — a knob sharing a name with
+  the CV input that feeds it is how modules get named.</div>
+</section>
+
+<section id="import">
+  <div class="stage-head">
+    <div class="stage-num">4</div>
+    <div>
+      <h2>Bring in what already exists</h2>
+      <p class="sub">Both directions of the loop are implemented</p>
+    </div>
+  </div>
+
+  <p><strong>File ▸ Import SVG…</strong> <kbd>⌘I</kbd> reads a panel someone else drew, in one of two
+  modes: as a faint <em class="term">tracing template</em> you draw over, or as editable artwork you own.
+  If the file carries a helper.py components layer, the components come with it.</p>
+
+  <p><strong>File ▸ Import Module Code…</strong> <kbd>⌥⌘I</kbd> reads a <code>ModuleWidget</code>
+  constructor and rebuilds its components — positions, identifiers, widget types, switch frame counts —
+  and pulls in the panel SVG it references as artwork. It resolves <code>plugin.json</code> beside the
+  source for the plugin slug, evaluates the constants and helper calls it finds, and reports by line
+  number anything it had to skip.</p>
+
+  <div class="warn"><strong><code>Centered</code> is not decoration.</strong>
+  <code>createParamCentered&lt;T&gt;(pos, …)</code> takes a centre;
+  <code>createParam&lt;T&gt;(pos, …)</code> takes a top-left corner. The offset between them is the
+  widget's own size, which lives in Rack's SVG for that type and is not knowable from the source.
+  Uncentred calls import at the corner given and are listed by line number rather than silently
+  offset by a guess.</div>
+
+  <p>Millimetres are the other trap. Rack panels are authored with the viewBox in millimetres
+  (<code>viewBox="0 0 71.12 128.5"</code>, <code>width="71.12mm"</code>) while PanelGenerator works in
+  75-dpi pixels. The importer takes the scale from the <code>width</code> attribute's unit; a file
+  without one is assumed to be pixels, and says so in the report.</p>
+</section>
+
+<section id="emit">
+  <div class="stage-head">
+    <div class="stage-num">5</div>
+    <div>
+      <h2>Emit</h2>
+      <p class="sub">One command, six kinds of file</p>
+    </div>
+  </div>
+
+<pre><code>PanelGenerator --emit &lt;doc|folder&gt; &lt;outdir&gt;
+
+<span class="cmt"># or, from the plugin:</span>
+make panels-apply          <span class="cmt"># destructive: emit into the plugin</span>
+make panels-check          <span class="cmt"># emit to a scratch dir and compare</span></code></pre>
+
+  <p>Pass a folder and every panel in it is emitted, with the plugin's widget library written once
+  across all of them. Headers go to <code>src/</code> when the output directory has one, beside
+  <code>res/</code> when it does not.</p>
+
+  <div class="owns">
+    <div>
+      <span class="tag gen">regenerated</span>
+      <dt>res/&lt;ModuleSlug&gt;.svg</dt>
+      <dd>panel artwork</dd>
+    </div>
+    <div>
+      <span class="tag gen">regenerated</span>
+      <dt>res/&lt;ModuleSlug&gt;-components.svg</dt>
+      <dd>the helper.py positions layer</dd>
+    </div>
+    <div>
+      <span class="tag gen">regenerated</span>
+      <dt>res/components/&lt;widget&gt;-*.svg</dt>
+      <dd>custom widget artwork — <code>-bg</code>/<code>-fg</code> for knobs,
+          <code>-0…-n</code> for switch frames, bare for ports</dd>
+    </div>
+    <div>
+      <span class="tag gen">regenerated</span>
+      <dt>&lt;Plugin&gt;Widgets.hpp</dt>
+      <dd>widget classes and aliases to Rack's stock components</dd>
+    </div>
+    <div>
+      <span class="tag gen">regenerated</span>
+      <dt>&lt;Module&gt;_panel.hpp</dt>
+      <dd>the four enums, the positions, and <code>addComponents()</code></dd>
+    </div>
+    <div>
+      <span class="tag once">written once</span>
+      <dt>&lt;Plugin&gt;WidgetBase.hpp</dt>
+      <dd>yours. Every generated widget derives from a base declared here —
+          <code>KnobBase</code>, <code>PortBase</code>, <code>SwitchBase</code>,
+          <code>SliderBase</code>, <code>PlainBase</code> — so anything a family shares
+          (theme, shadow, tooltips, hover) has a home regeneration cannot reach.
+          Delete it to get a fresh one.</dd>
+    </div>
+  </div>
+
+  <p>The widget library is <strong>per plugin, not per module</strong>. Two modules using the same jack
+  must compile to one struct loading one SVG, so emit builds the library from every panel of that plugin
+  it can find: the ones in this run, plus any sibling <code>.panelgen</code> declaring the same plugin
+  slug. Filenames come from the widget class, never from the instance — <code>museui::KnobLarge</code>
+  owns <code>knob-large-bg.svg</code> whether it is placed once or thirty times.</p>
+</section>
+
+<section id="wire">
+  <div class="stage-head">
+    <div class="stage-num">6</div>
+    <div>
+      <h2>Wire up the module</h2>
+      <p class="sub">Delete the enum. Really.</p>
+    </div>
+  </div>
+
+  <p><code>addComponents()</code> places against the enum declared in
+  <code>&lt;Module&gt;_panel.hpp</code>, whose order is the panel's <strong>reading order</strong> —
+  not the order the controls were written in. A module that keeps its own <code>enum ParamId</code>
+  will compile cleanly and bind every control to the wrong parameter, because the two enums declare the
+  same names with different values.</p>
+
+<pre><code>#include "Muse_ND_panel.hpp"
+using namespace Muse_NDPanel;   <span class="cmt">// ids unqualified, as Rack code expects</span>
+
+struct MuseNDWidget : ModuleWidget {
+    MuseNDWidget(MuseND* module) {
+        setModule(module);
+        Muse_NDPanel::addComponents(this, module);
+    }
+};</code></pre>
+
+  <p>The module's <code>.cpp</code> owns the sound and nothing else.</p>
+
+  <h3>Switches take three things, not one</h3>
+  <p><code>app::SvgSwitch</code> holds one frame per position and picks between them by parameter value;
+  a button is the two-position case. Two things fail quietly:</p>
+  <ul>
+    <li><strong><code>momentary</code> belongs only to a button.</strong> A momentary widget snaps back
+      on mouse-up, so a three-position rotary declared momentary can never rest anywhere but 0.</li>
+    <li><strong>The parameter range lives in the module.</strong> Three frames with the param still at
+      0…1 reaches two of them. Nothing in the widget can fix this, so the generated struct carries the
+      <code>configSwitch(QUANT_PARAM, 0.f, 2.f, 0.f, …)</code> call for you to place.</li>
+  </ul>
+  <p>The number of positions you drew and the Rack type you bound to must also agree — a three-position
+  button group bound to <code>VCVButton</code> draws a two-position momentary button.</p>
+</section>
+
+<section id="prove">
+  <div class="stage-head">
+    <div class="stage-num">7</div>
+    <div>
+      <h2>Prove it still matches</h2>
+      <p class="sub">The step that catches what review does not</p>
+    </div>
+  </div>
+
+<pre><code>PanelGenerator --compare &lt;a&gt; &lt;b&gt; [--tolerance &lt;mm&gt;] [--no-labels]
+
+<span class="cmt"># either side may be a .panelgen, a module's .cpp,</span>
+<span class="cmt"># or an SVG with a components layer</span>
+make compare A=~/Development/Muse/vcv/Muse.cpp B=panels/Muse.panelgen
+make panels-check          <span class="cmt"># the one for CI</span></code></pre>
+
+  <p>Every generated file carries a provenance line:</p>
+
+<pre><code>// PanelGenerator-Source: Muse ND · 25 components · digest 4717c5f5</code></pre>
+
+  <p>The digest is FNV-1a over identifier, role, widget type and position in millimetres — the
+  <strong>contract</strong>, not the artwork. Recolour the panel and it does not change; move one jack
+  1.25 mm and it does. <code>--compare</code> reads it first and says loudly when two files came from
+  different panels, because a stale file otherwise reads as a panel full of moved and missing
+  components. Use <code>--no-labels</code> against generated code, which carries no labels because
+  PanelGenerator draws them into the artwork.</p>
+
+  <p>For a change to the tool itself, the round trip is the stronger test:</p>
+
+<pre><code>make selftest
+make emit DOC=&lt;doc&gt; OUT=build/check
+make compare A=&lt;doc&gt; B=build/check/&lt;Module&gt;_panel.hpp NOLABELS=1</code></pre>
+
+  <p>That is what caught per-panel identifier numbering renaming five legal identifiers — code that
+  would have compiled cleanly and bound controls to the wrong parameters. No unit test would have
+  found it.</p>
+</section>
+
+<section id="bites" class="ref">
+  <div class="stage-head">
+    <div class="stage-num">§</div>
+    <div><h2>What bites, in one place</h2></div>
+  </div>
+  <ul>
+    <li><strong>Millimetres, not pixels.</strong> Read a millimetre position as pixels and every
+      component lands at a third of its proper place.</li>
+    <li><strong><code>Centered</code> is not decoration.</strong> Centre versus top-left corner, and
+      the offset is unknowable from the source.</li>
+    <li><strong>The generated enum owns the ids.</strong> Reading order, not writing order.</li>
+    <li><strong>Identifiers are numbered per enum.</strong> Four separate enums, four separate counts.</li>
+    <li><strong>One SVG per switch position</strong>, and the range lives in the module.</li>
+    <li><strong>Filenames come from the class, never the instance.</strong> The namespace never appears
+      in a filename and does not need to: <code>res/components/</code> is already plugin-scoped.</li>
+    <li><strong>One document per module.</strong> Two documents claiming one module slug overwrite each
+      other's artwork and header; emit fails rather than let that pass.</li>
+  </ul>
+  <p>The long form of each, with the reasoning, is in <code>PIPELINE.md</code> beside this file.</p>
+</section>
+
+<section id="limits" class="ref">
+  <div class="stage-head">
+    <div class="stage-num">§</div>
+    <div>
+      <h2>What the tool cannot do</h2>
+      <p class="sub">Better read than discovered</p>
+    </div>
+  </div>
+  <ul>
+    <li><strong>No light/dark theme pair.</strong> One background colour per document, so
+      <code>createThemedPanel(light, dark)</code> cannot be regenerated — running
+      <code>panels-apply</code> on a themed plugin loses the light panel.</li>
+    <li><strong>No gradients.</strong> Fills are solid; an imported gradient flattens to grey.</li>
+    <li><strong>No clip paths, masks, <code>&lt;use&gt;</code> or embedded rasters</strong> on import.
+      Each is skipped with a warning.</li>
+    <li><strong>No CSS.</strong> Presentation attributes and <code>style="…"</code> are read; a shape
+      styled only by a class imports unfilled.</li>
+    <li><strong><code>&lt;text&gt;</code> imports as outlines</strong>, because every Rack panel has its
+      labels converted already — nanosvg drops text.</li>
+    <li><strong>Knob rotation is not exported.</strong> Rack sweeps a knob from <code>minAngle</code> to
+      <code>maxAngle</code> itself, so artwork is exported pointing up.</li>
+  </ul>
+</section>
+
+<section id="keys" class="ref">
+  <div class="stage-head">
+    <div class="stage-num">§</div>
+    <div><h2>Keys worth knowing</h2></div>
+  </div>
+  <div class="scroller"><table>
+    <thead><tr><th>Key</th><th>Does</th></tr></thead>
+    <tbody>
+      <tr><td><kbd>⌘I</kbd></td><td>Import SVG — tracing template or editable artwork</td></tr>
+      <tr><td><kbd>⌥⌘I</kbd></td><td>Import Module Code — a <code>ModuleWidget</code> constructor</td></tr>
+      <tr><td><kbd>⌘L</kbd></td><td>Label Selection — text labels from component identifiers</td></tr>
+      <tr><td><kbd>⇧⌘L</kbd></td><td>Name from Labels — the reverse</td></tr>
+      <tr><td><kbd>⌘D</kbd></td><td>Duplicate</td></tr>
+      <tr><td><kbd>⇧⌘G</kbd></td><td>Toggle snap to grid</td></tr>
+      <tr><td><kbd>⌘E</kbd> / <kbd>⇧⌘E</kbd></td><td>Export SVG / PNG</td></tr>
+      <tr><td><kbd>⌘9</kbd> / <kbd>⌘0</kbd></td><td>Fit in window / actual size</td></tr>
+      <tr><td><kbd>⇧⌘?</kbd></td><td>This manual</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+</main>
+
+<footer>
+  <p>Help ▸ Workflow Manual opens this page from the app.
+  The full contract — every invariant with the reasoning behind it — is <code>PIPELINE.md</code>;
+  import specifics are <code>Docs/IMPORT.md</code>, the symbol catalogue <code>Docs/SYMBOLS.md</code>,
+  and the toolchain notes <code>Docs/TOOLCHAIN.md</code>.</p>
+</footer>
+
+</div>
+
+<script>
+// Rail highlight. Plain observer, no dependencies, no animation.
+(function () {
+  var links = Array.prototype.slice.call(document.querySelectorAll('.rail a'));
+  var map = {};
+  links.forEach(function (a) { map[a.getAttribute('href').slice(1)] = a; });
+  var targets = Object.keys(map).map(function (id) { return document.getElementById(id); })
+                      .filter(Boolean);
+  if (!('IntersectionObserver' in window) || !targets.length) return;
+  var visible = {};
+  var obs = new IntersectionObserver(function (entries) {
+    entries.forEach(function (e) { visible[e.target.id] = e.isIntersecting; });
+    var current = null;
+    for (var i = 0; i < targets.length; i++) {
+      if (visible[targets[i].id]) { current = targets[i].id; break; }
+    }
+    links.forEach(function (a) { a.classList.remove('on'); });
+    if (current && map[current]) map[current].classList.add('on');
+  }, { rootMargin: '-10% 0px -70% 0px', threshold: 0 });
+  targets.forEach(function (t) { obs.observe(t); });
+})();
+</script>
+
+</body>
+</html>
