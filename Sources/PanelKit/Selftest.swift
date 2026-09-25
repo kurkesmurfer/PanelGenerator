@@ -4,9 +4,9 @@ import CoreGraphics
 /// Headless verification harness: builds a showcase panel exercising every
 /// element kind, exports SVG + PNG, and exits. Runs without a window server,
 /// so it doubles as the CI smoke test.
-enum Selftest {
+package enum Selftest {
 
-    static func demoDocument() -> PanelDocument {
+    package static func demoDocument() -> PanelDocument {
         var doc = PanelDocument()
         doc.name = "Demo"
         doc.widthHP = 12
@@ -57,7 +57,7 @@ enum Selftest {
         return doc
     }
 
-    static func run(outDir rawPath: String) -> Never {
+    package static func run(outDir rawPath: String) -> Never {
         let dir = (rawPath as NSString).expandingTildeInPath
         do {
             try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
@@ -103,7 +103,7 @@ enum Selftest {
     // Headless, so `make selftest` is a real regression gate. Until there is a
     // proper XCTest target these are the tests.
 
-    static func persistenceChecks() -> [String] {
+    package static func persistenceChecks() -> [String] {
         var failures: [String] = []
 
         // 1. Encode → decode → identical document.
@@ -166,7 +166,7 @@ enum Selftest {
     // claiming the same component identifier, or two copies of one stamp on one
     // panel sharing element ids.
 
-    static func stampChecks() -> [String] {
+    package static func stampChecks() -> [String] {
         var failures: [String] = []
 
         let tmp = URL(fileURLWithPath: NSTemporaryDirectory())
@@ -287,7 +287,7 @@ enum Selftest {
     // collisions — `symDoc`, then `art` — because every new block competed for
     // names with everything already written. Scope is the fix, not vigilance.
 
-    static func textExportChecks() -> [String] {
+    package static func textExportChecks() -> [String] {
         var failures: [String] = []
 
         // Text must leave as outlines by default: Rack renders panels through
@@ -341,7 +341,7 @@ enum Selftest {
     /// the binding and codegen checks as a *fixture* rather than as a variable
     /// they both happen to see — which is what splitting these into separate
     /// functions was for.
-    static func componentRig() -> PanelDocument {
+    package static func componentRig() -> PanelDocument {
         var doc = PanelDocument()
         var deco = ElementKind.box.defaultElement(at: CGPoint(x: 10, y: 10))
         deco.fill = .hex("#123456")
@@ -352,7 +352,7 @@ enum Selftest {
         return doc
     }
 
-    static func bindingChecks() -> [String] {
+    package static func bindingChecks() -> [String] {
         var failures: [String] = []
 
         // Components must not be painted into the panel: Rack and MetaModule
@@ -409,7 +409,7 @@ enum Selftest {
         return failures
     }
 
-    static func symbolChecks() -> [String] {
+    package static func symbolChecks() -> [String] {
         var failures: [String] = []
 
         // Every symbol must produce geometry, and it must stay inside its own
@@ -457,7 +457,7 @@ enum Selftest {
         return failures
     }
 
-    static func widgetChecks() -> [String] {
+    package static func widgetChecks() -> [String] {
         var failures: [String] = []
 
         // Naming a selection numbers it in reading order, not in document
@@ -593,7 +593,7 @@ enum Selftest {
         return failures
     }
 
-    static func uniformChecks() -> [String] {
+    package static func uniformChecks() -> [String] {
         var failures: [String] = []
 
         // A homogeneous multi-selection gets one stand-in element; a mixed one
@@ -653,7 +653,7 @@ enum Selftest {
         return failures
     }
 
-    static func presetChecks() -> [String] {
+    package static func presetChecks() -> [String] {
         var failures: [String] = []
 
         // Palette presets: one element kind appearing as several entries.
@@ -684,7 +684,7 @@ enum Selftest {
         return failures
     }
 
-    static func colourChecks() -> [String] {
+    package static func colourChecks() -> [String] {
         var failures: [String] = []
 
         // Colour grouping: distinct colours, most-used first, and recolouring
@@ -731,7 +731,7 @@ enum Selftest {
         return failures
     }
 
-    static func alignChecks() -> [String] {
+    package static func alignChecks() -> [String] {
         var failures: [String] = []
 
         // Align must use the selection's own bounds unless the panel is asked
@@ -766,7 +766,7 @@ enum Selftest {
         return failures
     }
 
-    static func bulkBindChecks() -> [String] {
+    package static func bulkBindChecks() -> [String] {
         var failures: [String] = []
 
         // Bulk binding: a primitive takes the role its kind implies, artwork
@@ -819,7 +819,7 @@ enum Selftest {
         return doc
     }
 
-    static func identifierChecks() -> [String] {
+    package static func identifierChecks() -> [String] {
         var failures: [String] = []
         let reach: CGFloat = 8 / PanelMetrics.mmPerPixel
 
@@ -947,7 +947,7 @@ enum Selftest {
 
     // MARK: - SVG reading checks
 
-    static func svgPathChecks() -> [String] {
+    package static func svgPathChecks() -> [String] {
         var failures: [String] = []
 
         func bbox(_ d: String, _ label: String) -> CGRect? {
@@ -1063,7 +1063,7 @@ enum Selftest {
     </svg>
     """
 
-    static func svgImportChecks() -> [String] {
+    package static func svgImportChecks() -> [String] {
         var failures: [String] = []
         let data = Data(importFixture.utf8)
 
@@ -1258,7 +1258,7 @@ enum Selftest {
     Model* modelDemo = createModel<Demo, DemoWidget>("Demo");
     """
 
-    static func cppImportChecks() -> [String] {
+    package static func cppImportChecks() -> [String] {
         var failures: [String] = []
         let out = CppImport.outcome(from: cppFixture)
 
@@ -1449,7 +1449,7 @@ enum Selftest {
     /// parameter value. Emitting a single frame — which is what this did until
     /// a real 3-way switch went through the toolchain — produces a control that
     /// loads and then cannot be moved.
-    static func switchChecks() -> [String] {
+    package static func switchChecks() -> [String] {
         var failures: [String] = []
 
         var doc = PanelDocument()
@@ -1590,7 +1590,7 @@ enum Selftest {
 
     // MARK: - Comparison checks
 
-    static func compareChecks() -> [String] {
+    package static func compareChecks() -> [String] {
         var failures: [String] = []
 
         func item(_ id: String, _ role: ComponentRole, _ widget: String,
@@ -1715,7 +1715,7 @@ enum Selftest {
 
     // MARK: - Label checks
 
-    static func labelChecks() -> [String] {
+    package static func labelChecks() -> [String] {
         var failures: [String] = []
 
         var doc = PanelDocument()
@@ -1814,7 +1814,7 @@ enum Selftest {
         return failures
     }
 
-    static func codegenChecks() -> [String] {
+    package static func codegenChecks() -> [String] {
         var failures: [String] = []
 
         // Generated C++ must namespace the enum to the module, position by
@@ -2207,7 +2207,7 @@ enum Selftest {
     /// schemaVersion, no params.segments / params.layout, no isHidden,
     /// no groupID. Embedded rather than kept as a file so the check cannot
     /// silently skip itself when a path is wrong.
-    static let legacyDocumentJSON = #"""
+    package static let legacyDocumentJSON = #"""
     {
       "background" : { "a" : 1, "b" : 0.0784313725490196, "g" : 0.09019607843137255, "r" : 0.09019607843137255 },
       "elements" : [
