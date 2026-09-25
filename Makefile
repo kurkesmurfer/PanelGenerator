@@ -15,13 +15,15 @@ app: release
 selftest: build
 	.build/debug/PanelGenerator --selftest Docs
 
-# make emit DOC=Panels/Thing.panelgen OUT=build/Thing
+# make emit DOC=Panels/Thing.panelgen OUT=build/Thing [THEME=dark|light|both]
 # DOC may also be a folder — every panel in it is emitted, and the plugin's
-# widget library is written once across all of them.
+# widget library is written once across all of them. THEME defaults to
+# "auto" (dark always, plus a light SVG only for a document that declares
+# one) -- see PIPELINE.md.
 OUT ?= build/emit
 emit: build
-	@test -n "$(DOC)" || (echo "usage: make emit DOC=<file.panelgen|folder> [OUT=<dir>]"; exit 1)
-	.build/debug/PanelGenerator --emit $(DOC) $(OUT)
+	@test -n "$(DOC)" || (echo "usage: make emit DOC=<file.panelgen|folder> [OUT=<dir>] [THEME=dark|light|both]"; exit 1)
+	.build/debug/PanelGenerator --emit $(DOC) $(OUT) $(if $(THEME),--theme $(THEME))
 
 # Does the design still agree with the code? Each side may be a .panelgen, a
 # module's .cpp, or an SVG with a components layer.

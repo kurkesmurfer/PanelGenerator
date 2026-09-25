@@ -28,8 +28,10 @@ enum Selftest {
         add(.box, 8, 42, 88, 18, fill: .hex("#FFCC99")) { $0.params.cornerTL = 9; $0.params.cornerTR = 9; $0.params.cornerBR = 9; $0.params.cornerBL = 9 }
         add(.box, 152, 74, 20, 118, fill: .hex("#CC99CC")) { $0.params.cornerTL = 10; $0.params.cornerTR = 10; $0.params.cornerBR = 10; $0.params.cornerBL = 10 }
         add(.elbow, 8, 234) { $0.w = 106; $0.h = 138
-            $0.params.thickness = 16; $0.params.innerRadius = 8
-            $0.params.armH = 66; $0.params.armV = 98; $0.params.flipY = true }
+            $0.params.thickness = 16; $0.params.thicknessV = 44; $0.params.innerRadius = 8
+            $0.params.armH = 118; $0.params.armV = 150; $0.params.flipY = true }
+        add(.swirl, 118, 206, 48, 100) { $0.params.thickness = 12; $0.params.thicknessV = 12; $0.params.innerRadius = 6
+            $0.params.armH = 36; $0.params.armH2 = 58; $0.params.armV = 28; $0.params.flipX = true }
         add(.ringSector, 108, 66, 64, 64) { $0.params.thickness = 12; $0.params.startAngle = -90; $0.params.sweepAngle = 95 }
 
         // Titles
@@ -75,7 +77,7 @@ enum Selftest {
                 + colourChecks() + alignChecks() + bulkBindChecks()
                 + labelChecks() + svgPathChecks() + svgImportChecks()
                 + cppImportChecks() + compareChecks() + switchChecks() + identifierChecks()
-                + codegenChecks()
+                + codegenChecks() + stampChecks()
 
             print(failures.isEmpty ? "SELFTEST OK" : "SELFTEST FAILED")
             print("  elements : \(doc.elements.count)")
@@ -150,6 +152,125 @@ enum Selftest {
             let bad = legacyDocumentJSON.replacingOccurrences(of: "knobLarge", with: "quantumFlux")
             _ = try JSONDecoder().decode(PanelDocument.self, from: Data(bad.utf8))
             failures.append("unknown kind: decoded without error — it should have thrown")
+        } catch {
+            // expected
+        }
+
+        return failures
+    }
+
+    // MARK: - Stamp checks
+    //
+    // A stamp is a fragment of one panel dropped into another. The failure that
+    // matters is silent: identity travelling with it, so two panels end up
+    // claiming the same component identifier, or two copies of one stamp on one
+    // panel sharing element ids.
+
+    static func stampChecks() -> [String] {
+        var failures: [String] = []
+
+        let tmp = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("pg-stamp-selftest-\(ProcessInfo.processInfo.processIdentifier)")
+        StampLibrary.directoryOverride = tmp
+        defer {
+            StampLibrary.directoryOverride = nil
+            try? FileManager.default.removeItem(at: tmp)
+        }
+
+        // A two-element fragment drawn well away from the origin, carrying
+        // exactly the things that must not survive the save.
+        var mark = ElementKind.box.defaultElement(at: CGPoint(x: 120, y: 300))
+        mark.w = 20; mark.h = 40
+        mark.enumName = "LOGO_PARAM"
+        mark.isTemplate = true
+        let sharedGroup = UUID()
+        mark.groupID = sharedGroup
+
+        var word = ElementKind.text.defaultElement(at: CGPoint(x: 120, y: 344))
+        word.w = 60; word.h = 12
+        word.params.text = "kurkesmurfer"
+        word.groupID = sharedGroup
+        word.labelOwner = mark.id
+
+        do {
+            let saved = try StampLibrary.save([mark, word], as: "Brand Mark")
+
+            if saved.elements.contains(where: { !$0.enumName.isEmpty }) {
+                failures.append("stamp: an identifier survived the save — two panels could claim it")
+            }
+            if saved.elements.contains(where: { $0.isTemplate == true }) {
+                failures.append("stamp: template flag survived — the drop would be unmovable")
+            }
+            if saved.elements.contains(where: { $0.labelOwner != nil }) {
+                failures.append("stamp: labelOwner survived, pointing at an element in another document")
+            }
+            if saved.elements.contains(where: { $0.groupID != nil }) {
+                failures.append("stamp: groupID survived the save")
+            }
+
+            // Normalised to its own origin, size and spacing intact.
+            var box = saved.elements[0].frame
+            for el in saved.elements.dropFirst() { box = box.union(el.frame) }
+            if abs(box.minX) > 0.001 || abs(box.minY) > 0.001 {
+                failures.append("stamp: not normalised to the origin — \(box.origin)")
+            }
+            if abs(box.width - 60) > 0.001 || abs(box.height - 56) > 0.001 {
+                failures.append("stamp: bounds are \(box.size), expected 60 × 56")
+            }
+
+            // Reload from disk: what the palette will actually show.
+            guard let reloaded = StampLibrary.stamp(named: "Brand Mark") else {
+                failures.append("stamp: saved but not listed")
+                return failures
+            }
+            if reloaded.elements.count != 2 {
+                failures.append("stamp: reloaded \(reloaded.elements.count) elements, expected 2")
+            }
+
+            // Two drops of one stamp share nothing.
+            let a = StampLibrary.instance(of: reloaded, at: CGPoint(x: 100, y: 100))
+            let b = StampLibrary.instance(of: reloaded, at: CGPoint(x: 100, y: 200))
+            let ids = Set(a.map(\.id)).union(b.map(\.id))
+            if ids.count != 4 {
+                failures.append("stamp: two drops share element ids (\(ids.count) unique of 4)")
+            }
+            if Set(a.compactMap(\.groupID)).count != 1 {
+                failures.append("stamp: a multi-element drop must share one group so it moves as a piece")
+            }
+            if let ga = a.first?.groupID, let gb = b.first?.groupID, ga == gb {
+                failures.append("stamp: two drops share a group — moving one would move the other")
+            }
+
+            // Centred on the drop point.
+            var ab = a[0].frame
+            for el in a.dropFirst() { ab = ab.union(el.frame) }
+            if abs(ab.midX - 100) > 0.001 || abs(ab.midY - 100) > 0.001 {
+                failures.append("stamp: drop not centred on the point — centre \(CGPoint(x: ab.midX, y: ab.midY))")
+            }
+
+            // Internal spacing is what makes a fragment a fragment.
+            let gapSaved = saved.elements[1].y - saved.elements[0].y
+            let gapDropped = a[1].y - a[0].y
+            if abs(gapSaved - gapDropped) > 0.001 {
+                failures.append("stamp: internal spacing changed on drop")
+            }
+        } catch {
+            failures.append("stamp: \(error)")
+        }
+
+        // A name is also a filename.
+        if StampLibrary.fileName(from: "Kurke/smurfer: Logo") != "Kurke-smurfer- Logo" {
+            failures.append("stamp: fileName gave “\(StampLibrary.fileName(from: "Kurke/smurfer: Logo"))”")
+        }
+        let unusable = StampLibrary.fileName(from: "***")
+        if unusable != "Stamp" {
+            failures.append("stamp: an unusable name must fall back, got “\(unusable)”")
+        }
+
+        // Saving nothing is an error, not an empty file in the palette.
+        do {
+            _ = try StampLibrary.save([], as: "Empty")
+            failures.append("stamp: saving an empty selection succeeded")
         } catch {
             // expected
         }

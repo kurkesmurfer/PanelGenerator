@@ -9,6 +9,16 @@ enum PanelFormat: String, Codable, CaseIterable {
     case u3 = "3U"
 }
 
+/// Which of a themed document's two colour pairs (`background`/
+/// `lightBackground`, `inkDark`/`inkLight`) is currently in play -- for
+/// on-canvas preview, SVG export, and `--emit`. `.dark` always resolves to
+/// the document's own untouched `background`/`inkDark`/element `fill`
+/// values, so nothing about an existing, non-themed document changes
+/// unless something explicitly asks for `.light`.
+enum ThemeVariant: String, Codable, CaseIterable {
+    case dark, light
+}
+
 // MARK: - Colour
 
 struct ColorSpec: Codable, Hashable {
@@ -62,6 +72,14 @@ struct ColorSpec: Codable, Hashable {
 
     // Curated LCARS / TNG palette ("Okudagram" classics).
     static let lcarsPresets: [(String, ColorSpec)] = [
+        // First in the bank on purpose (Peet's own request, 2026-09-09):
+        // the shared light-panel background flavour, exactly the value
+        // already saved in GTO_Light.panelgen/GTS_Light.panelgen's own
+        // `background`, so every Serge light panel can pick the identical
+        // colour in one click -- for a document's Theme ▸ Light bg well and
+        // for any element's own Fill. Distinct from "Vanilla" below, which
+        // is an unrelated bright LCARS accent (#FFFF99), not a background.
+        ("Serge Light BG", .hex("#E7E4DE")),
         ("Orange",     .hex("#FF9C00")),
         ("Amber",      .hex("#FFAA33")),
         ("Gold",       .hex("#FFCC66")),
@@ -76,7 +94,34 @@ struct ColorSpec: Codable, Hashable {
         ("Steel",      .hex("#6688AA")),
         ("Vanilla",    .hex("#FFFF99")),
         ("Ink",        .hex("#101018")),
+        // Serge-style jack rings -- matte/material colours (not the glowy
+        // Okudagram set above), matched to the ring stroke the .jack
+        // shape already draws in its own `fill` colour. Red/White/Black
+        // mirror current-day Serge; Blue/Orange/Green are Peet's own
+        // extension of that scheme, picked to sit in the same muted
+        // material family rather than reading as decorative accents.
+        ("Ring Red",    .hex("#C0392B")),
+        ("Ring White",  .hex("#E8E6DE")),
+        ("Ring Black",  .hex("#303034")),
+        ("Ring Blue",   .hex("#2C5C8A")),
+        ("Ring Orange", .hex("#C46A28")),
+        ("Ring Green",  .hex("#3C7A4E")),
+        // LED lens colours -- vivid/glowing rather than matte, since
+        // these represent lit indicators, not plastic jack hardware.
+        ("LED White",  .hex("#F5F5F0")),
+        ("LED Red",    .hex("#FF3B30")),
+        ("LED Blue",   .hex("#2F80ED")),
+        ("LED Yellow", .hex("#FFD400")),
+        ("LED Green",  .hex("#2ECC55")),
     ]
+
+    /// Look up a curated swatch by name, so element defaults can cite
+    /// "Orange" instead of repeating "#FF9C00" -- one moves, the other
+    /// follows. Falls back to the first swatch on a typo'd name rather
+    /// than crashing.
+    static func lcars(_ name: String) -> ColorSpec {
+        lcarsPresets.first { $0.0 == name }?.1 ?? lcarsPresets[0].1
+    }
 }
 
 // MARK: - Export units
@@ -190,7 +235,14 @@ enum ElementKind: String, Codable, CaseIterable {
     case box            // rounded rect with per-corner radii → pills/capsules too
     case ellipse
     case triangle
+    /// A straight or gently bowed connector line -- Serge's own convention
+    /// for tying a knob to the jack it belongs to (e.g. GTO's CYCLE knob to
+    /// its IN jack), rather than relying on proximity or a label alone.
+    case line
     case elbow          // LCARS elbow: two arms joined by a curved corner
+    case swirl          // LCARS swirl: two elbow corners of opposite sense,
+                         // joined by a straight spine -- a horizontal run that
+                         // jogs up (or down) a level and keeps going the same way
     case ringSector     // annulus arc — the big sweeping TNG curves
     case symbol         // parametric synth iconography — see SymbolCatalogue
     /// Imported artwork: an arbitrary path, held normalised to a unit box so
@@ -206,7 +258,7 @@ enum ElementKind: String, Codable, CaseIterable {
 
     var category: Category {
         switch self {
-        case .box, .ellipse, .triangle, .elbow, .ringSector, .symbol, .path: return .shape
+        case .box, .ellipse, .triangle, .line, .elbow, .swirl, .ringSector, .symbol, .path: return .shape
         case .text: return .text
         default: return .primitive
         }
@@ -227,7 +279,9 @@ enum ElementKind: String, Codable, CaseIterable {
         case .box: return "Box / Rounded Rect"
         case .ellipse: return "Ellipse"
         case .triangle: return "Triangle"
+        case .line: return "Line"
         case .elbow: return "LCARS Elbow"
+        case .swirl: return "LCARS Swirl"
         case .ringSector: return "Ring Sector"
         case .symbol: return "Symbol"
         case .path: return "Imported Path"
@@ -318,40 +372,50 @@ enum ElementKind: String, Codable, CaseIterable {
         case .jack:
             e.w = 22; e.h = 22; e.fill = .hex("#9AA0AB")
         case .knobLarge:
-            e.w = 30; e.h = 30; e.fill = .hex("#FF9C00")
+            e.w = 30; e.h = 30; e.fill = .lcars("Orange")
         case .knobMedium:
-            e.w = 25; e.h = 25; e.fill = .hex("#FF9C00")
+            e.w = 25; e.h = 25; e.fill = .lcars("Orange")
         case .knobSmall:
-            e.w = 19; e.h = 19; e.fill = .hex("#99CCFF")
+            e.w = 19; e.h = 19; e.fill = .lcars("Sky")
         case .faderVertical:
-            e.w = 17; e.h = 64; e.fill = .hex("#CC99CC")
+            e.w = 17; e.h = 64; e.fill = .lcars("Lavender")
         case .faderHorizontal:
-            e.w = 64; e.h = 17; e.fill = .hex("#CC99CC")
+            e.w = 64; e.h = 17; e.fill = .lcars("Lavender")
         case .led:
-            e.w = 8; e.h = 8; e.fill = .hex("#EE4444")
+            e.w = 8; e.h = 8; e.fill = .lcars("LED Red")
         case .pushButton:
-            e.w = 14; e.h = 14; e.fill = .hex("#DD4444")
+            e.w = 14; e.h = 14; e.fill = .lcars("Alert Red")
         case .buttonGroup:
-            e.w = 24; e.h = 88; e.fill = .hex("#FF9C00")
+            e.w = 24; e.h = 88; e.fill = .lcars("Orange")
         case .screw:
             e.w = 11; e.h = 11; e.fill = .hex("#B9BEC8")
         case .box:
-            e.w = 90; e.h = 34; e.fill = .hex("#FF9C00")
+            e.w = 90; e.h = 34; e.fill = .lcars("Orange")
             e.params.cornerTL = 10; e.params.cornerTR = 10
             e.params.cornerBR = 10; e.params.cornerBL = 10
         case .ellipse:
-            e.w = 56; e.h = 38; e.fill = .hex("#CC99CC")
+            e.w = 56; e.h = 38; e.fill = .lcars("Lavender")
         case .triangle:
-            e.w = 46; e.h = 40; e.fill = .hex("#FFCC66")
+            e.w = 46; e.h = 40; e.fill = .lcars("Gold")
+        case .line:
+            // Straight by default (bow 0): runs down the frame's vertical
+            // centre-line, top-mid to bottom-mid -- rotate for a horizontal
+            // or diagonal run. Neutral hardware grey, matching jack/screw,
+            // since a plain connector reads as wiring, not a decorative accent.
+            e.w = 20; e.h = 60; e.stroke = .hex("#9AA0AB"); e.strokeWidth = 1.2
         case .elbow:
-            e.w = 96; e.h = 96; e.fill = .hex("#FF9C00")
+            e.w = 96; e.h = 96; e.fill = .lcars("Vanilla")
             e.params.thickness = 16; e.params.innerRadius = 8
-            e.params.armH = 56; e.params.armV = 56
+            e.params.armH = 80; e.params.armV = 80
+        case .swirl:
+            e.w = 90; e.h = 150; e.fill = .lcars("Vanilla")
+            e.params.thickness = 16; e.params.innerRadius = 8
+            e.params.armH = 80; e.params.armH2 = 80; e.params.armV = 40
         case .ringSector:
-            e.w = 84; e.h = 84; e.fill = .hex("#99CCFF")
+            e.w = 84; e.h = 84; e.fill = .lcars("Sky")
             e.params.thickness = 14; e.params.startAngle = -90; e.params.sweepAngle = 100
         case .symbol:
-            e.w = 44; e.h = 30; e.fill = .hex("#99CCFF")
+            e.w = 44; e.h = 30; e.fill = .lcars("Sky")
             e.params.symbol = "sine"
             e.params.weight = SymbolCatalogue.defaultWeight
             let d = SymbolCatalogue.spec("sine").defaults
@@ -379,11 +443,53 @@ struct ElementParams: Codable, Hashable {
     var cornerTR: CGFloat = 0
     var cornerBR: CGFloat = 0
     var cornerBL: CGFloat = 0
-    // Elbow
-    var thickness: CGFloat = 16
+    /// Box notch: a rectangular tab added to the middle of one edge, for
+    /// "sculpting" a box's outline around a neighbouring one -- e.g. Serge's
+    /// GTO channel brackets, which step out around a central zone while
+    /// every corner, including the two new reentrant ones, stays rounded.
+    /// 0 = no notch (a plain rounded rect); 1/2/3/4 = top/right/bottom/left.
+    var notchEdge: CGFloat = 0
+    /// Distance from that edge's start corner to the tab, in the direction
+    /// of travel (top: left-to-right, right: top-to-bottom, bottom:
+    /// right-to-left, left: bottom-to-top) -- so `start`/`length` read the
+    /// same way regardless of which edge is chosen.
+    var notchStart: CGFloat = 0
+    /// How far the tab spans along the edge.
+    var notchLength: CGFloat = 0
+    /// How far the tab protrudes beyond the edge.
+    var notchDepth: CGFloat = 0
+    /// Fillet radius at the tab's 4 new corners (both the two convex ones at
+    /// its far end and the two concave ones where it meets the base edge).
+    var notchRadius: CGFloat = 4
+    /// false (default): the notch is a tab that protrudes OUT beyond the
+    /// edge, reaching toward a smaller neighbour (Serge's GTO brackets).
+    /// true: the notch cuts IN instead, biting a rectangular recess out of
+    /// this box so a bigger neighbour can overlap into what would
+    /// otherwise be this box's own territory -- the same "sculpt around a
+    /// neighbour" idea, the other direction round.
+    var notchInvert: Bool = false
+    /// Sideways offset of a `.line` element's curve control point from its
+    /// straight midpoint -- 0 is a plain straight line; Serge's own hardware
+    /// often bows this kind of connector slightly around whatever sits
+    /// between the knob and its jack.
+    var lineBow: CGFloat = 0
+    // Elbow / Swirl
+    var thickness: CGFloat = 16   // horizontal-arm thickness
+    /// Vertical-arm thickness, independent of `thickness` so the vertical
+    /// run can be much wider (or narrower) than the horizontal one while
+    /// both the outer and inner corner fillets stay perfectly circular --
+    /// the fillet radii are keyed off `min`/`max` of the two thicknesses
+    /// rather than assuming they match. Falls back to `thickness` when
+    /// decoding older documents that predate this field, so old shapes
+    /// keep rendering with symmetric arms exactly as before.
+    var thicknessV: CGFloat = 16
     var innerRadius: CGFloat = 8
-    var armH: CGFloat = 56
+    var armH: CGFloat = 56       // elbow's only arm; swirl's bottom arm
     var armV: CGFloat = 56
+    /// Swirl's top arm. Independent of `armH` so the knee (the spine) can
+    /// sit off-centre -- equal values keep it where `armH` alone would put
+    /// it. Unused by `.elbow`.
+    var armH2: CGFloat = 56
     var flipX: Bool = false
     var flipY: Bool = false
     // Ring sector
@@ -430,7 +536,25 @@ struct PanelElement: Codable, Hashable, Identifiable {
     var groupID: UUID? = nil             // elements sharing a groupID act as one
     var x: CGFloat = 0, y: CGFloat = 0, w: CGFloat = 30, h: CGFloat = 30
     var rotation: CGFloat = 0            // degrees clockwise
-    var fill: ColorSpec = .hex("#FF9C00")
+    var fill: ColorSpec = .lcars("Orange")
+    /// Theme facility: when true, this element ignores its own `fill` and
+    /// draws in the document's active ink colour instead (`PanelDocument.
+    /// ink(for:)`) -- e.g. a text label that should read white on a dark
+    /// panel and black on a light one. `fill` is left untouched either way,
+    /// so turning this off (or opening the document somewhere theme-unaware)
+    /// falls straight back to whatever colour was last set explicitly.
+    var followsInk: Bool = false
+    /// The other half of the theme facility: draws in the document's active
+    /// *paper* colour (`PanelDocument.paper(for:)`) instead of ink. For a
+    /// shape whose job is to blend into the panel background rather than
+    /// read as foreground content -- e.g. a small patch that obscures part
+    /// of a delineation box's boundary line -- not the same thing as
+    /// `followsInk` with the roles swapped: ink and paper are deliberately
+    /// near-opposites of each other (that contrast is the whole point of
+    /// ink), so following ink on a background-matching shape makes it stand
+    /// out instead of disappear. `fill` is left untouched either way, same
+    /// as `followsInk`.
+    var followsPaper: Bool = false
     var stroke: ColorSpec? = nil         // outline (shapes only); nil = none
     var strokeWidth: CGFloat = 1.5
     var params = ElementParams()
@@ -515,6 +639,82 @@ struct PanelElement: Codable, Hashable, Identifiable {
             case "plain": params.knobStyle = 0
             default: break
             }
+        case .box:
+            // Real values, not guesses: SpaceTime's own panel SVGs (e.g.
+            // ~/Development/SpaceTime/vcv/res/Program.svg) draw their group
+            // boxes as `fill="none" stroke="#50463c" stroke-width="0.3"
+            // rx="1.8"` (all mm) -- that is the Kurkesmurfer-thin values
+            // below, verbatim. Serge's hardware boxes read roughly twice as
+            // thick per Peet; the colour/corner radius are carried over
+            // unconfirmed for Serge since only the thickness ratio was
+            // given.
+            let brownBlack = ColorSpec(r: Double(0x50) / 255, g: Double(0x46) / 255, b: Double(0x3C) / 255)
+            let cornerMM: CGFloat = 1.8
+            let cornerPx = cornerMM / PanelMetrics.mmPerPixel
+            func setCorners(_ r: CGFloat) {
+                params.cornerTL = r; params.cornerTR = r
+                params.cornerBR = r; params.cornerBL = r
+            }
+            switch id {
+            case "delineationKM":
+                fill = ColorSpec(r: 0, g: 0, b: 0, a: 0)
+                stroke = { var c = brownBlack; c.a = 0.5; return c }()
+                strokeWidth = 0.3 / PanelMetrics.mmPerPixel
+                setCorners(cornerPx)
+            case "delineationSerge":
+                fill = ColorSpec(r: 0, g: 0, b: 0, a: 0)
+                stroke = brownBlack
+                strokeWidth = 0.6 / PanelMetrics.mmPerPixel
+                setCorners(cornerPx)
+            case "bracketSerge":
+                // A starting template for the GTO-style channel bracket --
+                // a tall box with a demo notch on its right edge, sized to
+                // wrap around a neighbouring box. Every number here is a
+                // reasonable starting point, not a rule; drag the notch
+                // sliders in the Inspector to fit the actual neighbour.
+                w = 60; h = 110
+                fill = ColorSpec(r: 0, g: 0, b: 0, a: 0)
+                stroke = brownBlack
+                strokeWidth = 0.6 / PanelMetrics.mmPerPixel
+                setCorners(cornerPx)
+                params.notchEdge = 2   // right
+                params.notchStart = h * 0.4
+                params.notchLength = h * 0.2
+                params.notchDepth = w * 0.25
+                params.notchRadius = cornerPx
+            case "bracketSergeInverted":
+                // The other direction: a bite taken OUT of this box so a
+                // bigger neighbour can overlap into what would otherwise be
+                // this box's own territory, rather than this box reaching
+                // out to wrap a smaller one.
+                w = 90; h = 110
+                fill = ColorSpec(r: 0, g: 0, b: 0, a: 0)
+                stroke = brownBlack
+                strokeWidth = 0.6 / PanelMetrics.mmPerPixel
+                setCorners(cornerPx)
+                params.notchEdge = 2   // right
+                params.notchStart = h * 0.4
+                params.notchLength = h * 0.2
+                params.notchDepth = w * 0.3
+                params.notchRadius = cornerPx
+                params.notchInvert = true
+            default: break
+            }
+        case .line:
+            switch id {
+            case "connectorSerge":
+                // Serge's own convention: a thin, gently bowed line tying a
+                // knob to the jack it belongs to (e.g. GTO's CYCLE knob to
+                // its IN jack) -- same stroke weight as the Serge
+                // delineation box, since both read as the hardware's own
+                // line work rather than a UI accent.
+                let brownBlack = ColorSpec(r: Double(0x50) / 255, g: Double(0x46) / 255, b: Double(0x3C) / 255)
+                w = 26; h = 56
+                stroke = brownBlack
+                strokeWidth = 0.6 / PanelMetrics.mmPerPixel
+                params.lineBow = 10
+            default: break
+            }
         default:
             break
         }
@@ -545,12 +745,99 @@ struct PanelDocument: Codable, Hashable {
     /// not for gating loads. 0 means "read from a file written before versioning
     /// existed"; `save` stamps the current version, so it never survives a
     /// round-trip.
-    static let currentSchemaVersion = 1
+    static let currentSchemaVersion = 2
     var schemaVersion: Int = PanelDocument.currentSchemaVersion
     var name: String = "Untitled"
     var widthHP: Int = 8
     var format: PanelFormat = .u3
-    var background: ColorSpec = .hex("#17171E")
+    /// Divisions for `.customGrid` snap mode: an evenly-spaced N x M grid
+    /// across the panel, for real modules whose actual layout doesn't
+    /// follow Serge's standardised grid -- e.g. an imported panel that
+    /// genuinely has 5 columns, not Serge's 4. Edited via View > Snap Step
+    /// > Custom Grid..., which asks for both counts in a dialog.
+    var customGridColumns: Int = 4
+    var customGridRows: Int = 5
+    /// Serge-style intermediate snap positions for the custom grid -- half
+    /// rows and half-lane columns at the interior cell boundaries, on the
+    /// diagonal cross between four main-grid points, exactly like
+    /// `SergeGrid`'s own half-row/half-lane convention (reserved for LEDs/
+    /// switches/jacks, never knobs, by Serge's own unenforced convention).
+    var customGridHalfPositions: Bool = false
+    /// Finer, uncorrelated quarter-cell snap positions for the custom grid --
+    /// two per cell per axis (at 1/4 and 3/4 of each column's width / row's
+    /// height), available on any row or column regardless of main/half kind.
+    /// Unlike `customGridHalfPositions`'s Serge-style diagonal correlation,
+    /// this tier exists for layouts where two components flank a half
+    /// position rather than share it -- e.g. a RISE/FALL knob pair's
+    /// independent EXPO switches flanking the single half-lane column their
+    /// shared CYCLE switch already occupies (the real GTO panel does this).
+    var customGridFinerPositions: Bool = false
+    /// Extends `SergeGrid`'s half-row ladder by one further half-step (the
+    /// same pitch as the existing interior half rows) beyond the topmost and
+    /// bottommost main rows. Real Serge panels occasionally push a row of
+    /// LEDs/jacks that far out -- e.g. the GTS's top LED row, which sits
+    /// roughly a half-step above the standard grid's row 1 -- a position the
+    /// interior half-row ladder alone can't reach. Opt-in because it's not
+    /// part of Serge's own documented grid.
+    var sergeGridOuterHalfSteps: Bool = false
+    // #1D1713 -- confirmed against the real SpaceTime (Kurkesmurfer) plugin's
+    // own shipped panel SVGs (~/Development/SpaceTime/vcv/res/*.svg): every
+    // one of them, without exception, paints its background rect exactly
+    // this value. The old #17171E here was never checked against the real
+    // product -- an invented placeholder that happened to look plausible.
+    // Also, not coincidentally, the same dark background the Serge track
+    // uses (Panel-language.md's own reference), so the two design languages
+    // share one true background colour rather than two that merely look
+    // similar.
+    var background: ColorSpec = .hex("#1D1713")
+    /// Theme facility: a panel is theme-aware once this is set to something
+    /// other than nil -- that's the "paper" colour for the light variant
+    /// (`background` itself is always the dark/default paper, so an
+    /// untouched document keeps rendering and emitting exactly as it always
+    /// has). `inkDark`/`inkLight` are the matching pair of "ink" colours --
+    /// what any element with `PanelElement.followsInk` set actually draws in,
+    /// per active theme variant, instead of its own literal `fill`. Two
+    /// roles only (ink/paper), not an open palette: the motivating case
+    /// (Peet's hand-built GTS/GTS_Light pair) showed every themed difference
+    /// between a dark and light panel was exactly these two things -- the
+    /// backdrop and the label colour -- with every other element (jacks,
+    /// knobs, LEDs) unchanged between variants.
+    var lightBackground: ColorSpec? = nil
+    var inkDark: ColorSpec = .hex("#E8E8F0")
+    var inkLight: ColorSpec = .black
+    /// True once a document has an explicit light variant to emit/preview.
+    var isThemed: Bool { lightBackground != nil }
+    /// The paper (background) or ink (label) colour to actually draw, for
+    /// the given theme variant -- `dark` reproduces the document's own
+    /// untouched values, so an unthemed document renders identically
+    /// whichever variant is asked for.
+    func paper(for variant: ThemeVariant) -> ColorSpec {
+        variant == .dark ? background : (lightBackground ?? background)
+    }
+    func ink(for variant: ThemeVariant) -> ColorSpec {
+        variant == .dark ? inkDark : inkLight
+    }
+    /// The colour an element actually draws in, for the given theme variant:
+    /// its own literal `fill` unless it opted into following the panel's ink.
+    func resolvedFill(_ element: PanelElement, for variant: ThemeVariant) -> ColorSpec {
+        if element.followsPaper { return paper(for: variant) }
+        if element.followsInk { return ink(for: variant) }
+        return element.fill
+    }
+    /// `element`, with `fill` substituted per `resolvedFill` when it follows
+    /// the panel's paper or ink -- everything else about it (geometry,
+    /// stroke, params) is untouched. The one place theme resolution actually
+    /// happens; every renderer (canvas, SVG, PNG) calls this once per
+    /// element rather than re-implementing the followsPaper/followsInk
+    /// checks itself. `followsPaper` wins if an element somehow has both set
+    /// -- not a combination the Inspector offers, but paper is the more
+    /// specific "blend into the background" intent of the two.
+    func resolved(_ element: PanelElement, for variant: ThemeVariant) -> PanelElement {
+        guard element.followsPaper || element.followsInk else { return element }
+        var e = element
+        e.fill = resolvedFill(element, for: variant)
+        return e
+    }
     /// Export labels as glyph outlines. Must stay on for VCV Rack: its SVG
     /// parser (nanosvg) has no text support and silently drops <text>. Turn it
     /// off only to hand editable text to Illustrator / Inkscape.
@@ -1210,7 +1497,7 @@ struct PanelDocument: Codable, Hashable {
     }
 
     mutating func addCornerScrews() {
-        let inset: CGFloat = 7, side: CGFloat = 11
+        let inset = PanelMetrics.screwInset, side = PanelMetrics.screwSide
         let sz = pixelSize
         let origins = [
             CGPoint(x: inset, y: inset),
@@ -1281,10 +1568,19 @@ extension ElementParams {
         cornerTR     = try c.decodeOr(.cornerTR, cornerTR)
         cornerBR     = try c.decodeOr(.cornerBR, cornerBR)
         cornerBL     = try c.decodeOr(.cornerBL, cornerBL)
+        notchEdge    = try c.decodeOr(.notchEdge, notchEdge)
+        notchStart   = try c.decodeOr(.notchStart, notchStart)
+        notchLength  = try c.decodeOr(.notchLength, notchLength)
+        notchDepth   = try c.decodeOr(.notchDepth, notchDepth)
+        notchRadius  = try c.decodeOr(.notchRadius, notchRadius)
+        notchInvert  = try c.decodeOr(.notchInvert, notchInvert)
+        lineBow      = try c.decodeOr(.lineBow, lineBow)
         thickness    = try c.decodeOr(.thickness, thickness)
+        thicknessV   = try c.decodeOr(.thicknessV, thickness)
         innerRadius  = try c.decodeOr(.innerRadius, innerRadius)
         armH         = try c.decodeOr(.armH, armH)
         armV         = try c.decodeOr(.armV, armV)
+        armH2        = try c.decodeOr(.armH2, armH2)
         flipX        = try c.decodeOr(.flipX, flipX)
         flipY        = try c.decodeOr(.flipY, flipY)
         startAngle   = try c.decodeOr(.startAngle, startAngle)
@@ -1308,6 +1604,36 @@ extension ElementParams {
     }
 }
 
+extension PanelDocument {
+    /// Pre-v2 documents stored armH/armH2/armV as the straight arm run
+    /// BEYOND the corner (`W = armH + ro`); v2 reinterprets them as the
+    /// total reach INCLUDING the corner (`W = max(armH, ro)`), so that
+    /// growing the reach no longer eats into the rendered thickness. This
+    /// recomputes every pre-v2 elbow/swirl element's stored values so it
+    /// keeps rendering exactly as it did before the change.
+    static func migrateReachSemantics(_ elements: inout [PanelElement]) {
+        for i in elements.indices {
+            switch elements[i].kind {
+            case .elbow, .swirl:
+                let p = elements[i].params
+                let thH = max(2, p.thickness)
+                let thV = max(2, p.thicknessV)
+                let ri = max(0, min(p.innerRadius, min(thH, thV)))
+                let ro = max(thH, thV) + ri
+                func oldReach(_ v: CGFloat) -> CGFloat { max(v + ro, ro * 2) }
+                elements[i].params.armH = oldReach(p.armH)
+                if elements[i].kind == .elbow {
+                    elements[i].params.armV = oldReach(p.armV)
+                } else {
+                    elements[i].params.armH2 = oldReach(p.armH2)
+                }
+            default:
+                break
+            }
+        }
+    }
+}
+
 extension PanelElement {
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -1325,6 +1651,8 @@ extension PanelElement {
         h           = try c.decodeOr(.h, h)
         rotation    = try c.decodeOr(.rotation, rotation)
         fill        = try c.decodeOr(.fill, fill)
+        followsInk  = try c.decodeOr(.followsInk, followsInk)
+        followsPaper = try c.decodeOr(.followsPaper, followsPaper)
         stroke      = try c.decodeIfPresent(ColorSpec.self, forKey: .stroke)
         strokeWidth = try c.decodeOr(.strokeWidth, strokeWidth)
         params      = try c.decodeOr(.params, params)
@@ -1350,7 +1678,15 @@ extension PanelDocument {
         name          = try c.decodeOr(.name, name)
         widthHP       = try c.decodeOr(.widthHP, widthHP)
         format        = try c.decodeOr(.format, format)
+        customGridColumns = try c.decodeOr(.customGridColumns, customGridColumns)
+        customGridRows    = try c.decodeOr(.customGridRows, customGridRows)
+        customGridHalfPositions = try c.decodeOr(.customGridHalfPositions, customGridHalfPositions)
+        customGridFinerPositions = try c.decodeOr(.customGridFinerPositions, customGridFinerPositions)
+        sergeGridOuterHalfSteps  = try c.decodeOr(.sergeGridOuterHalfSteps, sergeGridOuterHalfSteps)
         background    = try c.decodeOr(.background, background)
+        lightBackground = try c.decodeIfPresent(ColorSpec.self, forKey: .lightBackground)
+        inkDark       = try c.decodeOr(.inkDark, inkDark)
+        inkLight      = try c.decodeOr(.inkLight, inkLight)
         textAsPaths   = try c.decodeOr(.textAsPaths, textAsPaths)
         pluginSlug    = try c.decodeOr(.pluginSlug, pluginSlug)
         moduleSlug      = try c.decodeOr(.moduleSlug, moduleSlug)
@@ -1358,5 +1694,8 @@ extension PanelDocument {
         svgUnits        = try c.decodeOr(.svgUnits, svgUnits)
         // Strict: one undecodable element must not silently yield a blank panel.
         elements      = try c.decodeIfPresent([PanelElement].self, forKey: .elements) ?? []
+        if schemaVersion < 2 {
+            PanelDocument.migrateReachSemantics(&elements)
+        }
     }
 }

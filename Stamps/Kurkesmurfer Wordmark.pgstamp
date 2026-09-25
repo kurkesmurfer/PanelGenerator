@@ -1,0 +1,27 @@
+[
+  {
+    "enumName": "",
+    "fill": {
+      "a": 1.0,
+      "b": 0.615686274509804,
+      "g": 0.6745098039215687,
+      "r": 0.7176470588235294
+    },
+    "h": 0,
+    "id": "b6ead106-2098-455b-a93c-20d42713e89c",
+    "kind": "text",
+    "name": "",
+    "params": {
+      "bold": true,
+      "fontSize": 15.2,
+      "text": "kurkesmurfer"
+    },
+    "role": "decoration",
+    "rotation": 0,
+    "strokeWidth": 1,
+    "w": 0,
+    "widgetSource": "stock",
+    "x": 0,
+    "y": 0
+  }
+]

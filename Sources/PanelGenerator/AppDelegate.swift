@@ -7,6 +7,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // The whole chrome is dark; force dark appearance so native controls
         // (labels, fields, checkboxes, sliders) stay legible on it.
         NSApp.appearance = NSAppearance(named: .darkAqua)
+        // Before the palette is built, or the shipped stamps would not appear
+        // until the next launch.
+        StampLibrary.installSeeds()
         windowController = MainWindowController()
         windowController.showWindow(nil)
         windowController.window?.makeKeyAndOrderFront(nil)
@@ -69,6 +72,7 @@ enum MenuBuilder {
         let codeItem = item("Export Widget Code…", #selector(MainWindowController.pgExportCode(_:)), key: "e", target: wc)
         codeItem.keyEquivalentModifierMask = [.command, .option]
         file.addItem(codeItem)
+        file.addItem(item("Check Panel for Issues…", #selector(MainWindowController.pgCheckPanel(_:)), target: wc))
         fileItem.submenu = file
 
         // Edit
@@ -78,14 +82,16 @@ enum MenuBuilder {
         edit.addItem(item("Undo", #selector(MainWindowController.pgUndo(_:)), key: "z", target: wc))
         edit.addItem(item("Redo", #selector(MainWindowController.pgRedo(_:)), key: "Z", target: wc))
         edit.addItem(.separator())
-        edit.addItem(item("Cut", #selector(MainWindowController.pgCut(_:)), key: "x", target: wc))
-        edit.addItem(item("Copy", #selector(MainWindowController.pgCopy(_:)), key: "c", target: wc))
-        edit.addItem(item("Paste", #selector(MainWindowController.pgPaste(_:)), key: "v", target: wc))
+        edit.addItem(item("Cut", #selector(MainWindowController.cut(_:)), key: "x"))
+        edit.addItem(item("Copy", #selector(MainWindowController.copy(_:)), key: "c"))
+        edit.addItem(item("Paste", #selector(MainWindowController.paste(_:)), key: "v"))
         edit.addItem(.separator())
         edit.addItem(item("Duplicate", #selector(MainWindowController.pgDuplicate(_:)), key: "d", target: wc))
-        // Plain Backspace (no ⌘) deletes the selection. The empty modifier mask
-        // is safe because validateMenuItem gates the item to canvas focus.
-        let deleteItem = item("Delete", #selector(MainWindowController.pgDelete(_:)), key: "\u{7F}", target: wc)
+        // Plain Backspace (no ⌘) deletes the selection. Safe with an empty
+        // modifier mask because it is nil-targeted (see delete(_:) below): a
+        // real text edit in progress resolves to the field editor's own
+        // delete(_:) first and never reaches this one.
+        let deleteItem = item("Delete", #selector(MainWindowController.delete(_:)), key: "\u{7F}")
         deleteItem.keyEquivalentModifierMask = []
         edit.addItem(deleteItem)
         edit.addItem(.separator())
@@ -102,6 +108,10 @@ enum MenuBuilder {
         edit.addItem(item("Name from Labels", #selector(MainWindowController.pgNameFromLabels(_:)), key: "L", target: wc))
         edit.addItem(item("Adopt Identifiers…", #selector(MainWindowController.pgAdoptIdentifiers(_:)), target: wc))
         edit.addItem(item("Fit to Panel…", #selector(MainWindowController.pgFitToPanel(_:)), target: wc))
+        edit.addItem(.separator())
+        edit.addItem(item("Add Selection to Palette…", #selector(MainWindowController.pgAddStamp(_:)), target: wc))
+        edit.addItem(item("Reload Palette Stamps", #selector(MainWindowController.pgReloadStamps(_:)), target: wc))
+        edit.addItem(item("Reveal Palette Stamps in Finder", #selector(MainWindowController.pgRevealStamps(_:)), target: wc))
         editItem.submenu = edit
 
         // View
@@ -119,6 +129,21 @@ enum MenuBuilder {
 
         let stepItem = NSMenuItem(title: "Snap Step", action: nil, keyEquivalent: "")
         let stepMenu = NSMenu(title: "Snap Step")
+        // Serge's non-uniform row/column grid is the default snap mode; it
+        // covers placement and movement, so it's listed above the uniform
+        // steps that still govern resize handles and arrow-key nudging.
+        stepMenu.addItem(item("Serge Grid", #selector(MainWindowController.pgSetSergeGrid(_:)), target: wc))
+        // Per-document setting, independent of which mode is active: one
+        // further half-step row beyond the top/bottom of Serge's standard
+        // 5-row grid, for real panels that push a row of LEDs/jacks that
+        // far out (e.g. the GTS's top LED row).
+        stepMenu.addItem(item("Serge Grid: Outer Half-Step",
+                              #selector(MainWindowController.pgToggleSergeOuterHalfStep(_:)), target: wc))
+        // A plain, editable N x M grid for panels whose real layout doesn't
+        // follow Serge's standardised one -- always opens a dialog asking
+        // for column/row counts, since that's a per-panel choice.
+        stepMenu.addItem(item("Custom Grid…", #selector(MainWindowController.pgSetCustomGrid(_:)), target: wc))
+        stepMenu.addItem(.separator())
         // 15 px is 1 HP. Tags carry the step in hundredths of a pixel.
         let steps: [(String, CGFloat)] = [
             ("1 px — 0.34 mm", 1),
@@ -134,6 +159,21 @@ enum MenuBuilder {
         }
         stepItem.submenu = stepMenu
         view.addItem(stepItem)
+
+        // Theme facility: preview which of a themed document's two colour
+        // variants the canvas draws. Editing-only (never saved) and inert
+        // on a document that hasn't opted into theming -- see
+        // PanelDocument.isThemed / InspectorView's "Theme" section.
+        let themeItem = NSMenuItem(title: "Theme", action: nil, keyEquivalent: "")
+        let themeMenu = NSMenu(title: "Theme")
+        let dark = item("Preview: Dark", #selector(MainWindowController.pgSetThemePreview(_:)), target: wc)
+        dark.tag = 0
+        let light = item("Preview: Light", #selector(MainWindowController.pgSetThemePreview(_:)), target: wc)
+        light.tag = 1
+        themeMenu.addItem(dark)
+        themeMenu.addItem(light)
+        themeItem.submenu = themeMenu
+        view.addItem(themeItem)
         viewItem.submenu = view
 
         // Window
@@ -148,6 +188,7 @@ enum MenuBuilder {
         let helpItem = NSMenuItem()
         main.addItem(helpItem)
         let help = NSMenu(title: "Help")
+        help.addItem(item("Workflow Manual", #selector(MainWindowController.pgWorkflowManual(_:)), key: "?", target: wc))
         help.addItem(item("Keyboard Shortcuts & Tips", #selector(MainWindowController.pgHelp(_:)), target: wc))
         helpItem.submenu = help
 

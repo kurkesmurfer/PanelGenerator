@@ -34,6 +34,23 @@ Every direction of that diagram is implemented:
 | a document | artwork, widget library, placement header | `--emit` |
 | two of the above | a difference report | `--compare` |
 
+`Import SVG…` skips `<defs>`, `clipPath`, `mask`, `marker`, `pattern`,
+`filter` and `symbol` entirely rather than resolving what references them —
+walking into a `<defs>` block would draw its contents as if they were real
+visible artwork, which they are not. A warning fires only when one of these
+actually held something (an empty `<defs/>`, routine cruft most exporters
+leave behind, is silent) and names exactly what was found, e.g. `<defs>
+(clipPath, linearGradient, stop)`.
+
+Run `Scripts/flatten-svg.py <file.svg>` on the source first — it losslessly
+removes the common, harmless case (defs nothing actually references, `<use>`/
+`<symbol>` reuse, which it unlinks into real geometry) via Inkscape's CLI,
+and reports exactly what's left, by tag and id, when something is genuinely
+in use (a real clip, mask, gradient, pattern or filter). Those need a manual
+call — a clip becomes a Boolean intersection with the shape it clips, a
+gradient becomes a chosen flat colour — not something to guess at
+automatically; the script's own output says which.
+
 ---
 
 ## 2. The three forms, and what each owns
@@ -54,13 +71,21 @@ its own `enum ParamId` — see §5.
 ## 3. What emit writes, and who may edit it
 
 ```
-res/<ModuleSlug>.svg              regenerated   panel artwork
+res/<ModuleSlug>.svg              regenerated   panel artwork (dark/default variant)
+res/<ModuleSlug>-light.svg        regenerated   panel artwork, light variant --
+                                                 only written for a themed document
+                                                 (PanelDocument.lightBackground set)
 res/<ModuleSlug>-components.svg   regenerated   helper.py positions layer
 res/components/<widget>-*.svg     regenerated   custom widget artwork
 <Plugin>Widgets.hpp               regenerated   widget classes + Rack aliases
 <Module>_panel.hpp                regenerated   ids, positions, addComponents()
 <Plugin>WidgetBase.hpp            WRITTEN ONCE  yours: shared widget policy
 ```
+
+A document only gets a light variant once it declares one in the editor (View
+▸ Theme / the Inspector's Theme section). Component positions are identical
+between variants -- only panel colours differ, so `<Module>_panel.hpp` is
+unaffected either way.
 
 Headers go to `src/` when the output directory has one, beside `res/` when it
 does not, so emitting into a plugin lands each where a plugin keeps it.
@@ -81,11 +106,18 @@ panel of that plugin it can find: the ones in this run, plus any sibling
 ## 4. Commands
 
 ```
-PanelGenerator --emit <doc|folder> <outdir>
+PanelGenerator --emit <doc|folder> <outdir> [--theme dark|light|both]
 PanelGenerator --compare <a> <b> [--tolerance <mm>] [--no-labels]
 PanelGenerator --icon <doc> <out.png> [size]
 PanelGenerator --selftest <dir>
 ```
+
+`--theme` defaults to `auto`: always emits the dark/default SVG at its usual
+name, and additionally emits the light one *only* if the document declares a
+light variant. Pass `dark`, `light`, or `both` to force a specific selection
+regardless of what the document declares (`light`/`both` on an untethemed
+document just writes a light SVG identical to the dark one -- harmless, not
+an error).
 
 Either side of `--compare` may be a `.panelgen`, a module's `.cpp`, or an SVG
 with a components layer.

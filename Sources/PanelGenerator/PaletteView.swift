@@ -10,6 +10,8 @@ final class PaletteView: NSView {
     /// The preset id is nil for a plain entry. Otherwise it is whatever the
     /// element kind understands: a symbol id, or a knob variant.
     var onInsert: ((ElementKind, String?) -> Void)?
+    /// A saved fragment, by name. The canvas resolves it from the library.
+    var onInsertStamp: ((String) -> Void)?
 
     private let scroll = NSScrollView()
     private let content = NSView()
@@ -112,6 +114,36 @@ final class PaletteView: NSView {
         cursorY += CGFloat(rows) * (size + 4) + 6
     }
 
+    /// Saved fragments — a brand mark, a wordmark, a row of jacks. Empty until
+    /// something is saved, with a line saying how, because an empty section
+    /// that never explains itself just looks broken.
+    private func stamps(_ key: String, category: String?) {
+        header(key)
+        guard isOpen(key) else { return }
+
+        let library = StampLibrary.list().filter { $0.category == category }
+        guard !library.isEmpty else {
+            let note = NSTextField(wrappingLabelWithString:
+                "Nothing saved yet. Select part of a panel and use Edit ▸ Add Selection to Palette.")
+            note.font = NSFont.systemFont(ofSize: 10)
+            note.textColor = ColorSpec.hex("#7E7E92").nsColor
+            note.maximumNumberOfLines = 3
+            note.frame = CGRect(x: 10, y: cursorY, width: 180, height: 40)
+            content.addSubview(note)
+            cursorY += 46
+            return
+        }
+
+        for stamp in library {
+            let item = StampItemView(stamp: stamp.resolved)
+            item.frame = CGRect(x: 8, y: cursorY, width: 184, height: 66)
+            item.onInsert = { [weak self] name in self?.onInsertStamp?(name) }
+            content.addSubview(item)
+            cursorY += 70
+        }
+        cursorY += 6
+    }
+
     func rebuild() {
         content.subviews.forEach { $0.removeFromSuperview() }
         cursorY = 12
@@ -140,15 +172,30 @@ final class PaletteView: NSView {
 
         items("Shapes · Backdrop", [
             (.box, nil, "Box / Rounded Rect"),
+            (.box, "delineationKM", "Delineation · Kurkesmurfer"),
+            (.box, "delineationSerge", "Delineation · Serge"),
+            (.box, "bracketSerge", "Bracket · Serge (notch demo)"),
+            (.box, "bracketSergeInverted", "Bracket · Serge (inverted notch demo)"),
             (.ellipse, nil, "Ellipse"),
             (.triangle, nil, "Triangle"),
+            (.line, nil, "Line"),
+            (.line, "connectorSerge", "Connector · Serge (knob-to-jack)"),
             (.elbow, nil, "LCARS Elbow"),
+            (.swirl, nil, "LCARS Swirl"),
             (.ringSector, nil, "Ring Sector"),
         ])
 
         symbolGrid("Symbols")
 
         items("Text", [(.text, nil, "Text Label")])
+        stamps("Stamps", category: nil)
+
+        // One section per populated stamp subfolder -- a category earns its
+        // own header the moment it has anything in it, so a fresh single-
+        // sided stamp dropped in a new folder shows up without a code change.
+        for category in StampLibrary.categories() {
+            stamps(category, category: category)
+        }
 
         heightConstraint.constant = cursorY + 12
     }
@@ -185,11 +232,21 @@ final class PaletteItemView: NSView {
         case .text:
             e.params.text = "Aa"; e.params.fontSize = 16; e.w = 40; e.h = 24
         case .box:
-            e.w = 46; e.h = 18
-            e.params.cornerTL = 9; e.params.cornerTR = 9; e.params.cornerBR = 9; e.params.cornerBL = 9
+            // Only force the plain thumbnail sizing when there's no notch --
+            // a notched preset already picked a frame its own tab makes
+            // sense in, and squashing it to 46x18 would clip or distort it.
+            if e.params.notchEdge == 0 {
+                e.w = 46; e.h = 18
+                e.params.cornerTL = 9; e.params.cornerTR = 9; e.params.cornerBR = 9; e.params.cornerBL = 9
+            }
         case .elbow:
-            e.w = 44; e.h = 44; e.params.armH = 16; e.params.armV = 16
-            e.params.thickness = 11; e.params.innerRadius = 5
+            e.w = 44; e.h = 44; e.params.armH = 32; e.params.armV = 32
+            e.params.thickness = 11; e.params.thicknessV = 11; e.params.innerRadius = 5
+        case .swirl:
+            e.w = 34; e.h = 60; e.params.armH = 27; e.params.armH2 = 27; e.params.armV = 22
+            e.params.thickness = 9; e.params.thicknessV = 9; e.params.innerRadius = 4
+        case .line:
+            e.w = 26; e.h = 56
         default: break
         }
         return e
@@ -263,6 +320,101 @@ final class PaletteItemView: NSView {
 }
 
 extension PaletteItemView: NSDraggingSource {
+    func draggingSession(_ session: NSDraggingSession,
+                         sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation {
+        .copy
+    }
+}
+
+// MARK: - Stamp cell (drag source)
+
+/// A saved fragment in the palette. Draws every element it holds, scaled to the
+/// swatch, so the preview is the artwork itself rather than an icon standing in
+/// for it.
+final class StampItemView: NSView {
+
+    private let stamp: StampLibrary.Stamp
+    var onInsert: ((String) -> Void)?
+
+    private let previewRect = CGRect(x: 0, y: 0, width: 46, height: 46)
+
+    init(stamp: StampLibrary.Stamp) {
+        self.stamp = stamp
+        super.init(frame: .zero)
+        translatesAutoresizingMaskIntoConstraints = false
+        wantsLayer = true
+        layer?.cornerRadius = 6
+        toolTip = "\(stamp.name) — \(stamp.elements.count) element"
+            + (stamp.elements.count == 1 ? "" : "s")
+            + String(format: ", %.1f × %.1f mm",
+                     PanelMetrics.mm(stamp.bounds.width), PanelMetrics.mm(stamp.bounds.height))
+    }
+    required init?(coder: NSCoder) { fatalError("not supported") }
+
+    override var isFlipped: Bool { true }
+
+    override func draw(_ dirtyRect: NSRect) {
+        ColorSpec.hex("#34343E").nsColor.setFill()
+        bounds.fill()
+
+        guard let ctx = NSGraphicsContext.current?.cgContext else { return }
+        let area = CGRect(x: 10, y: (bounds.height - previewRect.height) / 2 + 4,
+                          width: previewRect.width, height: previewRect.height)
+        let box = stamp.bounds
+        let sw = max(box.width, 1), sh = max(box.height, 1)
+        let s = min(area.width / sw, area.height / sh, 2.2)
+
+        ctx.saveGState()
+        ctx.translateBy(x: area.midX - sw * s / 2, y: area.midY - sh * s / 2)
+        ctx.scaleBy(x: s, y: s)
+        ctx.translateBy(x: -box.minX, y: -box.minY)
+        for element in stamp.elements where element.isHidden != true {
+            for part in Renderer.parts(for: element) {
+                if let f = part.fill {
+                    ctx.saveGState(); ctx.addPath(part.path)
+                    ctx.setFillColor(f.nsColor.cgColor); ctx.fillPath(); ctx.restoreGState()
+                }
+                if let st = part.stroke {
+                    ctx.saveGState(); ctx.addPath(part.path)
+                    ctx.setStrokeColor(st.nsColor.cgColor)
+                    ctx.setLineWidth(part.lineWidth); ctx.strokePath(); ctx.restoreGState()
+                }
+            }
+        }
+        ctx.restoreGState()
+
+        let para = NSMutableParagraphStyle()
+        para.lineBreakMode = .byTruncatingTail
+        NSString(string: stamp.name).draw(
+            in: CGRect(x: 64, y: bounds.midY - 8, width: bounds.width - 72, height: 30),
+            withAttributes: [
+                .font: NSFont.systemFont(ofSize: 10.5, weight: .medium),
+                .foregroundColor: NSColor.white.withAlphaComponent(0.88),
+                .paragraphStyle: para,
+            ])
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        if event.clickCount >= 2 {
+            onInsert?(stamp.name)
+            return
+        }
+        let payload = CanvasView.Paste.stampPrefix + stamp.name
+        let pbItem = NSPasteboardItem()
+        pbItem.setString(payload, forType: CanvasView.Paste.elementType)
+        pbItem.setString(payload, forType: .string)
+
+        let snapshot = NSImage(size: bounds.size, flipped: true) { [weak self] rect in
+            self?.draw(rect)
+            return true
+        }
+        let item = NSDraggingItem(pasteboardWriter: pbItem)
+        item.setDraggingFrame(bounds, contents: snapshot)
+        beginDraggingSession(with: [item], event: event, source: self)
+    }
+}
+
+extension StampItemView: NSDraggingSource {
     func draggingSession(_ session: NSDraggingSession,
                          sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation {
         .copy

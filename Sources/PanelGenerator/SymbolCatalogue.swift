@@ -432,6 +432,35 @@ enum SymbolCatalogue {
             }
             return strokes(c, runs)
         },
+
+        SymbolSpec(id: "splitArrow", name: "Split Arrow", category: .mark, preservesAspect: true,
+                   parameters: ["Curl", "Spread", nil, nil], defaults: [0.55, 0.45, 0.5, 0.5]) { c in
+            // The Serge / Random*Source convention for a bipolar (attenuverting)
+            // control: a hooked stroke that rises from beside the knob and
+            // forks into two diverging prongs at the tip — "turns split two
+            // ways," rather than the single arrowhead of a plain direction mark.
+            let cx: CGFloat = 0.55, cy: CGFloat = 0.62, r: CGFloat = 0.36
+            let a0: CGFloat = 158
+            let curl = min(max(c.p[0], 0), 1)
+            let a1 = a0 + 55 + curl * 95   // how far round the hook curls
+            let hook = arc(cx, cy, r, from: a0, to: a1, steps: 26)
+            let tip = hook.last!
+            let rad = a1 * .pi / 180
+            let radial = (cos(rad), sin(rad))   // points outward from the hook's own centre
+            let spread = (20 + min(max(c.p[1], 0), 1) * 35) * .pi / 180
+            let prongLength: CGFloat = 0.34
+            func prong(_ sign: CGFloat) -> [(CGFloat, CGFloat)] {
+                let a = spread * sign
+                let ca = cos(a), sa = sin(a)
+                let dx = radial.0 * ca - radial.1 * sa
+                let dy = radial.0 * sa + radial.1 * ca
+                return [tip, (tip.0 + dx * prongLength, tip.1 + dy * prongLength)]
+            }
+            func clampRun(_ pts: [(CGFloat, CGFloat)]) -> [(CGFloat, CGFloat)] {
+                pts.map { (min(max($0.0, 0), 1), min(max($0.1, 0), 1)) }
+            }
+            return strokes(c, [clampRun(hook), clampRun(prong(1)), clampRun(prong(-1))])
+        },
     ]
 
     // MARK: Glyphs

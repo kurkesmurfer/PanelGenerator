@@ -4,6 +4,7 @@ import Foundation
 /// from a `.panelgen` on the command line.
 ///
 ///     PanelGenerator --emit Panels/Thing.panelgen build/Thing
+///     PanelGenerator --emit Panels/Thing.panelgen build/Thing --theme both
 ///
 /// This is the join between the editor and a plugin's build. A Makefile can
 /// regenerate panel, component artwork and widget code from the document on
@@ -11,9 +12,35 @@ import Foundation
 /// panel is revised more than twice.
 enum Emit {
 
-    static func run(documentPath: String, outDir rawOut: String) -> Never {
+    /// Which of a themed document's colour variants `--emit` actually writes.
+    /// `.auto` (the default -- no `--theme` flag) always writes the dark
+    /// variant at its existing name (`<slug>.svg`, byte-identical to every
+    /// panel emitted before theming existed) and, only when the document
+    /// itself declares a light variant (`PanelDocument.isThemed`), also
+    /// writes it alongside as `<slug>-light.svg` -- so a plugin with no
+    /// themed panels sees no change at all, and one with a themed panel gets
+    /// both files without needing to ask. The explicit values exist because
+    /// Goose asked for a way to say exactly which variant(s) a given build
+    /// step wants, rather than relying on what a document happens to declare.
+    enum ThemeSelection: String {
+        case auto, dark, light, both
+
+        static func parse(_ s: String) -> ThemeSelection? { ThemeSelection(rawValue: s) }
+
+        /// Which variants to actually write for a given document.
+        func variants(for doc: PanelDocument) -> [ThemeVariant] {
+            switch self {
+            case .auto:  return doc.isThemed ? [.dark, .light] : [.dark]
+            case .dark:  return [.dark]
+            case .light: return [.light]
+            case .both:  return [.dark, .light]
+            }
+        }
+    }
+
+    static func run(documentPath: String, outDir rawOut: String, theme: ThemeSelection = .auto) -> Never {
         guard !documentPath.isEmpty else {
-            print("usage: PanelGenerator --emit <document.panelgen | directory> [output-dir]")
+            print("usage: PanelGenerator --emit <document.panelgen | directory> [output-dir] [--theme dark|light|both]")
             fflush(stdout)
             exit(2)
         }
@@ -45,7 +72,7 @@ enum Emit {
         var allOK = true
         var loaded: [(url: URL, doc: PanelDocument)] = []
         for document in documents {
-            guard let doc = emit(document, to: out) else { allOK = false; continue }
+            guard let doc = emit(document, to: out, theme: theme) else { allOK = false; continue }
             loaded.append((document, doc))
         }
 
@@ -160,7 +187,15 @@ enum Emit {
         return out
     }
 
-    private static func emit(_ docURL: URL, to out: URL) -> PanelDocument? {
+    /// `<slug>.svg` for the dark variant (unchanged name, so nothing that
+    /// already references it needs to change), `<slug>-light.svg` for the
+    /// light one -- matching the convention Peet had already settled on by
+    /// hand for GTS (`GTS.svg` / `GTS-light.svg`) before this existed.
+    private static func svgName(_ slug: String, variant: ThemeVariant) -> String {
+        variant == .dark ? "\(slug).svg" : "\(slug)-light.svg"
+    }
+
+    private static func emit(_ docURL: URL, to out: URL, theme: ThemeSelection) -> PanelDocument? {
         do {
             let doc = try PanelDocument.load(from: docURL)
             let res = out.appendingPathComponent("res")
@@ -173,9 +208,15 @@ enum Emit {
             }
 
             // Panel artwork. Named for the module slug because that is the name
-            // the generated setPanel() line looks for.
-            try write(SVGExporter.documentSVG(doc),
-                      to: res.appendingPathComponent("\(doc.moduleSlug).svg"))
+            // the generated setPanel() line looks for. One file per requested
+            // theme variant -- just the dark one for an untethemed document
+            // under the default `.auto` selection, exactly as before theming
+            // existed.
+            let variants = theme.variants(for: doc)
+            for variant in variants {
+                try write(SVGExporter.documentSVG(doc, variant: variant),
+                          to: res.appendingPathComponent(svgName(doc.moduleSlug, variant: variant)))
+            }
 
             let components = doc.components
             if !components.isEmpty {
@@ -205,8 +246,14 @@ enum Emit {
 
             print("EMIT OK  \(docURL.lastPathComponent) → \"\(doc.name)\" · "
                   + "\(doc.widthHP)HP \(doc.format.rawValue) · \(doc.elements.count) elements · "
-                  + "\(components.count) component\(components.count == 1 ? "" : "s")")
+                  + "\(components.count) component\(components.count == 1 ? "" : "s")"
+                  + (doc.isThemed ? " · themed (\(variants.map(\.rawValue).joined(separator: ", ")))" : ""))
             for path in written { print("  → \(path)") }
+            if !doc.isThemed && variants.contains(.light) {
+                print("  · --theme \(theme.rawValue) asked for a light variant, but this document has no "
+                      + "light background set (View ▸ Theme) -- its light SVG was written anyway, "
+                      + "identical to the dark one.")
+            }
             for warning in CodeGen.warnings(doc) { print("  ! \(warning)") }
             // Warnings are advice, not failure: the output is still usable.
             return doc

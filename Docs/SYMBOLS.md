@@ -109,10 +109,10 @@ and both exporters pick it up from the catalogue.
 | Signal | sine, triangle, saw ↗, saw ↘, square, pulse (width), noise (density), sample & hold |
 | Function | ADSR (A/D/S/R), AD, slew (rate), clock (divisions), gate (length) |
 | Filter | low pass, high pass (cutoff, resonance), band pass (centre, Q), notch (centre, depth) |
-| Mark | arrow (direction), mult (ways), sum, invert, patch ring, attenuverter (sweep), range bracket (depth), index ticks (count, centre mark) |
+| Mark | arrow (direction), mult (ways), sum, invert, patch ring, attenuverter (sweep), range bracket (depth), index ticks (count, centre mark), split arrow (curl, spread) |
 | Glyph | Ka, Ru, Te, Vo, Sha, Nu, Il, Qa, Zi, Ma, Ov, Ek, Da, Ti, Hu, Ro |
 
-Forty-one symbols. Waveforms and marks stretch to their frame; glyphs and the
+Forty-two symbols. Waveforms and marks stretch to their frame; glyphs and the
 round marks set `preservesAspect` and are drawn in the largest centred square,
 because a stretched letterform stops being a letterform.
 

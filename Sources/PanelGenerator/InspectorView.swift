@@ -18,6 +18,12 @@ final class InspectorView: NSView {
     /// "sel" or "panel". Lives on the view, not the document: it is how you are
     /// working right now, not a property of the panel. Survives rebuilds.
     private var alignTarget: String = "sel"
+    /// "gap" (equal edge spacing) or "center" (equal centre-to-centre
+    /// spacing, for a selection of mixed-size elements where it's the
+    /// *positions* that should divide the span evenly, not the whitespace
+    /// between them -- e.g. two switches splitting the run between two
+    /// differently-sized knobs into thirds).
+    private var distributeMode: String = "gap"
     /// "Label Selection…" settings, remembered between runs: labelling a panel
     /// is a dozen passes over different groups of controls, and retyping the
     /// size and gap each time is the tedium the command exists to remove.
@@ -147,6 +153,44 @@ final class InspectorView: NSView {
         return cw
     }
 
+    /// A colour well paired with its hex value, kept in sync both ways --
+    /// picking a colour updates the hex text, typing a valid hex value
+    /// updates the well. Verifying a colour against a known reference
+    /// (matching a real product's exact panel background, say) is much
+    /// easier reading digits than eyeballing a swatch.
+    ///
+    /// Deliberately stricter than `ColorSpec.hex(_:)` itself, which falls
+    /// back to black on anything malformed -- a typo here should leave the
+    /// colour untouched, not blacken it. Invalid input snaps the field back
+    /// to the well's own current value instead.
+    @discardableResult
+    private func addColorControl(_ current: ColorSpec, onChange: @escaping (ColorSpec) -> Void) -> NSColorWell {
+        let cw = makeColorWell(current)
+        let hex = makeField(value: current.hexString)
+        hex.font = NSFont.monospacedSystemFont(ofSize: 10.5, weight: .regular)
+        hex.alignment = .center
+        addPair(cw, hex, split: 0.4)
+        handlers.append { sender in
+            if let c = sender as? NSColorWell {
+                let spec = ColorSpec(color: c.color)
+                hex.stringValue = spec.hexString
+                onChange(spec)
+            } else if let f = sender as? NSTextField {
+                var t = f.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                if t.hasPrefix("#") { t.removeFirst() }
+                guard t.count == 6, UInt32(t, radix: 16) != nil else {
+                    f.stringValue = ColorSpec(color: cw.color).hexString
+                    return
+                }
+                let spec = ColorSpec.hex(t)
+                cw.color = spec.nsColor
+                f.stringValue = spec.hexString
+                onChange(spec)
+            }
+        }
+        return cw
+    }
+
     private func makeCheck(_ title: String, on: Bool) -> NSButton {
         let b = NSButton(checkboxWithTitle: title, target: nil, action: nil)
         b.state = on ? .on : .off
@@ -163,6 +207,15 @@ final class InspectorView: NSView {
         b.font = NSFont.systemFont(ofSize: 11)
         b.controlSize = .small
         return b
+    }
+
+    /// A rotation close to a "nice" angle -- a multiple of 45° -- snaps to
+    /// it. Covers the 90°/45° cases that come up constantly (and 0°, which
+    /// is a multiple of 45° too) without fighting a value typed or dragged
+    /// to something deliberately in between.
+    private static func niceAngle(_ v: CGFloat) -> CGFloat {
+        let nearest = (v / 45).rounded() * 45
+        return abs(v - nearest) < 1.5 ? nearest : v
     }
 
     private func parse(_ sender: NSControl) -> Double? {
@@ -210,11 +263,49 @@ final class InspectorView: NSView {
         }
 
         label("Background")
-        let bg = makeColorWell(document.background)
-        addControl(bg, width: 70)
+        addColorControl(document.background) { [weak self] spec in
+            self?.canvas?.mutateDocument(name: "Background") { $0.background = spec }
+        }
+
+        // Theme facility: a document only becomes themed once a light
+        // background is actually set -- the "Enable" checkbox just gives
+        // that first light value (a lightened guess from the dark one,
+        // rather than plain white) so turning it on always leaves something
+        // sane to then adjust, rather than an empty/undefined state.
+        label("Theme")
+        let themeOn = makeCheck("Light variant", on: document.isThemed)
+        themeOn.toolTip = "Gives this panel a light colour variant -- View ▸ Theme previews it, "
+            + "and --emit writes it alongside the dark one automatically as <slug>-light.svg. "
+            + "Elements marked \"Follows panel ink\" (per-element Theme checkbox) swap between "
+            + "Ink (dark) and Ink (light) below; everything else stays the same in both."
+        addControl(themeOn)
         handlers.append { [weak self] sender in
-            guard let self, let cw = sender as? NSColorWell else { return }
-            self.canvas?.mutateDocument(name: "Background") { $0.background = ColorSpec(color: cw.color) }
+            guard let self, let b = sender as? NSButton else { return }
+            self.canvas?.mutateDocument(name: "Enable Theme") { doc in
+                if b.state == .on {
+                    if doc.lightBackground == nil { doc.lightBackground = doc.background.lightened(0.92) }
+                } else {
+                    doc.lightBackground = nil
+                }
+            }
+            self.scheduleRebuild()   // the two colour wells below only make sense once this is on
+        }
+
+        if document.isThemed {
+            label("Light bg")
+            addColorControl(document.lightBackground ?? document.background.lightened(0.92)) { [weak self] spec in
+                self?.canvas?.mutateDocument(name: "Light Background") { $0.lightBackground = spec }
+            }
+
+            label("Ink (dark)")
+            addColorControl(document.inkDark) { [weak self] spec in
+                self?.canvas?.mutateDocument(name: "Ink (Dark)") { $0.inkDark = spec }
+            }
+
+            label("Ink (light)")
+            addColorControl(document.inkLight) { [weak self] spec in
+                self?.canvas?.mutateDocument(name: "Ink (Light)") { $0.inkLight = spec }
+            }
         }
 
         label("Plugin slug")
@@ -375,20 +466,51 @@ final class InspectorView: NSView {
 
         label("Rotation")
         let rot = makeSlider(min: -180, max: 180, value: Double(el.rotation))
-        addControl(rot)
+        let rotField = makeField(value: Geo.fmt(el.rotation))
+        addPair(rot, rotField, split: 0.72)
         handlers.append { [weak self] sender in
-            guard let self, let s = sender as? NSSlider else { return }
-            var v = CGFloat(s.doubleValue)
-            if abs(v) < 0.5 { v = 0 }   // the slider can otherwise never quite land on upright
+            guard let self else { return }
+            let raw: CGFloat
+            if let s = sender as? NSSlider {
+                raw = CGFloat(s.doubleValue)
+            } else if let v = self.parse(sender) {
+                raw = CGFloat(v)
+            } else { return }
+            let v = Self.niceAngle(raw)   // also collapses the near-zero case cleanly
             self.canvas?.mutateSelection("Rotate") { $0.rotation = v }
+            rot.doubleValue = Double(v)
+            rotField.stringValue = Geo.fmt(v)
         }
 
         label("Fill")
-        let fillWell = makeColorWell(el.fill)
-        addControl(fillWell, width: 70)
+        addColorControl(el.fill) { [weak self] spec in
+            self?.canvas?.mutateSelection("Fill") { $0.fill = spec }
+        }
+
+        label("Theme")
+        let inkCheck = makeCheck("Follows panel ink", on: el.followsInk)
+        inkCheck.toolTip = "Draw in the document's ink colour for whichever theme is active "
+            + "(View ▸ Theme) instead of this element's own Fill above -- e.g. a label that "
+            + "should read white on a dark panel and black on a light one. Fill is kept, not "
+            + "overwritten, so turning this off falls back to it exactly as it was."
+        addControl(inkCheck)
         handlers.append { [weak self] sender in
-            guard let self, let cw = sender as? NSColorWell else { return }
-            self.canvas?.mutateSelection("Fill") { $0.fill = ColorSpec(color: cw.color) }
+            guard let self, let b = sender as? NSButton else { return }
+            self.canvas?.mutateSelection("Follows Ink") { $0.followsInk = (b.state == .on) }
+        }
+
+        label("")
+        let paperCheck = makeCheck("Follows panel background", on: el.followsPaper)
+        paperCheck.toolTip = "Draw in the document's background (paper) colour instead of this "
+            + "element's own Fill above -- for a shape that should blend into the panel rather "
+            + "than read as content, e.g. a patch obscuring part of a delineation box's boundary "
+            + "line. Not the same as \"Follows panel ink\": ink and paper are deliberately "
+            + "near-opposites, so following ink here would make the shape stand out instead of "
+            + "disappear. Fill is kept, not overwritten, so turning this off falls back to it."
+        addControl(paperCheck)
+        handlers.append { [weak self] sender in
+            guard let self, let b = sender as? NSButton else { return }
+            self.canvas?.mutateSelection("Follows Background") { $0.followsPaper = (b.state == .on) }
         }
 
         // LCARS swatch bank
@@ -474,20 +596,40 @@ final class InspectorView: NSView {
 
         plabel("Rotation", \.rotation)
         let rot = makeSlider(min: -180, max: 180, value: Double(el.rotation))
-        addControl(rot)
-        handlers.append { sender in
-            guard let s = sender as? NSSlider else { return }
-            var v = CGFloat(s.doubleValue)
-            if abs(v) < 0.5 { v = 0 }
+        let rotField = makeField(value: Geo.fmt(el.rotation))
+        addPair(rot, rotField, split: 0.72)
+        handlers.append { [weak self] sender in
+            guard let self else { return }
+            let raw: CGFloat
+            if let s = sender as? NSSlider {
+                raw = CGFloat(s.doubleValue)
+            } else if let v = self.parse(sender) {
+                raw = CGFloat(v)
+            } else { return }
+            let v = Self.niceAngle(raw)
             weakCanvas?.mutateSelection("Rotate") { $0.rotation = v }
+            rot.doubleValue = Double(v)
+            rotField.stringValue = Geo.fmt(v)
         }
 
         plabel("Fill", \.fill)
-        let well = makeColorWell(el.fill)
-        addControl(well, width: 70)
+        addColorControl(el.fill) { spec in
+            weakCanvas?.mutateSelection("Fill") { $0.fill = spec }
+        }
+
+        label("Theme")
+        let inkCheck = makeCheck("Follows panel ink", on: el.followsInk)
+        addControl(inkCheck)
         handlers.append { sender in
-            guard let cw = sender as? NSColorWell else { return }
-            weakCanvas?.mutateSelection("Fill") { $0.fill = ColorSpec(color: cw.color) }
+            guard let b = sender as? NSButton else { return }
+            weakCanvas?.mutateSelection("Follows Ink") { $0.followsInk = (b.state == .on) }
+        }
+        label("")
+        let paperCheck = makeCheck("Follows panel background", on: el.followsPaper)
+        addControl(paperCheck)
+        handlers.append { sender in
+            guard let b = sender as? NSButton else { return }
+            weakCanvas?.mutateSelection("Follows Background") { $0.followsPaper = (b.state == .on) }
         }
         addSwatchBank(current: el.fill)
 
@@ -677,13 +819,106 @@ final class InspectorView: NSView {
                         weakCanvas?.mutateSelection("Corner Radius") { $0.params[keyPath: kp] = CGFloat(sl.doubleValue) }
                     }
                 }
+
+                // Notch: a rectangular tab on one edge, for "sculpting" this
+                // box's outline around a neighbouring one (Serge's GTO
+                // channel brackets) while keeping every corner rounded,
+                // including the two new reentrant ones the tab creates.
+                let notchEdgeNow = max(0, min(4, Int(el.params.notchEdge.rounded())))
+                plabel("Notch Edge", \.params.notchEdge)
+                let edgePopup = NSPopUpButton(frame: .zero, pullsDown: false)
+                edgePopup.addItems(withTitles: ["None", "Top", "Right", "Bottom", "Left"])
+                edgePopup.selectItem(at: notchEdgeNow)
+                edgePopup.font = NSFont.systemFont(ofSize: 11)
+                addControl(edgePopup, width: 110)
+                let weakCanvasEdge = canvas
+                handlers.append { [weak self] sender in
+                    guard let p = sender as? NSPopUpButton else { return }
+                    weakCanvasEdge?.mutateSelection("Notch Edge") {
+                        $0.params.notchEdge = CGFloat(p.indexOfSelectedItem)
+                    }
+                    self?.scheduleRebuild()   // sliders enable/disable with it
+                }
+
+                let notchOn = notchEdgeNow != 0
+                let alongEdge = (notchEdgeNow == 1 || notchEdgeNow == 3) ? el.w : el.h
+                let notchSliders: [(String, WritableKeyPath<ElementParams, CGFloat>, Double)] = [
+                    ("Notch Start", \.notchStart, Double(max(alongEdge, 1))),
+                    ("Notch Length", \.notchLength, Double(max(alongEdge, 1))),
+                    ("Notch Depth", \.notchDepth, Double(max(el.w, el.h))),
+                    ("Notch Radius", \.notchRadius, Double(max(el.w, el.h) / 2)),
+                ]
+                for (t, kp, maxV) in notchSliders {
+                    plabel(t, (\PanelElement.params).appending(path: kp))
+                    let s = makeSlider(min: 0, max: maxV, value: Double(el.params[keyPath: kp]))
+                    s.isEnabled = notchOn
+                    addControl(s)
+                    let weakCanvas2 = canvas
+                    handlers.append { sender in
+                        guard let sl = sender as? NSSlider else { return }
+                        weakCanvas2?.mutateSelection("Notch") { $0.params[keyPath: kp] = CGFloat(sl.doubleValue) }
+                    }
+                }
+
+                label("Invert")
+                let invert = makeCheck("Cut inward (recess)", on: el.params.notchInvert)
+                invert.isEnabled = notchOn
+                invert.toolTip = "Off: the notch is a tab that reaches OUT toward a "
+                    + "smaller neighbour (Serge's GTO brackets). On: it cuts a recess "
+                    + "IN instead, for when the neighbour is the bigger shape and this "
+                    + "box needs to make room for it."
+                addControl(invert)
+                let weakCanvasInvert = canvas
+                handlers.append { sender in
+                    guard let b = sender as? NSButton else { return }
+                    weakCanvasInvert?.mutateSelection("Notch Invert") { $0.params.notchInvert = b.state == .on }
+                }
             case .ellipse, .triangle:
                 break
-            case .elbow:
-                let sliders: [(String, WritableKeyPath<ElementParams, CGFloat>, Double)] = [
-                    ("Thickness", \.thickness, 40), ("Inner radius", \.innerRadius, 30),
-                    ("Arm H", \.armH, 200), ("Arm V", \.armV, 200),
+            case .line:
+                // Bow: sideways offset of the curve's control point from
+                // the straight midpoint. 0 is dead straight; Serge's own
+                // hardware often bows this kind of connector slightly
+                // around whatever sits between a knob and its jack.
+                plabel("Bow", \.params.lineBow)
+                let maxBow = Double(max(el.w, el.h, 20))
+                let s = makeSlider(min: -maxBow, max: maxBow, value: Double(el.params.lineBow))
+                s.toolTip = "0 = straight. Positive or negative bows the line sideways -- "
+                    + "Serge's own convention for a curved signal-path line tying a knob "
+                    + "to the jack it belongs to."
+                addControl(s)
+                let weakCanvas = canvas
+                handlers.append { sender in
+                    guard let sl = sender as? NSSlider else { return }
+                    weakCanvas?.mutateSelection("Bow") { $0.params.lineBow = CGFloat(sl.doubleValue) }
+                }
+            case .elbow, .swirl:
+                // Arm H and Knee (a swirl's two horizontal-run lengths)
+                // both compete for the same fixed frame width -- the whole
+                // shape is rescaled to fit its box, so raising one relative
+                // to the other is what makes the split lopsided, not the
+                // absolute values. A high ceiling here lets that lopsidedness
+                // go much further than 200 would allow. Arm V has no such
+                // partner (it's the swirl's one shared spine length / the
+                // elbow's only vertical run) but gets the same higher
+                // ceiling for consistency.
+                // Thickness/Thickness V share a ceiling so either arm can
+                // be pushed fat without one hitting a lower cap than the
+                // other. Inner radius gets the same headroom -- the render
+                // already clamps it to min(thickness, thicknessV), so a fat
+                // band can still get a properly proportioned round inner
+                // corner instead of one that looks pinched next to it.
+                var sliders: [(String, WritableKeyPath<ElementParams, CGFloat>, Double)] = [
+                    ("Thickness", \.thickness, 200), ("Thickness V", \.thicknessV, 200),
+                    ("Inner radius", \.innerRadius, 200),
+                    ("Arm H", \.armH, 1000), ("Arm V", \.armV, 1000),
                 ]
+                if el.kind == .swirl {
+                    // The knee is where the spine sits: equal Arm H / Knee
+                    // keeps it centred, same as a single shared arm length
+                    // would; pulling them apart shifts it off-centre.
+                    sliders.append(("Knee (Arm H top)", \.armH2, 1000))
+                }
                 for (t, kp, maxV) in sliders {
                     plabel(t, (\PanelElement.params).appending(path: kp))
                     let s = makeSlider(min: 0, max: maxV, value: Double(el.params[keyPath: kp]))
@@ -1252,8 +1487,24 @@ final class InspectorView: NSView {
         ], columns: 6)
 
         if multi {
+            label("Distribute by")
+            let distBy = NSPopUpButton(frame: .zero, pullsDown: false)
+            distBy.addItems(withTitles: ["Gap", "Center"])
+            distBy.selectItem(at: distributeMode == "center" ? 1 : 0)
+            distBy.font = NSFont.systemFont(ofSize: 11)
+            distBy.toolTip = "Gap: equal edge-to-edge spacing (right for whitespace between "
+                + "same-ish-sized elements). Center: equal centre-to-centre spacing regardless "
+                + "of each element's own size (right when mixed-size elements -- e.g. two "
+                + "switches between two differently-sized knobs -- need to sit at even "
+                + "fractions of the span, not even gaps)."
+            addControl(distBy, width: 120)
+            handlers.append { [weak self] sender in
+                guard let self, let p = sender as? NSPopUpButton else { return }
+                self.distributeMode = p.indexOfSelectedItem == 1 ? "center" : "gap"
+            }
             buttonRow(["Dist X", "Dist Y"], handlers: [
-                { cv.distributeSelection("X") }, { cv.distributeSelection("Y") },
+                { [weak self] in cv.distributeSelection("X", by: self?.distributeMode ?? "gap") },
+                { [weak self] in cv.distributeSelection("Y", by: self?.distributeMode ?? "gap") },
             ], columns: 2)
         }
 

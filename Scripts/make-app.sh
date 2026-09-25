@@ -62,5 +62,32 @@ else
     echo "No icon panel at $ICON_PANEL — bundle built without an icon"
 fi
 
+# --- Documentation ----------------------------------------------------------
+# Help > Workflow Manual opens this in the browser. Copied in rather than
+# fetched at runtime, so an installed app is not tied to the source tree.
+if [ -f "Docs/Workflow.html" ]; then
+    cp "Docs/Workflow.html" "$APP/Contents/Resources/Workflow.html"
+else
+    echo "No Docs/Workflow.html — Help > Workflow Manual will report it missing"
+fi
+
+# --- Shipped stamps ---------------------------------------------------------
+# Palette fragments installed into the person's library on first launch.
+# Copied one level deep too: a category subfolder (e.g. "Knob Surrounds")
+# is itself a palette section, and StampLibrary.installSeeds() expects to
+# find it sitting right alongside the root files here, not just in the
+# source tree's Stamps/ (which is what the debug/release CLI binaries read
+# instead, via their own "walk up from executable" fallback).
+if [ -d "Stamps" ]; then
+    mkdir -p "$APP/Contents/Resources/Stamps"
+    cp Stamps/*.pgstamp "$APP/Contents/Resources/Stamps/" 2>/dev/null || true
+    for sub in Stamps/*/; do
+        [ -d "$sub" ] || continue
+        name="$(basename "$sub")"
+        mkdir -p "$APP/Contents/Resources/Stamps/$name"
+        cp "$sub"*.pgstamp "$APP/Contents/Resources/Stamps/$name/" 2>/dev/null || true
+    done
+fi
+
 codesign --force --deep -s - "$APP" 2>/dev/null || true
 echo "Built $APP — launch with: open $APP"

@@ -25,6 +25,22 @@ final class CanvasView: NSView {
     /// quarter of that, fine enough not to fight hand placement but still a
     /// grid. Change it in View ▸ Snap Step.
     var snapStep: CGFloat = PanelMetrics.pixelsPerHP / 4
+
+    /// Which snap system placement/movement uses. `.sergeGrid` is the
+    /// default: it snaps element *centres* to Serge's non-uniform row/column
+    /// grid (see `SergeGrid`). `.customGrid` snaps to a plain, editable N x M
+    /// grid (see `CustomGrid`) for panels whose real layout doesn't follow
+    /// Serge's own -- e.g. an imported module with a different column count.
+    /// `.uniform` is the older single-step grid, still used verbatim for
+    /// resize handles and arrow-key nudging in all three modes, since "snap
+    /// to grid lines" isn't a coherent idea for a resize.
+    enum SnapMode { case uniform, sergeGrid, customGrid }
+    var snapMode: SnapMode = .sergeGrid
+    /// Which theme variant the canvas currently draws -- editing preview
+    /// only (View ▸ Theme); never persisted to the document itself. Defaults
+    /// to `.dark`, matching every document's own untouched colours, so this
+    /// has zero effect on a panel that hasn't opted into theming.
+    var themePreview: ThemeVariant = .dark
     var zoom: CGFloat = 1 {
         didSet { zoom = min(max(zoom, 0.25), 8); resizeToFitDocument(); needsDisplay = true }
     }
@@ -39,6 +55,10 @@ final class CanvasView: NSView {
 
     enum Paste {
         static let elementType = NSPasteboard.PasteboardType("dev.peet.panelgenerator.element-kind")
+        /// Marks a payload as a saved fragment rather than an element kind.
+        /// Kinds are raw values of `ElementKind`, none of which contain a
+        /// colon, so the two never collide.
+        static let stampPrefix = "stamp:"
     }
 
     // MARK: Init / metrics
@@ -239,12 +259,47 @@ final class CanvasView: NSView {
     func insertAtCenter(_ kind: ElementKind, preset: String? = nil) {
         var el = kind.defaultElement(at: .zero)
         if let preset { el.applyPreset(preset) }
-        el.frame.origin = CGPoint(
-            x: Geo.snap(document.pixelSize.width / 2 - el.w / 2, to: Geo.defaultSnap),
-            y: Geo.snap(document.pixelSize.height / 2 - el.h / 2, to: Geo.defaultSnap))
+        let panelCenter = CGPoint(x: document.pixelSize.width / 2, y: document.pixelSize.height / 2)
+        el.frame.origin = snappedOrigin(forCenter: panelCenter, size: CGSize(width: el.w, height: el.h))
         el.frame.origin.x = max(0, min(el.frame.origin.x, document.pixelSize.width - el.w))
         el.frame.origin.y = max(0, min(el.frame.origin.y, document.pixelSize.height - el.h))
         insert([el], name: "Add \(kind.displayName)")
+    }
+
+    // MARK: Stamps
+
+    /// Drop a saved fragment centred on `point`, nudged back inside the panel
+    /// if it would hang over an edge. Returns false only if the stamp is gone
+    /// from disk since the palette was built.
+    @discardableResult
+    func insertStamp(named name: String, at point: CGPoint) -> Bool {
+        guard let stamp = StampLibrary.stamp(named: name)?.resolved else { return false }
+        let snapped = snappedCenter(point)
+        var els = StampLibrary.instance(of: stamp, at: snapped)
+        guard !els.isEmpty else { return false }
+
+        // Shift the whole fragment as one, so a stamp never loses its internal
+        // spacing to a clamp.
+        var box = els[0].frame
+        for el in els.dropFirst() { box = box.union(el.frame) }
+        var dx: CGFloat = 0, dy: CGFloat = 0
+        if box.maxX > document.pixelSize.width { dx = document.pixelSize.width - box.maxX }
+        if box.minX + dx < 0 { dx = -box.minX }
+        if box.maxY > document.pixelSize.height { dy = document.pixelSize.height - box.maxY }
+        if box.minY + dy < 0 { dy = -box.minY }
+        if dx != 0 || dy != 0 {
+            for i in els.indices { els[i].x += dx; els[i].y += dy }
+        }
+
+        insert(els, name: "Add \(stamp.name)")
+        return true
+    }
+
+    @discardableResult
+    func insertStampAtCenter(named name: String) -> Bool {
+        insertStamp(named: name,
+                    at: CGPoint(x: document.pixelSize.width / 2,
+                                y: document.pixelSize.height / 2))
     }
 
     // MARK: Selection & edit commands
@@ -372,12 +427,14 @@ final class CanvasView: NSView {
         let panelRect = CGRect(origin: .zero, size: document.pixelSize)
         ctx.setShadow(offset: CGSize(width: 0, height: -3 / zoom), blur: 10 / zoom,
                       color: NSColor.black.withAlphaComponent(0.55).cgColor)
-        ctx.setFillColor(document.background.nsColor.cgColor)
+        ctx.setFillColor(document.paper(for: themePreview).nsColor.cgColor)
         ctx.fill(panelRect.insetBy(dx: -1, dy: -1).offsetBy(dx: 0, dy: 0))
         ctx.setShadow(offset: .zero, blur: 0, color: nil)
 
-        Renderer.drawBackground(document, in: ctx)
+        Renderer.drawBackground(document, in: ctx, variant: themePreview)
         drawGrid(in: ctx)
+        if snapEnabled && snapMode == .sergeGrid { drawSergeGrid(in: ctx) }
+        if snapEnabled && snapMode == .customGrid { drawCustomGrid(in: ctx) }
 
         for el in document.elements where el.isHidden != true {
             // A tracing template is drawn faintly and behind your own work in
@@ -386,10 +443,10 @@ final class CanvasView: NSView {
             if el.isTemplate == true {
                 ctx.saveGState()
                 ctx.setAlpha(0.35)
-                Renderer.draw(el, in: ctx)
+                Renderer.draw(el, in: ctx, doc: document, variant: themePreview)
                 ctx.restoreGState()
             } else {
-                Renderer.draw(el, in: ctx)
+                Renderer.draw(el, in: ctx, doc: document, variant: themePreview)
             }
         }
 
@@ -422,6 +479,68 @@ final class CanvasView: NSView {
         }
         lines(step: minor, alpha: 0.05)
         lines(step: minor * 4, alpha: 0.09)
+        ctx.restoreGState()
+    }
+
+    /// Visual guide for the active Serge grid: main row/main column
+    /// intersections as solid dots (knob positions), every other
+    /// combination -- main row x half-lane column, half row x main
+    /// column, half row x half-lane column -- as smaller, dimmer dots (the
+    /// LED/switch/jack positions, including the "parallel slot" a
+    /// half-lane column offers on a main row -- confirmed against the real
+    /// GTS panel, where status LEDs sit at half-lane column x's but at the
+    /// full height of the main row 1 jacks either side of them).
+    private func drawSergeGrid(in ctx: CGContext) {
+        let l = SergeGrid.lines(for: document)
+        guard !l.mainRows.isEmpty || !l.halfRows.isEmpty else { return }
+        ctx.saveGState()
+        ctx.clip(to: CGRect(origin: .zero, size: document.pixelSize))
+
+        func dots(rows: [CGFloat], cols: [CGFloat], radius: CGFloat, alpha: CGFloat) {
+            guard !rows.isEmpty, !cols.isEmpty else { return }
+            ctx.setFillColor(NSColor.white.withAlphaComponent(alpha).cgColor)
+            for y in rows {
+                for x in cols {
+                    ctx.fillEllipse(in: CGRect(x: x - radius, y: y - radius,
+                                               width: radius * 2, height: radius * 2))
+                }
+            }
+        }
+        dots(rows: l.mainRows, cols: l.mainCols, radius: 2.2 / zoom, alpha: 0.35)
+        dots(rows: l.mainRows, cols: l.halfCols, radius: 1.5 / zoom, alpha: 0.22)
+        dots(rows: l.halfRows, cols: l.mainCols, radius: 1.5 / zoom, alpha: 0.22)
+        dots(rows: l.halfRows, cols: l.halfCols, radius: 1.5 / zoom, alpha: 0.22)
+        ctx.restoreGState()
+    }
+
+    /// Visual guide for the active custom grid: a dot at every column x row
+    /// intersection of the panel's own configured N x M divisions, plus (if
+    /// Serge-style half positions are on) dimmer dots at the half-row/
+    /// half-lane crossings -- same two-tier treatment as `drawSergeGrid`.
+    private func drawCustomGrid(in ctx: CGContext) {
+        let l = CustomGrid.lines(for: document)
+        guard !l.mainCols.isEmpty, !l.mainRows.isEmpty else { return }
+        ctx.saveGState()
+        ctx.clip(to: CGRect(origin: .zero, size: document.pixelSize))
+
+        func dots(rows: [CGFloat], cols: [CGFloat], radius: CGFloat, alpha: CGFloat) {
+            guard !rows.isEmpty, !cols.isEmpty else { return }
+            ctx.setFillColor(NSColor.white.withAlphaComponent(alpha).cgColor)
+            for y in rows {
+                for x in cols {
+                    ctx.fillEllipse(in: CGRect(x: x - radius, y: y - radius,
+                                               width: radius * 2, height: radius * 2))
+                }
+            }
+        }
+        dots(rows: l.mainRows, cols: l.mainCols, radius: 2.2 / zoom, alpha: 0.35)
+        dots(rows: l.halfRows, cols: l.halfCols, radius: 1.5 / zoom, alpha: 0.22)
+        // Quarter tier is uncorrelated (available on every row/column), so
+        // draw it as its own faint overlay rather than a diagonal subset.
+        let allRows = l.mainRows + l.halfRows + l.quarterRows
+        let allCols = l.mainCols + l.halfCols
+        dots(rows: allRows, cols: l.quarterCols, radius: 1.1 / zoom, alpha: 0.14)
+        dots(rows: l.quarterRows, cols: allCols, radius: 1.1 / zoom, alpha: 0.14)
         ctx.restoreGState()
     }
 
@@ -463,15 +582,22 @@ final class CanvasView: NSView {
             ctx.restoreGState()
         }
 
-        // Resize handles only make sense unrotated, single-selection.
-        if let p = primaryElement, p.rotation == 0 {
+        // Resize handles, single-selection. Drawn at the frame's own
+        // (unrotated) corners, then rotated onto the screen around the
+        // element's centre so they still land on the visible, tilted
+        // bounding box -- resizing along a rotated element's own axes only
+        // reads correctly if its handles are where the element visibly is.
+        if let p = primaryElement {
             let hs = handleSize
             for (_, r) in activeHandles(for: p.frame) {
+                let mid = CGPoint(x: r.midX, y: r.midY)
+                let c = p.rotation == 0 ? mid : Geo.rotate(mid, around: p.center, degrees: p.rotation)
+                let hr = CGRect(x: c.x - hs / 2, y: c.y - hs / 2, width: hs, height: hs)
                 ctx.setFillColor(NSColor.white.cgColor)
-                ctx.fill(r.insetBy(dx: -hs / 2, dy: -hs / 2))
+                ctx.fill(hr)
                 ctx.setStrokeColor(NSColor.black.cgColor)
                 ctx.setLineWidth(1 / zoom)
-                ctx.stroke(r.insetBy(dx: -hs / 2, dy: -hs / 2))
+                ctx.stroke(hr)
             }
         }
 
@@ -549,11 +675,21 @@ final class CanvasView: NSView {
     }
 
     private func handle(at p: CGPoint) -> HandleDir? {
-        guard let prim = primaryElement, prim.rotation == 0 else { return nil }
-        for (dir, r) in activeHandles(for: prim.frame) where r.contains(p) {
+        guard let prim = primaryElement else { return nil }
+        let local = toLocal(p, rotation: prim.rotation, center: prim.center)
+        for (dir, r) in activeHandles(for: prim.frame) where r.contains(local) {
             return dir
         }
         return nil
+    }
+
+    /// Un-rotate a screen/panel point into an element's own local (unrotated)
+    /// space -- the space its `frame` (x/y/w/h) is defined in. `rotation` is
+    /// applied only at draw time (see `transformedPath`/`Renderer.applyRotation`),
+    /// so hit-testing and resize math against the frame need the inverse of
+    /// that same transform first.
+    private func toLocal(_ p: CGPoint, rotation: CGFloat, center: CGPoint) -> CGPoint {
+        rotation == 0 ? p : Geo.rotate(p, around: center, degrees: -rotation)
     }
 
     // MARK: Rotation & mirror overlay handles
@@ -566,9 +702,10 @@ final class CanvasView: NSView {
         return CGPoint(x: f.midX, y: f.minY - overlayHandleOffset)
     }
 
-    /// Mirror handles only for kinds whose renderer honours flipX / flipY (elbow).
+    /// Mirror handles only for kinds whose renderer honours flipX / flipY
+    /// (elbow, swirl).
     private var mirrorHandlePoints: (x: CGPoint, y: CGPoint)? {
-        guard let el = primaryElement, el.kind == .elbow else { return nil }
+        guard let el = primaryElement, el.kind == .elbow || el.kind == .swirl else { return nil }
         let f = el.frame
         return (CGPoint(x: f.minX - overlayHandleOffset, y: f.midY),
                 CGPoint(x: f.midX, y: f.maxY + overlayHandleOffset))
@@ -594,7 +731,7 @@ final class CanvasView: NSView {
     private enum DragMode {
         case idle
         case moving(origFrames: [UUID: CGRect])
-        case resizing(dir: HandleDir, orig: CGRect)
+        case resizing(dir: HandleDir, orig: CGRect, rotation: CGFloat, center: CGPoint)
         case rotating(origRotation: CGFloat, center: CGPoint, startAngle: CGFloat)
         case mirroring(axis: MirrorAxis, orig: Bool)
         case groupResizing(orig: CGRect, origFrames: [UUID: CGRect])
@@ -671,10 +808,11 @@ final class CanvasView: NSView {
             return
         }
 
-        // 1. Handles first (single, unrotated selection).
+        // 1. Handles first (single selection; rotated elements resize along
+        //    their own tilted axes -- see `toLocal`).
         if let dir = handle(at: p), let prim = primaryElement {
             downPanelPoint = p   // must anchor THIS click — stale anchor made resizes explode
-            dragMode = .resizing(dir: dir, orig: prim.frame)
+            dragMode = .resizing(dir: dir, orig: prim.frame, rotation: prim.rotation, center: prim.center)
             beginGestureUndo("Resize")
             didDrag = false
             return
@@ -754,8 +892,21 @@ final class CanvasView: NSView {
             // looks like from the outside.
             var sdx = dx, sdy = dy
             if let anchor = moveAnchor.flatMap({ orig[$0] }) ?? orig.values.first {
-                sdx = snapVal(anchor.minX + dx) - anchor.minX
-                sdy = snapVal(anchor.minY + dy) - anchor.minY
+                switch snapMode {
+                case .uniform:
+                    sdx = snapVal(anchor.minX + dx) - anchor.minX
+                    sdy = snapVal(anchor.minY + dy) - anchor.minY
+                case .sergeGrid:
+                    let center = CGPoint(x: anchor.midX + dx, y: anchor.midY + dy)
+                    let snapped = snapEnabled ? SergeGrid.snapCenter(center, in: document) : center
+                    sdx = snapped.x - anchor.midX
+                    sdy = snapped.y - anchor.midY
+                case .customGrid:
+                    let center = CGPoint(x: anchor.midX + dx, y: anchor.midY + dy)
+                    let snapped = snapEnabled ? CustomGrid.snapCenter(center, in: document) : center
+                    sdx = snapped.x - anchor.midX
+                    sdy = snapped.y - anchor.midY
+                }
             }
             mutateFrames(orig) { frame in
                 var nf = frame
@@ -764,13 +915,17 @@ final class CanvasView: NSView {
                 return nf
             }
 
-        case .resizing(let dir, let orig):
+        case .resizing(let dir, let orig, let rotation, let center):
+            let localP = toLocal(p, rotation: rotation, center: center)
+            let localDown = toLocal(downPanelPoint, rotation: rotation, center: center)
+            let ldx = localP.x - localDown.x
+            let ldy = localP.y - localDown.y
             var minX = orig.minX, minY = orig.minY
             var maxX = orig.maxX, maxY = orig.maxY
-            let rawMinX = orig.minX + (dir == .nw || dir == .w || dir == .sw ? dx : 0)
-            let rawMaxX = orig.maxX + (dir == .ne || dir == .e || dir == .se ? dx : 0)
-            let rawMinY = orig.minY + (dir == .nw || dir == .n || dir == .ne ? dy : 0)
-            let rawMaxY = orig.maxY + (dir == .sw || dir == .s || dir == .se ? dy : 0)
+            let rawMinX = orig.minX + (dir == .nw || dir == .w || dir == .sw ? ldx : 0)
+            let rawMaxX = orig.maxX + (dir == .ne || dir == .e || dir == .se ? ldx : 0)
+            let rawMinY = orig.minY + (dir == .nw || dir == .n || dir == .ne ? ldy : 0)
+            let rawMaxY = orig.maxY + (dir == .sw || dir == .s || dir == .se ? ldy : 0)
             if dir == .nw || dir == .w || dir == .sw { minX = min(snapVal(rawMinX), maxX - minSize) }
             if dir == .ne || dir == .e || dir == .se { maxX = max(snapVal(rawMaxX), minX + minSize) }
             if dir == .nw || dir == .n || dir == .ne { minY = min(snapVal(rawMinY), maxY - minSize) }
@@ -855,6 +1010,28 @@ final class CanvasView: NSView {
 
     private func snapVal(_ v: CGFloat) -> CGFloat {
         snapEnabled ? Geo.snap(v, to: snapStep) : v.rounded(.toNearestOrAwayFromZero)
+    }
+
+    /// Snaps a *centre* point per the active snap mode. Used everywhere a
+    /// placement is naturally described by its centre (stamp drops, palette
+    /// drag-and-drop, "insert at panel centre").
+    private func snappedCenter(_ p: CGPoint) -> CGPoint {
+        switch snapMode {
+        case .uniform:
+            return CGPoint(x: snapVal(Geo.snap(p.x, to: Geo.defaultSnap)),
+                           y: snapVal(Geo.snap(p.y, to: Geo.defaultSnap)))
+        case .sergeGrid:
+            return snapEnabled ? SergeGrid.snapCenter(p, in: document) : p
+        case .customGrid:
+            return snapEnabled ? CustomGrid.snapCenter(p, in: document) : p
+        }
+    }
+
+    /// Snaps a *centre* point, then converts to the top-left origin an
+    /// element of `size` needs to be centred there.
+    private func snappedOrigin(forCenter point: CGPoint, size: CGSize) -> CGPoint {
+        let c = snappedCenter(point)
+        return CGPoint(x: c.x - size.width / 2, y: c.y - size.height / 2)
     }
 
     private func mutateFrames(_ orig: [UUID: CGRect], _ mapper: (CGRect) -> CGRect) {
@@ -1006,14 +1183,41 @@ final class CanvasView: NSView {
         apply(elements: doc.elements, name: toPanel ? "Align to Panel" : "Align")
     }
 
-    /// Evenly distribute 3+ selected elements along an axis (first/last stay put).
-    func distributeSelection(_ axis: String) {
+    /// Evenly distribute 3+ selected elements along an axis (first/last stay
+    /// put either way). Two different notions of "evenly", picked via `by`:
+    ///
+    /// - `"gap"` (default): equal edge-to-edge spacing. Right when the
+    ///   selection's own widths/heights should read as evenly separated --
+    ///   e.g. a row of labels or icons where whitespace is what the eye
+    ///   tracks.
+    /// - `"center"`: equal centre-to-centre spacing, ignoring each
+    ///   element's own size. Right when the selection's *positions* should
+    ///   divide the span evenly regardless of what's sitting at each one --
+    ///   e.g. two switches of one size splitting the run between two knobs
+    ///   of a different size into thirds, which is a position statement
+    ///   ("these four sit at 0, 1/3, 2/3, 1 of the span"), not a
+    ///   whitespace statement. `"gap"` cannot express that when the
+    ///   elements involved aren't all the same size, since equal edge gaps
+    ///   and equal centre spacing only coincide when they are.
+    func distributeSelection(_ axis: String, by mode: String = "gap") {
         let idxs = document.elements.indices.filter { selection.contains(document.elements[$0].id) }
         guard idxs.count > 2 else { return }
         var els = document.elements
         let sorted = idxs.sorted {
             axis == "X" ? els[$0].frame.minX < els[$1].frame.minX
                         : els[$0].frame.minY < els[$1].frame.minY
+        }
+        if mode == "center" {
+            let firstCenter = axis == "X" ? els[sorted.first!].center.x : els[sorted.first!].center.y
+            let lastCenter  = axis == "X" ? els[sorted.last!].center.x  : els[sorted.last!].center.y
+            let step = (lastCenter - firstCenter) / CGFloat(sorted.count - 1)
+            for (n, i) in sorted.enumerated() {
+                let c = firstCenter + step * CGFloat(n)
+                if axis == "X" { els[i].x = c - els[i].w / 2 }
+                else { els[i].y = c - els[i].h / 2 }
+            }
+            apply(elements: els, name: "Distribute")
+            return
         }
         let first = els[sorted.first!], last = els[sorted.last!]
         let span = axis == "X" ? last.frame.maxX - first.frame.minX
@@ -1140,17 +1344,20 @@ final class CanvasView: NSView {
     override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation { .copy }
 
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
-        // "kind" or "kind#preset" — a specific glyph, a ring knob, and so on.
+        // "kind", "kind#preset" — a specific glyph, a ring knob, and so on —
+        // or "stamp:<name>" for a saved fragment.
         guard let raw = sender.draggingPasteboard.string(forType: Paste.elementType) else { return false }
+        let p0 = panelPoint(fromWindowLocation: sender.draggingLocation)
+        if raw.hasPrefix(Paste.stampPrefix) {
+            return insertStamp(named: String(raw.dropFirst(Paste.stampPrefix.count)), at: p0)
+        }
         let parts = raw.split(separator: "#", maxSplits: 1).map(String.init)
         guard let kind = ElementKind(rawValue: parts[0]) else { return false }
 
         var el = kind.defaultElement(at: .zero)
         if parts.count > 1 { el.applyPreset(parts[1]) }
-        let p = panelPoint(fromWindowLocation: sender.draggingLocation)
-        el.frame.origin = CGPoint(
-            x: snapVal(Geo.snap(p.x - el.w / 2, to: Geo.defaultSnap)),
-            y: snapVal(Geo.snap(p.y - el.h / 2, to: Geo.defaultSnap)))
+        let p = p0
+        el.frame.origin = snappedOrigin(forCenter: p, size: CGSize(width: el.w, height: el.h))
         // Clamp inside the panel.
         el.frame.origin.x = max(0, min(el.frame.origin.x, document.pixelSize.width - el.w))
         el.frame.origin.y = max(0, min(el.frame.origin.y, document.pixelSize.height - el.h))

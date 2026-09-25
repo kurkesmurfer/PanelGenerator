@@ -33,6 +33,14 @@ repository. Colours are edited with the **native macOS colour picker**
   Illustrator / Inkscape.
 - **Documents** — JSON `.panelgen` files; Open/Save/Save As with dirty-state
   prompts.
+- **Stamps** — save any selection to the palette (*Edit ▸ Add Selection to
+  Palette…*) and drop it on the next panel. A stamp carries shapes and sizes,
+  never identity: identifiers, groups and label bindings are stripped, so two
+  panels can never end up claiming the same enum name. They live in
+  `~/Library/Application Support/PanelGenerator/Stamps` as plain JSON; the
+  ones in `Stamps/` here are installed on first launch.
+- **Workflow manual** — *Help ▸ Workflow Manual* opens `Docs/Workflow.html`
+  in the browser: the whole loop from a blank panel to a compiling module.
 - **Headless smoke test** — `PanelGenerator --selftest [dir]` renders a
   showcase panel to SVG+PNG without a window server.
 

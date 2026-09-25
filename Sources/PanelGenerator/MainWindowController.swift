@@ -6,6 +6,7 @@ final class MainWindowController: NSWindowController, NSMenuItemValidation {
     let canvas = CanvasView()
     let inspector = InspectorView()
     private var layerList: LayerListView!
+    private var palette: PaletteView!
     private var scrollView: NSScrollView!
 
     private(set) var fileURL: URL?
@@ -48,10 +49,13 @@ final class MainWindowController: NSWindowController, NSMenuItemValidation {
         sidebar.translatesAutoresizingMaskIntoConstraints = false
         root.addSubview(sidebar)
 
-        let palette = PaletteView()
+        palette = PaletteView()
         palette.translatesAutoresizingMaskIntoConstraints = false
         palette.onInsert = { [weak self] kind, preset in
             self?.canvas.insertAtCenter(kind, preset: preset)
+        }
+        palette.onInsertStamp = { [weak self] name in
+            self?.canvas.insertStampAtCenter(named: name)
         }
         sidebar.addSubview(palette)
 
@@ -203,6 +207,14 @@ final class MainWindowController: NSWindowController, NSMenuItemValidation {
                 doc.widthHP = outcome.widthHP
                 doc.format = outcome.format
                 if let bg = outcome.background { doc.background = bg }
+            }
+            if !options.asTemplate, doc.name.isEmpty || doc.name == "Untitled" {
+                // Name the document after the import too, when it has no name
+                // of its own -- otherwise every import must be retitled by
+                // hand. A re-imported PanelGenerator export recovers its
+                // exact name from its own header comment; anything else
+                // falls back to the file's name on disk.
+                doc.name = outcome.suggestedName ?? url.deletingPathExtension().lastPathComponent
             }
             doc.elements.append(contentsOf: outcome.elements)
             canvas.applyDocument(doc, name: "Import SVG")
@@ -531,7 +543,40 @@ final class MainWindowController: NSWindowController, NSMenuItemValidation {
             }
         } catch {
             showError("Could not export widget code", error)
+            return
         }
+
+        presentCodeGenWarnings(CodeGen.warnings(doc), afterExport: true)
+    }
+
+    /// `CodeGen.warnings` already catches this document's own name -- two
+    /// controls of the same role sharing an identifier -- and already
+    /// resolves it (the second becomes NAME_2, and so on) so generated code
+    /// always compiles. What it did not have, until now, was any way to
+    /// reach the person editing the panel: the check only ever ran from the
+    /// `--emit` CLI, printed to a terminal nobody watches while working in
+    /// the app. Shown here instead, at the two moments it actually matters:
+    /// on demand (File > Check Panel for Issues...) and right after
+    /// exporting the widget code a coder agent is about to be handed.
+    private func presentCodeGenWarnings(_ warns: [String], afterExport: Bool) {
+        guard !warns.isEmpty else {
+            guard !afterExport else { return }  // silence on an already-clean export
+            let alert = NSAlert()
+            alert.messageText = "No issues found"
+            alert.informativeText = "Nothing here would trip up code generation."
+            alert.runModal()
+            return
+        }
+        let alert = NSAlert()
+        alert.messageText = afterExport
+            ? "Exported, but \(warns.count) issue\(warns.count == 1 ? "" : "s") found"
+            : "\(warns.count) issue\(warns.count == 1 ? "" : "s") found"
+        alert.informativeText = warns.map { "• \($0)" }.joined(separator: "\n\n")
+        alert.runModal()
+    }
+
+    @objc func pgCheckPanel(_ sender: Any?) {
+        presentCodeGenWarnings(CodeGen.warnings(canvas.document), afterExport: false)
     }
 
     // MARK: Edit commands
@@ -549,11 +594,14 @@ final class MainWindowController: NSWindowController, NSMenuItemValidation {
     }
 
     @objc func pgDuplicate(_ sender: Any?) { canvas.duplicateSelection() }
-    @objc func pgCopy(_ sender: Any?) { canvas.copySelection() }
-    @objc func pgCut(_ sender: Any?) { canvas.cutSelection() }
-    @objc func pgPaste(_ sender: Any?) { canvas.paste() }
+    // Standard NSText-matching selector names, deliberately not pg-prefixed
+    // and wired with a nil target (AppDelegate.swift) -- see the note above
+    // validateMenuItem for why.
+    @objc func copy(_ sender: Any?) { canvas.copySelection() }
+    @objc func cut(_ sender: Any?) { canvas.cutSelection() }
+    @objc func paste(_ sender: Any?) { canvas.paste() }
 
-    @objc func pgDelete(_ sender: Any?) { canvas.deleteSelection() }
+    @objc func delete(_ sender: Any?) { canvas.deleteSelection() }
 
     @objc func pgSelectAll(_ sender: Any?) { canvas.selectAllElements() }
 
@@ -750,6 +798,125 @@ final class MainWindowController: NSWindowController, NSMenuItemValidation {
     @objc func pgSetSnapStep(_ sender: Any?) {
         guard let mi = sender as? NSMenuItem else { return }
         canvas.snapStep = CGFloat(mi.tag) / 100
+        canvas.snapMode = .uniform
+        canvas.snapEnabled = true
+        canvas.needsDisplay = true
+    }
+
+    /// Serge's non-uniform row/column grid (see `SergeGrid`) -- the default
+    /// snap mode. Placement and movement snap element *centres* to it;
+    /// resize handles and arrow-key nudging keep using the uniform step.
+    @objc func pgSetSergeGrid(_ sender: Any?) {
+        canvas.snapMode = .sergeGrid
+        canvas.snapEnabled = true
+        canvas.needsDisplay = true
+    }
+
+    /// Toggles `PanelDocument.sergeGridOuterHalfSteps`: one further half-step
+    /// row beyond the top and bottom of Serge's standard 5-row grid, for
+    /// real panels that push a row of LEDs/jacks that far out (e.g. the
+    /// GTS's top LED row).
+    ///
+    /// Turning it ON also switches to Serge Grid and enables snapping, same
+    /// as selecting "Serge Grid" itself -- the checkbox is meant to have an
+    /// immediate, visible effect on the next drag, not just flip a flag that
+    /// only matters if Serge Grid happens to already be the active mode.
+    /// (Custom Grid's own half-positions checkbox gets this for free: it
+    /// lives inside the "Custom Grid..." dialog, which already switches to
+    /// Custom Grid on confirm. This one is a standalone menu item, so it has
+    /// to do that switch itself.) Turning it OFF leaves the active mode
+    /// alone -- there's no equivalent reason to switch *away* from Serge
+    /// Grid just because this particular option was turned off.
+    @objc func pgToggleSergeOuterHalfStep(_ sender: Any?) {
+        let on = !canvas.document.sergeGridOuterHalfSteps
+        canvas.mutateDocument(name: "Serge Grid Outer Half-Step") {
+            $0.sergeGridOuterHalfSteps = on
+        }
+        if on {
+            canvas.snapMode = .sergeGrid
+            canvas.snapEnabled = true
+        }
+        canvas.needsDisplay = true
+    }
+
+    /// Switches what the canvas previews (View ▸ Theme) -- Dark always
+    /// matches a document's own untouched colours; Light substitutes
+    /// `PanelDocument.lightBackground`/`inkLight` wherever an element opted
+    /// in via "Follows panel ink". Editing-only: never written to the
+    /// document, and has no visible effect on a panel that isn't themed
+    /// (`PanelDocument.isThemed`), since its light and dark colours are then
+    /// identical by construction.
+    @objc func pgSetThemePreview(_ sender: Any?) {
+        guard let tag = (sender as? NSMenuItem)?.tag, let variant = ThemeVariant(rawValue: tag == 1 ? "light" : "dark") else { return }
+        canvas.themePreview = variant
+        canvas.needsDisplay = true
+    }
+
+    /// A plain, editable N x M grid (see `CustomGrid`) for panels whose real
+    /// layout doesn't follow Serge's standardised one -- e.g. an imported
+    /// module that genuinely has 5 columns, not Serge's 4. Always opens the
+    /// dialog, even when custom grid is already the active mode, so the
+    /// divisions stay easy to revisit rather than a one-time setup step.
+    @objc func pgSetCustomGrid(_ sender: Any?) {
+        let doc = canvas.document
+        let alert = NSAlert()
+        alert.messageText = "Custom Grid"
+        alert.informativeText = "Divide the panel evenly into this many columns and rows. "
+            + "Rows stay clear of the corner screws top and bottom. Placement and "
+            + "movement will snap element centres to the intersections."
+        alert.addButton(withTitle: "Set")
+        alert.addButton(withTitle: "Cancel")
+
+        let box = NSView(frame: NSRect(x: 0, y: 0, width: 260, height: 106))
+        let colsLabel = NSTextField(labelWithString: "Columns")
+        colsLabel.frame = CGRect(x: 0, y: 84, width: 96, height: 18)
+        let cols = NSTextField(string: String(max(1, doc.customGridColumns)))
+        cols.frame = CGRect(x: 100, y: 82, width: 60, height: 22)
+        let rowsLabel = NSTextField(labelWithString: "Rows")
+        rowsLabel.frame = CGRect(x: 0, y: 56, width: 96, height: 18)
+        let rows = NSTextField(string: String(max(1, doc.customGridRows)))
+        rows.frame = CGRect(x: 100, y: 54, width: 60, height: 22)
+        let half = NSButton(checkboxWithTitle: "Half positions (Serge-style)",
+                            target: nil, action: nil)
+        half.frame = CGRect(x: 0, y: 26, width: 240, height: 18)
+        half.font = NSFont.systemFont(ofSize: 11)
+        half.state = doc.customGridHalfPositions ? .on : .off
+        half.toolTip = "Adds a half row between each pair of rows and half-lane columns "
+            + "between each pair of columns, on the diagonal cross between four main "
+            + "grid points -- Serge's own convention for where LEDs, switches and "
+            + "jacks (never knobs) sit, generalised to this grid's own division count."
+        let finer = NSButton(checkboxWithTitle: "Finer positions (quarter-step)",
+                            target: nil, action: nil)
+        finer.frame = CGRect(x: 0, y: 4, width: 240, height: 18)
+        finer.font = NSFont.systemFont(ofSize: 11)
+        finer.state = doc.customGridFinerPositions ? .on : .off
+        finer.toolTip = "Adds a further pair of snap positions at 1/4 and 3/4 of every "
+            + "cell, on every row and column -- unlike half positions, not tied to any "
+            + "particular row or column kind. For layouts where two components flank a "
+            + "half position instead of sharing it, e.g. a RISE/FALL pair's independent "
+            + "EXPO switches either side of the half-lane column their shared CYCLE "
+            + "switch already occupies."
+        box.addSubview(colsLabel)
+        box.addSubview(cols)
+        box.addSubview(rowsLabel)
+        box.addSubview(rows)
+        box.addSubview(half)
+        box.addSubview(finer)
+        alert.accessoryView = box
+        alert.window.initialFirstResponder = cols
+
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        let n = max(1, Int(cols.stringValue) ?? doc.customGridColumns)
+        let m = max(1, Int(rows.stringValue) ?? doc.customGridRows)
+        let halfOn = half.state == .on
+        let finerOn = finer.state == .on
+        canvas.mutateDocument(name: "Custom Grid") {
+            $0.customGridColumns = n
+            $0.customGridRows = m
+            $0.customGridHalfPositions = halfOn
+            $0.customGridFinerPositions = finerOn
+        }
+        canvas.snapMode = .customGrid
         canvas.snapEnabled = true
         canvas.needsDisplay = true
     }
@@ -759,6 +926,124 @@ final class MainWindowController: NSWindowController, NSMenuItemValidation {
     @objc func pgToggleSnap(_ sender: Any?) {
         canvas.snapEnabled.toggle()
         canvas.needsDisplay = true
+    }
+
+    // MARK: Stamps
+
+    /// Save the selection to the palette.
+    ///
+    /// A house style is a handful of fragments repeated on every panel — a
+    /// brand mark, a wordmark, a jack pair with its labels. They are the
+    /// author's artwork, not the tool's, so the tool keeps them rather than
+    /// shipping approximations of them.
+    @objc func pgAddStamp(_ sender: Any?) {
+        let selected = canvas.document.elements.filter { canvas.selection.contains($0.id) }
+        guard !selected.isEmpty else { return }
+
+        let alert = NSAlert()
+        alert.messageText = "Add \(selected.count) element\(selected.count == 1 ? "" : "s") to the palette"
+        alert.informativeText = """
+        Saved fragments appear under Stamps and drop with fresh identity — no \
+        component identifiers travel with them, so two panels never end up \
+        sharing an enum name.
+        """
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
+        field.stringValue = suggestedStampName(for: selected)
+        field.placeholderString = "Name"
+        alert.accessoryView = field
+        alert.addButton(withTitle: "Save")
+        alert.addButton(withTitle: "Cancel")
+        alert.window.initialFirstResponder = field
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+
+        let name = field.stringValue.trimmingCharacters(in: .whitespaces)
+        guard !name.isEmpty else { return }
+
+        // Overwriting silently would lose work that only exists here.
+        if StampLibrary.stamp(named: StampLibrary.fileName(from: name)) != nil {
+            let confirm = NSAlert()
+            confirm.messageText = "“\(name)” is already in the palette."
+            confirm.informativeText = "Replace it?"
+            confirm.addButton(withTitle: "Replace")
+            confirm.addButton(withTitle: "Cancel")
+            guard confirm.runModal() == .alertFirstButtonReturn else { return }
+        }
+
+        do {
+            let stamp = try StampLibrary.save(selected, as: name)
+            palette.rebuild()
+            if stamp.name != name {
+                let note = NSAlert()
+                note.messageText = "Saved as “\(stamp.name)”"
+                note.informativeText = "The name is also a filename, so a few characters were replaced."
+                note.runModal()
+            }
+        } catch {
+            let fail = NSAlert(error: error)
+            fail.runModal()
+        }
+    }
+
+    /// Text elements name themselves; anything else falls back to its kind.
+    private func suggestedStampName(for elements: [PanelElement]) -> String {
+        if let text = elements.first(where: { $0.kind == .text }) {
+            let s = text.params.text.trimmingCharacters(in: .whitespaces)
+            if !s.isEmpty { return s }
+        }
+        if elements.count == 1 { return elements[0].kind.displayName }
+        return "Stamp"
+    }
+
+    /// Reveal the stamp folder so a fragment can be renamed, deleted or handed
+    /// to someone else — they are plain JSON files, and a palette you cannot
+    /// prune fills up with mistakes.
+    @objc func pgRevealStamps(_ sender: Any?) {
+        let dir = StampLibrary.directory
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        NSWorkspace.shared.open(dir)
+    }
+
+    @objc func pgReloadStamps(_ sender: Any?) {
+        palette.rebuild()
+    }
+
+    /// Open the workflow manual in the default browser.
+    ///
+    /// A separate window rather than a sheet: the manual is something you keep
+    /// beside the app while you work, and the browser already does windows,
+    /// search and printing better than a bundled viewer would.
+    @objc func pgWorkflowManual(_ sender: Any?) {
+        guard let url = Self.manualURL() else {
+            let alert = NSAlert()
+            alert.messageText = "The workflow manual is not installed."
+            alert.informativeText = """
+            Docs/Workflow.html is missing beside the app. It lives in the \
+            PanelGenerator source tree; running “make app” copies it into the \
+            bundle.
+            """
+            alert.runModal()
+            return
+        }
+        NSWorkspace.shared.open(url)
+    }
+
+    /// Bundle first — that is the copy an installed app has — then the source
+    /// tree relative to the executable, which is where it is during development.
+    static func manualURL() -> URL? {
+        if let inBundle = Bundle.main.url(forResource: "Workflow", withExtension: "html") {
+            return inBundle
+        }
+        let exe = Bundle.main.executableURL?.resolvingSymlinksInPath()
+            ?? URL(fileURLWithPath: CommandLine.arguments[0]).resolvingSymlinksInPath()
+        var dir = exe.deletingLastPathComponent()
+        for _ in 0..<6 {
+            let candidate = dir.appendingPathComponent("Docs/Workflow.html")
+            if FileManager.default.fileExists(atPath: candidate.path) { return candidate }
+            let resources = dir.appendingPathComponent("Resources/Workflow.html")
+            if FileManager.default.fileExists(atPath: resources.path) { return resources }
+            dir = dir.deletingLastPathComponent()
+        }
+        return nil
     }
 
     @objc func pgHelp(_ sender: Any?) {
@@ -783,6 +1068,11 @@ final class MainWindowController: NSWindowController, NSMenuItemValidation {
           them at once. The new labels stay selected, so Size in the inspector
           re-sizes the whole set in one go.
         • {ka} {ru} {te} … inside a label's text places an alien glyph inline.
+        • Select part of a panel and Edit ▸ Add Selection to Palette… saves it
+          as a Stamp — a brand mark, a wordmark, a jack pair with its labels.
+          Stamps drop with fresh identity, so no identifier travels with them.
+
+        Help ▸ Workflow Manual opens the full workflow in your browser.
 
         File ▸ Import SVG (⌘I) reads an existing panel — as a faint tracing
         template you draw over, or as editable artwork.
@@ -797,30 +1087,64 @@ final class MainWindowController: NSWindowController, NSMenuItemValidation {
 
     // MARK: Menu validation
 
+    /// Cut/Copy/Paste/Delete: a disabled menu item that still *claims* a key
+    /// equivalent doesn't let the keystroke fall through to whatever has
+    /// focus -- AppKit treats the key as consumed and just beeps. So an
+    /// `isEditingText` guard here (an earlier version of this fix) was the
+    /// wrong shape: it correctly detected real text editing, but disabling
+    /// these items while a field editor was focused made the *beep* follow
+    /// the text cursor instead of curing it -- confirmed live: opening the
+    /// Edit menu by hand re-validates and reads enabled, yet the raw key
+    /// still beeped, because the disabled-item interception happens before
+    /// that revalidation is ever consulted for a real keystroke.
+    ///
+    /// The actual fix is standard Cocoa, not a focus check: these four menu
+    /// items are wired with a *nil* target (AppDelegate.swift) and this
+    /// controller's methods use the exact selector names AppKit's own
+    /// NSText/NSTextView editing already implements (copy(_:), cut(_:),
+    /// paste(_:), delete(_:)) instead of the pg-prefixed names every other
+    /// custom action uses. A nil-targeted action is resolved fresh against
+    /// the current first responder chain on every keystroke: while a field
+    /// editor is first responder, AppKit finds *its* copy(_:) before ever
+    /// reaching this controller (a window's windowController sits later in
+    /// the chain, after its view hierarchy), so plain text editing keeps
+    /// working automatically, validated by NSTextView's own
+    /// enabled-when-something's-selected logic -- nothing here needs to
+    /// know editing is happening at all. Once nothing text-related is
+    /// first responder, resolution falls through to these methods and
+    /// validateMenuItem below, exactly as for every other canvas-selection
+    /// action in this switch.
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         switch menuItem.action {
         case #selector(pgToggleSnap(_:)):
             menuItem.state = canvas.snapEnabled ? .on : .off
         case #selector(pgSetSnapStep(_:)):
-            menuItem.state = Int((canvas.snapStep * 100).rounded()) == menuItem.tag ? .on : .off
+            menuItem.state = (canvas.snapMode == .uniform
+                              && Int((canvas.snapStep * 100).rounded()) == menuItem.tag) ? .on : .off
+        case #selector(pgSetSergeGrid(_:)):
+            menuItem.state = canvas.snapMode == .sergeGrid ? .on : .off
+        case #selector(pgToggleSergeOuterHalfStep(_:)):
+            menuItem.state = canvas.document.sergeGridOuterHalfSteps ? .on : .off
+        case #selector(pgSetCustomGrid(_:)):
+            menuItem.state = canvas.snapMode == .customGrid ? .on : .off
+        case #selector(pgSetThemePreview(_:)):
+            let wantsLight = menuItem.tag == 1
+            menuItem.state = (canvas.themePreview == .light) == wantsLight ? .on : .off
         case #selector(pgDeselectAll(_:)):
             return !canvas.selection.isEmpty
         case #selector(pgUndo(_:)):
             return canvas.edits.canUndo
         case #selector(pgRedo(_:)):
             return canvas.edits.canRedo
-        case #selector(pgDelete(_:)):
-            guard !canvas.selection.isEmpty else { return false }
-            // Only claim plain ⌫ when the canvas has focus, so typing in
-            // inspector text fields is never hijacked.
-            return window?.firstResponder === canvas
-        case #selector(pgCopy(_:)), #selector(pgCut(_:)):
-            // ⌘C / ⌘X keep their text-editing meaning inside inspector fields.
-            return window?.firstResponder === canvas && !canvas.selection.isEmpty
-        case #selector(pgPaste(_:)):
-            return window?.firstResponder === canvas && canvas.canPaste
+        case #selector(delete(_:)):
+            return !canvas.selection.isEmpty
+        case #selector(copy(_:)), #selector(cut(_:)):
+            return !canvas.selection.isEmpty
+        case #selector(paste(_:)):
+            return canvas.canPaste
         case #selector(pgDuplicate(_:)), #selector(pgFront(_:)), #selector(pgBack(_:)),
-             #selector(pgMakeWidget(_:)), #selector(pgLabelSelection(_:)):
+             #selector(pgMakeWidget(_:)), #selector(pgLabelSelection(_:)),
+             #selector(pgAddStamp(_:)):
             return !canvas.selection.isEmpty
         default:
             break

@@ -42,6 +42,12 @@ enum SVGImport {
         var warnings: [String] = []
         /// Panel size in pixels as the file declares it, before rounding to HP.
         var sourceSize: CGSize = .zero
+        /// The document's own name, when the file says what it is: a
+        /// PanelGenerator export's header comment names itself, so
+        /// re-importing one recovers its title instead of landing as
+        /// "Untitled". nil for any other SVG -- the caller falls back to
+        /// the file's own name on disk.
+        var suggestedName: String? = nil
     }
 
     enum Failure: LocalizedError {
@@ -144,6 +150,7 @@ enum SVGImport {
     private static func build(_ reader: Reader, viewBox: CGRect, options: Options) throws -> Outcome {
         var out = Outcome()
         out.warnings = reader.warnings
+        out.suggestedName = reader.suggestedName
 
         let width = Length.parse(reader.widthAttribute)
         let (unitScale, note) = scale(viewBox: viewBox, declaredWidth: width)
@@ -403,12 +410,28 @@ enum SVGImport {
         var shapes: [Shape] = []
         var texts: [TextRun] = []
         var warnings: [String] = []
+        var suggestedName: String? = nil
         private var pendingText: TextRun? = nil
         private var textDepth = 0
 
         private var stack: [State] = [State()]
         private var skipDepth = 0
         private var reported = Set<String>()
+
+        /// Tag of the skip-family root currently open (nil outside one) and
+        /// every descendant tag seen inside it so far. An empty `<defs/>` --
+        /// routine cruft Illustrator/Inkscape both leave behind even when
+        /// nothing in the visible drawing uses it -- collects no descendants
+        /// and is never reported: only a skip root that actually contained
+        /// something is worth a warning at all.
+        private var skipRootTag: String? = nil
+        private var skipRootContents: [String] = []
+        /// Aggregated across the whole document, keyed by skip-root tag, so
+        /// multiple `<defs>` blocks (say) collapse into one summary entry
+        /// instead of one warning per instance.
+        private var skippedSummary: [String: [String]] = [:]
+        private static let skipTags: Set<String> =
+            ["defs", "clippath", "mask", "marker", "pattern", "filter", "symbol"]
 
         private var top: State { stack[stack.count - 1] }
 
@@ -421,15 +444,22 @@ enum SVGImport {
                     qualifiedName: String?, attributes a: [String: String]) {
             let tag = name.contains(":") ? String(name.split(separator: ":").last!) : name
 
-            if skipDepth > 0 { skipDepth += 1; return }
+            if skipDepth > 0 {
+                skipDepth += 1
+                skipRootContents.append(tag)
+                return
+            }
 
             // Definitions are drawn only where they are referenced, and we do
             // not resolve references. Walking into them would scatter a
-            // clipPath's outline across the panel as real artwork.
-            if ["defs", "clippath", "mask", "marker", "pattern", "filter", "symbol"]
-                .contains(tag.lowercased()) {
+            // clipPath's outline across the panel as real artwork. Nothing is
+            // reported here, at the open tag -- that would fire even for an
+            // empty, harmless <defs/>. See didEndElement, where the root
+            // closes and we know whether it actually held anything.
+            if Reader.skipTags.contains(tag.lowercased()) {
                 skipDepth = 1
-                warnOnce(tag, "\(tag) is not supported and was skipped; artwork depending on it will differ.")
+                skipRootTag = tag
+                skipRootContents = []
                 return
             }
 
@@ -551,7 +581,20 @@ enum SVGImport {
 
         func parser(_ parser: XMLParser, didEndElement name: String, namespaceURI: String?,
                     qualifiedName: String?) {
-            if skipDepth > 0 { skipDepth -= 1; return }
+            if skipDepth > 0 {
+                skipDepth -= 1
+                if skipDepth == 0 {
+                    // Closing the skip root itself: file away what it held,
+                    // if anything, for one consolidated warning at the end of
+                    // the document rather than reporting per-instance.
+                    if let root = skipRootTag, !skipRootContents.isEmpty {
+                        skippedSummary[root, default: []].append(contentsOf: skipRootContents)
+                    }
+                    skipRootTag = nil
+                    skipRootContents = []
+                }
+                return
+            }
             let tag = (name.contains(":") ? String(name.split(separator: ":").last!) : name).lowercased()
             if tag == "text" || tag == "tspan", textDepth > 0 {
                 textDepth -= 1
@@ -567,6 +610,45 @@ enum SVGImport {
         func parser(_ parser: XMLParser, foundCharacters string: String) {
             guard skipDepth == 0, pendingText != nil else { return }
             pendingText?.text += string
+        }
+
+        /// One consolidated warning for everything the skip-family logic
+        /// above actually dropped, naming what was found rather than just
+        /// the fact that something was -- e.g. "<defs> (clipPath, circle)"
+        /// tells you at a glance whether it's the harmless case (only ever
+        /// gradients/symbols nothing used) or a real one (an actually-applied
+        /// clipPath/mask/pattern/filter). Nothing is emitted at all if every
+        /// skip-family element in the file turned out to be empty --
+        /// routine, harmless cruft that Illustrator/Inkscape both leave
+        /// behind, not worth a warning.
+        /// PanelGenerator's own export writes `<!-- Generated by PanelGenerator
+        /// — "NAME", 8HP 3U -->` as the file's very first line. Recovering
+        /// NAME from it is what lets re-importing one of our own panels keep
+        /// its title instead of coming back "Untitled" -- XMLParser reports
+        /// comments to the delegate by default, no extra configuration needed.
+        func parser(_ parser: XMLParser, foundComment comment: String) {
+            guard suggestedName == nil,
+                  comment.contains("Generated by PanelGenerator"),
+                  let openQuote = comment.firstIndex(of: "\""),
+                  let closeQuote = comment[comment.index(after: openQuote)...].firstIndex(of: "\"")
+            else { return }
+            let name = String(comment[comment.index(after: openQuote)..<closeQuote])
+            if !name.isEmpty { suggestedName = name }
+        }
+
+        func parserDidEndDocument(_ parser: XMLParser) {
+            guard !skippedSummary.isEmpty else { return }
+            let parts = skippedSummary.keys.sorted().compactMap { root -> String? in
+                guard let contents = skippedSummary[root], !contents.isEmpty else { return nil }
+                let named = Array(Set(contents)).sorted().joined(separator: ", ")
+                return "<\(root)> (\(named))"
+            }
+            guard !parts.isEmpty else { return }
+            warnings.append("Not supported and skipped: \(parts.joined(separator: "; ")) — artwork "
+                + "depending on them will differ. Scripts/flatten-svg.py resolves the common case "
+                + "(unused defs, reused <use>/<symbol> references) for free and reports whatever's "
+                + "left — a genuinely-applied clip, mask, gradient, pattern or filter — as something "
+                + "to fix by hand.")
         }
 
         private func append(tag: String, path: CGPath, state: State,

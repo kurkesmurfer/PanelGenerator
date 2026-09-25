@@ -57,6 +57,17 @@ final class LayerListView: NSView {
         table.dataSource = self
         table.delegate = self
 
+        // Right-click delete, as an alternative to plain Backspace (see
+        // `owns(_:)` below for the Backspace path itself). AppKit selects the
+        // clicked row first if it wasn't already part of the selection, same
+        // as the standard Finder/table convention, so this always acts on
+        // whatever the click actually landed on.
+        let menu = NSMenu()
+        let deleteItem = NSMenuItem(title: "Delete", action: #selector(deleteSelectedRows), keyEquivalent: "")
+        deleteItem.target = self
+        menu.addItem(deleteItem)
+        table.menu = menu
+
         scroll.translatesAutoresizingMaskIntoConstraints = false
         scroll.documentView = table
         scroll.hasVerticalScroller = true
@@ -137,6 +148,10 @@ final class LayerListView: NSView {
         els[i].isHidden = els[i].isHidden == true ? nil : true
         let hiding = els[i].isHidden == true
         cv.apply(elements: els, name: hiding ? "Hide Element" : "Show Element")
+    }
+
+    @objc private func deleteSelectedRows() {
+        canvas?.deleteSelection()
     }
 
     /// `delta` is in list terms: +1 moves the element one row up the list,
