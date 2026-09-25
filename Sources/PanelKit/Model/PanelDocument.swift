@@ -48,16 +48,9 @@ package struct PanelDocument: Codable, Hashable {
     /// interior half-row ladder alone can't reach. Opt-in because it's not
     /// part of Serge's own documented grid.
     package var sergeGridOuterHalfSteps: Bool = false
-    // #1D1713 -- confirmed against the real SpaceTime (Kurkesmurfer) plugin's
-    // own shipped panel SVGs (~/Development/SpaceTime/vcv/res/*.svg): every
-    // one of them, without exception, paints its background rect exactly
-    // this value. The old #17171E here was never checked against the real
-    // product -- an invented placeholder that happened to look plausible.
-    // Also, not coincidentally, the same dark background the Serge track
-    // uses (Panel-language.md's own reference), so the two design languages
-    // share one true background colour rather than two that merely look
-    // similar.
-    package var background: ColorSpec = .hex("#1D1713")
+    /// Panel background (dark / default variant). Defaults to the
+    /// Kurkesmurfer panel colour, which Serge's dark panels share.
+    package var background: ColorSpec = Kurkesmurfer.background
     /// Theme facility: a panel is theme-aware once this is set to something
     /// other than nil -- that's the "paper" colour for the light variant
     /// (`background` itself is always the dark/default paper, so an

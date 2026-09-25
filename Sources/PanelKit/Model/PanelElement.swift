@@ -12,7 +12,7 @@ package struct PanelElement: Codable, Hashable, Identifiable {
     package var groupID: UUID? = nil             // elements sharing a groupID act as one
     package var x: CGFloat = 0, y: CGFloat = 0, w: CGFloat = 30, h: CGFloat = 30
     package var rotation: CGFloat = 0            // degrees clockwise
-    package var fill: ColorSpec = .lcars("Orange")
+    package var fill: ColorSpec = .swatch("Orange")
     /// Theme facility: when true, this element ignores its own `fill` and
     /// draws in the document's active ink colour instead (`PanelDocument.
     /// ink(for:)`) -- e.g. a text label that should read white on a dark
@@ -103,96 +103,13 @@ package struct PanelElement: Codable, Hashable, Identifiable {
 
     /// Apply a palette preset. The palette carries these as a suffix on the
     /// pasteboard (`kind#preset`), which is how one element kind appears as
-    /// several entries without multiplying ElementKind — and the same hook the
-    /// symbol grid already used.
+    /// several entries without multiplying ElementKind. Symbols take their id
+    /// as the preset; everything else is owned by a design language (Styles/).
     package mutating func applyPreset(_ id: String) {
-        switch kind {
-        case .symbol:
+        if kind == .symbol {
             applySymbol(id)
-        case .knobLarge, .knobMedium, .knobSmall:
-            switch id {
-            case "ring":  params.knobStyle = 2
-            case "plain": params.knobStyle = 0
-            default: break
-            }
-        case .box:
-            // Real values, not guesses: SpaceTime's own panel SVGs (e.g.
-            // ~/Development/SpaceTime/vcv/res/Program.svg) draw their group
-            // boxes as `fill="none" stroke="#50463c" stroke-width="0.3"
-            // rx="1.8"` (all mm) -- that is the Kurkesmurfer-thin values
-            // below, verbatim. Serge's hardware boxes read roughly twice as
-            // thick per Peet; the colour/corner radius are carried over
-            // unconfirmed for Serge since only the thickness ratio was
-            // given.
-            let brownBlack = ColorSpec(r: Double(0x50) / 255, g: Double(0x46) / 255, b: Double(0x3C) / 255)
-            let cornerMM: CGFloat = 1.8
-            let cornerPx = cornerMM / PanelMetrics.mmPerPixel
-            func setCorners(_ r: CGFloat) {
-                params.cornerTL = r; params.cornerTR = r
-                params.cornerBR = r; params.cornerBL = r
-            }
-            switch id {
-            case "delineationKM":
-                fill = ColorSpec(r: 0, g: 0, b: 0, a: 0)
-                stroke = { var c = brownBlack; c.a = 0.5; return c }()
-                strokeWidth = 0.3 / PanelMetrics.mmPerPixel
-                setCorners(cornerPx)
-            case "delineationSerge":
-                fill = ColorSpec(r: 0, g: 0, b: 0, a: 0)
-                stroke = brownBlack
-                strokeWidth = 0.6 / PanelMetrics.mmPerPixel
-                setCorners(cornerPx)
-            case "bracketSerge":
-                // A starting template for the GTO-style channel bracket --
-                // a tall box with a demo notch on its right edge, sized to
-                // wrap around a neighbouring box. Every number here is a
-                // reasonable starting point, not a rule; drag the notch
-                // sliders in the Inspector to fit the actual neighbour.
-                w = 60; h = 110
-                fill = ColorSpec(r: 0, g: 0, b: 0, a: 0)
-                stroke = brownBlack
-                strokeWidth = 0.6 / PanelMetrics.mmPerPixel
-                setCorners(cornerPx)
-                params.notchEdge = 2   // right
-                params.notchStart = h * 0.4
-                params.notchLength = h * 0.2
-                params.notchDepth = w * 0.25
-                params.notchRadius = cornerPx
-            case "bracketSergeInverted":
-                // The other direction: a bite taken OUT of this box so a
-                // bigger neighbour can overlap into what would otherwise be
-                // this box's own territory, rather than this box reaching
-                // out to wrap a smaller one.
-                w = 90; h = 110
-                fill = ColorSpec(r: 0, g: 0, b: 0, a: 0)
-                stroke = brownBlack
-                strokeWidth = 0.6 / PanelMetrics.mmPerPixel
-                setCorners(cornerPx)
-                params.notchEdge = 2   // right
-                params.notchStart = h * 0.4
-                params.notchLength = h * 0.2
-                params.notchDepth = w * 0.3
-                params.notchRadius = cornerPx
-                params.notchInvert = true
-            default: break
-            }
-        case .line:
-            switch id {
-            case "connectorSerge":
-                // Serge's own convention: a thin, gently bowed line tying a
-                // knob to the jack it belongs to (e.g. GTO's CYCLE knob to
-                // its IN jack) -- same stroke weight as the Serge
-                // delineation box, since both read as the hardware's own
-                // line work rather than a UI accent.
-                let brownBlack = ColorSpec(r: Double(0x50) / 255, g: Double(0x46) / 255, b: Double(0x3C) / 255)
-                w = 26; h = 56
-                stroke = brownBlack
-                strokeWidth = 0.6 / PanelMetrics.mmPerPixel
-                params.lineBow = 10
-            default: break
-            }
-        default:
-            break
+        } else {
+            DesignLanguage.applyPreset(id, to: &self)
         }
     }
 

@@ -514,7 +514,7 @@ final class InspectorView: NSView {
             self.canvas?.mutateSelection("Follows Background") { $0.followsPaper = (b.state == .on) }
         }
 
-        // LCARS swatch bank
+        // Swatch bank: every design language's named colours (Styles/).
         addSwatchBank(current: el.fill)
 
         label("Stroke")
@@ -548,7 +548,7 @@ final class InspectorView: NSView {
         let swatchesPerRow = 10
         let cell: CGFloat = 17
         let spacing: CGFloat = 3
-        for (i, preset) in ColorSpec.lcarsPresets.enumerated() {
+        for (i, swatch) in DesignLanguage.allSwatches.enumerated() {
             let row = i / swatchesPerRow
             let col = i % swatchesPerRow
             let b = NSButton(frame: CGRect(x: pad + labelW + CGFloat(col) * (cell + spacing),
@@ -557,13 +557,13 @@ final class InspectorView: NSView {
             b.title = ""
             b.isBordered = false
             b.wantsLayer = true
-            b.layer?.backgroundColor = preset.1.nsColor.cgColor
+            b.layer?.backgroundColor = swatch.color.nsColor.cgColor
             b.layer?.cornerRadius = 3.5
-            b.layer?.borderWidth = current == preset.1 ? 1.6 : 0.6
+            b.layer?.borderWidth = current == swatch.color ? 1.6 : 0.6
             b.layer?.borderColor = NSColor.white.withAlphaComponent(0.9).cgColor
-            b.toolTip = preset.0
+            b.toolTip = swatch.name
             let idx = handlers.count
-            let color = preset.1
+            let color = swatch.color
             let weakCanvas = canvas
             b.target = self
             b.action = #selector(controlAction(_:))
@@ -572,7 +572,7 @@ final class InspectorView: NSView {
                 weakCanvas?.mutateSelection("Fill") { $0.fill = color }
             }
         }
-        let rows = (ColorSpec.lcarsPresets.count + swatchesPerRow - 1) / swatchesPerRow
+        let rows = (DesignLanguage.allSwatches.count + swatchesPerRow - 1) / swatchesPerRow
         cursorY += CGFloat(rows) * (cell + spacing) + gap
     }
 

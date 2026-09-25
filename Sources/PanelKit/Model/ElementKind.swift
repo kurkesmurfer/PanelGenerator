@@ -154,31 +154,31 @@ package enum ElementKind: String, Codable, CaseIterable {
         case .jack:
             e.w = 22; e.h = 22; e.fill = .hex("#9AA0AB")
         case .knobLarge:
-            e.w = 30; e.h = 30; e.fill = .lcars("Orange")
+            e.w = 30; e.h = 30; e.fill = .swatch("Orange")
         case .knobMedium:
-            e.w = 25; e.h = 25; e.fill = .lcars("Orange")
+            e.w = 25; e.h = 25; e.fill = .swatch("Orange")
         case .knobSmall:
-            e.w = 19; e.h = 19; e.fill = .lcars("Sky")
+            e.w = 19; e.h = 19; e.fill = .swatch("Sky")
         case .faderVertical:
-            e.w = 17; e.h = 64; e.fill = .lcars("Lavender")
+            e.w = 17; e.h = 64; e.fill = .swatch("Lavender")
         case .faderHorizontal:
-            e.w = 64; e.h = 17; e.fill = .lcars("Lavender")
+            e.w = 64; e.h = 17; e.fill = .swatch("Lavender")
         case .led:
-            e.w = 8; e.h = 8; e.fill = .lcars("LED Red")
+            e.w = 8; e.h = 8; e.fill = .swatch("LED Red")
         case .pushButton:
-            e.w = 14; e.h = 14; e.fill = .lcars("Alert Red")
+            e.w = 14; e.h = 14; e.fill = .swatch("Alert Red")
         case .buttonGroup:
-            e.w = 24; e.h = 88; e.fill = .lcars("Orange")
+            e.w = 24; e.h = 88; e.fill = .swatch("Orange")
         case .screw:
             e.w = 11; e.h = 11; e.fill = .hex("#B9BEC8")
         case .box:
-            e.w = 90; e.h = 34; e.fill = .lcars("Orange")
+            e.w = 90; e.h = 34; e.fill = .swatch("Orange")
             e.params.cornerTL = 10; e.params.cornerTR = 10
             e.params.cornerBR = 10; e.params.cornerBL = 10
         case .ellipse:
-            e.w = 56; e.h = 38; e.fill = .lcars("Lavender")
+            e.w = 56; e.h = 38; e.fill = .swatch("Lavender")
         case .triangle:
-            e.w = 46; e.h = 40; e.fill = .lcars("Gold")
+            e.w = 46; e.h = 40; e.fill = .swatch("Gold")
         case .line:
             // Straight by default (bow 0): runs down the frame's vertical
             // centre-line, top-mid to bottom-mid -- rotate for a horizontal
@@ -186,18 +186,18 @@ package enum ElementKind: String, Codable, CaseIterable {
             // since a plain connector reads as wiring, not a decorative accent.
             e.w = 20; e.h = 60; e.stroke = .hex("#9AA0AB"); e.strokeWidth = 1.2
         case .elbow:
-            e.w = 96; e.h = 96; e.fill = .lcars("Vanilla")
+            e.w = 96; e.h = 96; e.fill = .swatch("Vanilla")
             e.params.thickness = 16; e.params.innerRadius = 8
             e.params.armH = 80; e.params.armV = 80
         case .swirl:
-            e.w = 90; e.h = 150; e.fill = .lcars("Vanilla")
+            e.w = 90; e.h = 150; e.fill = .swatch("Vanilla")
             e.params.thickness = 16; e.params.innerRadius = 8
             e.params.armH = 80; e.params.armH2 = 80; e.params.armV = 40
         case .ringSector:
-            e.w = 84; e.h = 84; e.fill = .lcars("Sky")
+            e.w = 84; e.h = 84; e.fill = .swatch("Sky")
             e.params.thickness = 14; e.params.startAngle = -90; e.params.sweepAngle = 100
         case .symbol:
-            e.w = 44; e.h = 30; e.fill = .lcars("Sky")
+            e.w = 44; e.h = 30; e.fill = .swatch("Sky")
             e.params.symbol = "sine"
             e.params.weight = SymbolCatalogue.defaultWeight
             let d = SymbolCatalogue.spec("sine").defaults
