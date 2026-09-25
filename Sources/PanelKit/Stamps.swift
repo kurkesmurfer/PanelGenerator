@@ -10,34 +10,34 @@ import CoreGraphics
 ///
 /// Stamps live outside any document because they belong to the person, not to
 /// the panel: `~/Library/Application Support/PanelGenerator/Stamps`.
-enum StampLibrary {
+package enum StampLibrary {
 
-    struct Stamp: Identifiable {
-        var id: String { name }
-        var name: String
-        var url: URL
-        var elements: [PanelElement]
+    package struct Stamp: Identifiable {
+        package var id: String { name }
+        package var name: String
+        package var url: URL
+        package var elements: [PanelElement]
         /// The palette subsection this stamp belongs in -- the name of the
         /// subfolder it lives under in the library, or nil for the library's
         /// own root ("Stamps" itself). Set by `list()` from where the file
         /// was found; never stored inside the `.pgstamp` file.
-        var category: String? = nil
+        package var category: String? = nil
 
         /// What the stamp occupies, so the palette can preview it and the
         /// canvas can centre it on the drop point.
-        var bounds: CGRect {
+        package var bounds: CGRect {
             guard let first = elements.first else { return .zero }
             return elements.dropFirst().reduce(first.frame) { $0.union($1.frame) }
         }
     }
 
-    static let fileExtension = "pgstamp"
+    package static let fileExtension = "pgstamp"
 
     /// Redirects the library, for the headless self-test — which must not
     /// write into, or read, the person's own palette.
-    static var directoryOverride: URL?
+    package static var directoryOverride: URL?
 
-    static var directory: URL {
+    package static var directory: URL {
         if let directoryOverride { return directoryOverride }
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? URL(fileURLWithPath: NSTemporaryDirectory())
@@ -47,7 +47,7 @@ enum StampLibrary {
     /// Every stamp in the library: the root ("Stamps" itself, `category ==
     /// nil`) plus one level of subfolders, each subfolder its own palette
     /// section named after itself.
-    static func list() -> [Stamp] {
+    package static func list() -> [Stamp] {
         let dir = directory
         var results = stamps(in: dir, category: nil)
         let subdirs = (try? FileManager.default.contentsOfDirectory(
@@ -80,18 +80,18 @@ enum StampLibrary {
 
     /// Distinct populated category folders, alphabetically -- what the
     /// palette renders as extra sections alongside the general "Stamps" one.
-    static func categories() -> [String] {
+    package static func categories() -> [String] {
         Array(Set(list().compactMap { $0.category })).sorted()
     }
 
-    static func stamp(named name: String) -> Stamp? {
+    package static func stamp(named name: String) -> Stamp? {
         list().first { $0.name == name }
     }
 
     /// Save a selection. Positions are normalised to the fragment's own origin,
     /// so a stamp drops where you put it rather than where it was drawn.
     @discardableResult
-    static func save(_ elements: [PanelElement], as rawName: String) throws -> Stamp {
+    package static func save(_ elements: [PanelElement], as rawName: String) throws -> Stamp {
         let name = fileName(from: rawName)
         guard !elements.isEmpty else { throw Failure.empty }
 
@@ -124,7 +124,7 @@ enum StampLibrary {
 
     /// A copy ready to insert, with fresh identity and one shared group so the
     /// whole stamp moves as a piece.
-    static func instance(of stamp: Stamp, at point: CGPoint) -> [PanelElement] {
+    package static func instance(of stamp: Stamp, at point: CGPoint) -> [PanelElement] {
         let bounds = stamp.bounds
         let group = stamp.elements.count > 1 ? UUID() : nil
         let origin = CGPoint(x: point.x - bounds.width / 2, y: point.y - bounds.height / 2)
@@ -147,7 +147,7 @@ enum StampLibrary {
     /// inside the app. Delete one and it stays deleted for the session; the
     /// marker file below keeps it deleted across launches.
     @discardableResult
-    static func installSeeds() -> [String] {
+    package static func installSeeds() -> [String] {
         guard let seeds = seedDirectory() else { return [] }
         let installed = directory.appendingPathComponent(".seeded")
         let already = Set((try? String(contentsOf: installed, encoding: .utf8))?
@@ -214,7 +214,7 @@ enum StampLibrary {
 
     /// Sanitised so the name is both a filename and something recognisable in
     /// the palette.
-    static func fileName(from raw: String) -> String {
+    package static func fileName(from raw: String) -> String {
         let mapped = raw.map { ch -> Character in
             ch.isLetter || ch.isNumber || ch == "-" || ch == "_" || ch == " " ? ch : "-"
         }
@@ -224,8 +224,8 @@ enum StampLibrary {
         return out.isEmpty ? "Stamp" : out
     }
 
-    enum Failure: LocalizedError {
+    package enum Failure: LocalizedError {
         case empty
-        var errorDescription: String? { "There is nothing selected to save." }
+        package var errorDescription: String? { "There is nothing selected to save." }
     }
 }

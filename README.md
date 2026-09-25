@@ -51,6 +51,7 @@ Requires macOS 13+ and Xcode command line tools.
 ```bash
 make run        # build debug + launch the editor
 make app        # build release + assemble PanelGenerator.app, then: open PanelGenerator.app
+make test       # unit tests (swift test)
 make selftest   # headless render test → Docs/pg_demo.{svg,png}
 ```
 
@@ -131,10 +132,17 @@ Renderer — parts(for:) -> [ShapePart(CGPath, fill, stroke)]   ← single sourc
         └── SVGExporter       CGPath → <path d="…"> walker (PathSVG)
 ```
 
-Source layout: `Sources/PanelGenerator/` — `Model.swift`, `Geometry.swift`,
-`Renderer.swift`, `PathSVG.swift`, `Exporters.swift`, `CanvasView.swift`,
-`PaletteView.swift`, `InspectorView.swift`, `MainWindowController.swift`,
-`AppDelegate.swift`, `Selftest.swift`, `main.swift`.
+Source layout — two targets (see `Package.swift`):
+
+- `Sources/PanelKit/` — library: document model, geometry and snap grids,
+  renderer, SVG/C++ import, SVG/PNG export, code generation, compare, emit,
+  stamps, symbol catalogue, and the `--selftest` check groups. No windows.
+- `Sources/PanelGenerator/` — the AppKit editor (window, canvas, inspector,
+  palette, layer list) and the command-line front end in `main.swift`.
+- `Tests/PanelKitTests/` — XCTest; `make test` or `swift test`.
+
+Cross-target API uses Swift's `package` access level, so nothing is exposed
+outside this package.
 
 ## Status & roadmap
 
