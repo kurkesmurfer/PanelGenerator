@@ -229,3 +229,28 @@ package enum StampLibrary {
         package var errorDescription: String? { "There is nothing selected to save." }
     }
 }
+
+// MARK: - Stamps that need measuring
+
+extension StampLibrary.Stamp {
+    /// A text element saved with a zero-size frame means "measure me here".
+    ///
+    /// A stamp that ships with the app cannot know the text metrics of the
+    /// machine it will be drawn on — the same string is a different width in a
+    /// different system font — so the wordmark is stored as text plus a size
+    /// and given its box on arrival. Nothing the person saves themselves is
+    /// affected: `save` always records a real frame.
+    package var resolved: StampLibrary.Stamp {
+        guard elements.contains(where: { $0.kind == .text && ($0.w <= 0 || $0.h <= 0) }) else {
+            return self
+        }
+        var out = self
+        for i in out.elements.indices where out.elements[i].kind == .text {
+            guard out.elements[i].w <= 0 || out.elements[i].h <= 0 else { continue }
+            let size = Renderer.textSize(for: out.elements[i])
+            out.elements[i].w = size.width
+            out.elements[i].h = size.height
+        }
+        return out
+    }
+}
