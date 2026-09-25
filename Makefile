@@ -1,4 +1,4 @@
-.PHONY: build release run app test selftest emit compare demo clean
+.PHONY: build release run app test identical selftest emit compare demo clean
 
 build:
 	swift build
@@ -15,6 +15,10 @@ app: release
 # Unit tests for PanelKit (includes every --selftest check group, one case each).
 test:
 	swift test
+
+# Refactor guard: outputs of every CLI verb byte-identical to BASE (default main).
+identical:
+	bash Scripts/check-identical.sh $(BASE)
 
 selftest: build
 	.build/debug/PanelGenerator --selftest Docs

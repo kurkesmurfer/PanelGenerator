@@ -1,5 +1,6 @@
 import AppKit
 import PanelKit
+import PanelCanvas
 
 // MARK: - Swatches
 //

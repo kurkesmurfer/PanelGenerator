@@ -15,9 +15,17 @@ let package = Package(
             name: "PanelKit",
             path: "Sources/PanelKit"
         ),
+        // The editing surface. Its gesture, handle and snapping state is
+        // internal to this module; the rest of the editor sees only the
+        // `package` API.
+        .target(
+            name: "PanelCanvas",
+            dependencies: ["PanelKit"],
+            path: "Sources/PanelCanvas"
+        ),
         .executableTarget(
             name: "PanelGenerator",
-            dependencies: ["PanelKit"],
+            dependencies: ["PanelKit", "PanelCanvas"],
             path: "Sources/PanelGenerator"
         ),
         .testTarget(

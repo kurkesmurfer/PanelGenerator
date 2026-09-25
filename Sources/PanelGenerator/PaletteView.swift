@@ -1,5 +1,6 @@
 import AppKit
 import PanelKit
+import PanelCanvas
 
 /// Sidebar repository of primitives, shapes and symbols. Items drag onto the
 /// canvas; double-click inserts at the panel centre.
@@ -149,42 +150,11 @@ final class PaletteView: NSView {
         content.subviews.forEach { $0.removeFromSuperview() }
         cursorY = 12
 
-        items("Primitives", [
-            (.jack, nil, "Jack (3.5 mm)"),
-            (.knobLarge, nil, "Knob · Large"),
-            (.knobMedium, nil, "Knob · Medium"),
-            (.knobSmall, nil, "Knob · Small"),
-            (.faderVertical, nil, "Fader · Vertical"),
-            (.faderHorizontal, nil, "Fader · Horizontal"),
-            (.led, nil, "LED"),
-            (.screw, nil, "Screw"),
-            (.pushButton, nil, "Push Button"),
-            (.buttonGroup, nil, "Button Group"),
-        ])
-
-        // Same three knobs with the position ring switched on. Separate entries
-        // rather than a changed default: the plain ones stay what Rack draws,
-        // so a panel built from them still matches its stock widgets.
-        items("Knobs · Position Ring", [
-            (.knobLarge, "ring", "Ring Knob · Large"),
-            (.knobMedium, "ring", "Ring Knob · Medium"),
-            (.knobSmall, "ring", "Ring Knob · Small"),
-        ])
-
-        items("Shapes · Backdrop", [
-            (.box, nil, "Box / Rounded Rect"),
-            (.box, "delineationKM", "Delineation · Kurkesmurfer"),
-            (.box, "delineationSerge", "Delineation · Serge"),
-            (.box, "bracketSerge", "Bracket · Serge (notch demo)"),
-            (.box, "bracketSergeInverted", "Bracket · Serge (inverted notch demo)"),
-            (.ellipse, nil, "Ellipse"),
-            (.triangle, nil, "Triangle"),
-            (.line, nil, "Line"),
-            (.line, "connectorSerge", "Connector · Serge (knob-to-jack)"),
-            (.elbow, nil, "LCARS Elbow"),
-            (.swirl, nil, "LCARS Swirl"),
-            (.ringSector, nil, "Ring Sector"),
-        ])
+        // Generic primitives and shapes first, then one section per design
+        // language (Styles/ in PanelKit).
+        for section in DesignLanguage.paletteSections {
+            items(section.title, section.entries.map { ($0.kind, $0.preset, $0.title) })
+        }
 
         symbolGrid("Symbols")
 

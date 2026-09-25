@@ -132,14 +132,34 @@ Renderer — parts(for:) -> [ShapePart(CGPath, fill, stroke)]   ← single sourc
         └── SVGExporter       CGPath → <path d="…"> walker (PathSVG)
 ```
 
-Source layout — two targets (see `Package.swift`):
+Source layout — three targets (see `Package.swift`):
 
-- `Sources/PanelKit/` — library: document model, geometry and snap grids,
-  renderer, SVG/C++ import, SVG/PNG export, code generation, compare, emit,
-  stamps, symbol catalogue, and the `--selftest` check groups. No windows.
-- `Sources/PanelGenerator/` — the AppKit editor (window, canvas, inspector,
-  palette, layer list) and the command-line front end in `main.swift`.
-- `Tests/PanelKitTests/` — XCTest; `make test` or `swift test`.
+```
+Sources/PanelKit/            library: everything that does not need a window
+  Model/                     ColorSpec, formats, component binding, ElementKind,
+                             ElementParams, PanelElement, PanelDocument (+Fitting,
+                             +Labels, +Widgets, +Editing, +Persistence), Decoding
+  Render/                    Renderer: drawing, path builders, parts, text outlines
+  Styles/                    one file per design language: DesignLanguage (registry,
+                             swatch bank, presets), Generic, Kurkesmurfer,
+                             Serge (+Grid), LCARS (+Paths)
+  Symbols/                   symbol catalogue + one file per category
+  Geometry, PathSVG, SVGPath, SVGImport, CppImport, CodeGen, Compare, Emit,
+  Exporters, Stamps, Selftest
+Sources/PanelCanvas/         the editing surface, its own module so gesture,
+  CanvasView(+Clipboard,     handle and snapping state stay internal; the editor
+  +Commands, +Drawing,       sees only its `package` API
+  +Handles, +Mouse, +DragDrop)
+Sources/PanelGenerator/      AppKit editor + command-line front end (main.swift)
+  InspectorView(+Panel, +Element, +Params, +Component, +Prompts, +Layers)
+  MainWindowController(+File, +Import, +Export, +Edit, +View, +Stamps, +Menus)
+  PaletteView, LayerListView, SymbolPicker, AppDelegate
+Tests/PanelKitTests/         XCTest — `make test` or `swift test`
+```
+
+A new house style is one file in `Styles/` plus one line in
+`DesignLanguage.all`: its swatches join the inspector's bank and its palette
+section appears in the repo.
 
 Cross-target API uses Swift's `package` access level, so nothing is exposed
 outside this package.
