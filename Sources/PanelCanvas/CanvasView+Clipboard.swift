@@ -24,18 +24,18 @@ extension CanvasView {
     }
 
 
-    func copySelection() {
+    package func copySelection() {
         let els = document.elements.filter { selection.contains($0.id) }
         guard !els.isEmpty else { return }
         clipboardElements = els
     }
 
-    func cutSelection() {
+    package func cutSelection() {
         copySelection()
         deleteSelection()
     }
 
-    func paste() {
+    package func paste() {
         let els = clipboardElements
         guard !els.isEmpty else { return }
         var pasted: [PanelElement] = []
@@ -52,7 +52,7 @@ extension CanvasView {
         setSelection(Set(remapped.map(\.id)))
     }
 
-    func insertAtCenter(_ kind: ElementKind, preset: String? = nil) {
+    package func insertAtCenter(_ kind: ElementKind, preset: String? = nil) {
         var el = kind.defaultElement(at: .zero)
         if let preset { el.applyPreset(preset) }
         let panelCenter = CGPoint(x: document.pixelSize.width / 2, y: document.pixelSize.height / 2)
@@ -92,7 +92,7 @@ extension CanvasView {
     }
 
     @discardableResult
-    func insertStampAtCenter(named name: String) -> Bool {
+    package func insertStampAtCenter(named name: String) -> Bool {
         insertStamp(named: name,
                     at: CGPoint(x: document.pixelSize.width / 2,
                                 y: document.pixelSize.height / 2))

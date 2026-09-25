@@ -1,5 +1,6 @@
 import AppKit
 import PanelKit
+import PanelCanvas
 
 // Inspector: the selected element (frame, fill, stroke, swatches) and multi-selection.
 

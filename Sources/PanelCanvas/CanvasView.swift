@@ -4,13 +4,13 @@ import PanelKit
 
 /// The panel editing surface. Owns the live document during an editing session,
 /// the undo stack and the selection; reports changes back via closures.
-final class CanvasView: NSView {
+package final class CanvasView: NSView {
 
     static let margin: CGFloat = 48
 
     // MARK: State
 
-    var document = PanelDocument() {
+    package var document = PanelDocument() {
         didSet {
             resizeToFitDocument()
             needsDisplay = true
@@ -18,14 +18,14 @@ final class CanvasView: NSView {
         }
     }
 
-    let edits = UndoManager()
+    package let edits = UndoManager()
 
-    var selection: Set<UUID> = []
-    var snapEnabled = true
+    package internal(set) var selection: Set<UUID> = []
+    package var snapEnabled = true
     /// Grid step in panel pixels. 15 px is 1 HP (5.08 mm); the default is a
     /// quarter of that, fine enough not to fight hand placement but still a
     /// grid. Change it in View ▸ Snap Step.
-    var snapStep: CGFloat = PanelMetrics.pixelsPerHP / 4
+    package var snapStep: CGFloat = PanelMetrics.pixelsPerHP / 4
 
     /// Which snap system placement/movement uses. `.sergeGrid` is the
     /// default: it snaps element *centres* to Serge's non-uniform row/column
@@ -35,31 +35,31 @@ final class CanvasView: NSView {
     /// `.uniform` is the older single-step grid, still used verbatim for
     /// resize handles and arrow-key nudging in all three modes, since "snap
     /// to grid lines" isn't a coherent idea for a resize.
-    enum SnapMode { case uniform, sergeGrid, customGrid }
-    var snapMode: SnapMode = .sergeGrid
+    package enum SnapMode { case uniform, sergeGrid, customGrid }
+    package var snapMode: SnapMode = .sergeGrid
     /// Which theme variant the canvas currently draws -- editing preview
     /// only (View ▸ Theme); never persisted to the document itself. Defaults
     /// to `.dark`, matching every document's own untouched colours, so this
     /// has zero effect on a panel that hasn't opted into theming.
-    var themePreview: ThemeVariant = .dark
-    var zoom: CGFloat = 1 {
+    package var themePreview: ThemeVariant = .dark
+    package var zoom: CGFloat = 1 {
         didSet { zoom = min(max(zoom, 0.25), 8); resizeToFitDocument(); needsDisplay = true }
     }
 
-    var onChange: (() -> Void)?
-    var onSelectionChange: (() -> Void)?
+    package var onChange: (() -> Void)?
+    package var onSelectionChange: (() -> Void)?
 
     private var suppressNotifications = false
     var suppressUndoRegistration = false
     var lastUndoName: String?
     private var lastUndoTime = Date.distantPast
 
-    enum Paste {
-        static let elementType = NSPasteboard.PasteboardType("dev.peet.panelgenerator.element-kind")
+    package enum Paste {
+        package static let elementType = NSPasteboard.PasteboardType("dev.peet.panelgenerator.element-kind")
         /// Marks a payload as a saved fragment rather than an element kind.
         /// Kinds are raw values of `ElementKind`, none of which contain a
         /// colon, so the two never collide.
-        static let stampPrefix = "stamp:"
+        package static let stampPrefix = "stamp:"
     }
 
     // MARK: Init / metrics
@@ -77,8 +77,8 @@ final class CanvasView: NSView {
         resizeToFitDocument()
     }
 
-    override var isFlipped: Bool { true }
-    override var acceptsFirstResponder: Bool { true }
+    package override var isFlipped: Bool { true }
+    package override var acceptsFirstResponder: Bool { true }
 
     /// Where the panel's top-left corner sits inside the canvas.
     ///
@@ -107,7 +107,7 @@ final class CanvasView: NSView {
         }
     }
 
-    override func viewDidMoveToSuperview() {
+    package override func viewDidMoveToSuperview() {
         super.viewDidMoveToSuperview()
         NotificationCenter.default.removeObserver(self, name: NSView.frameDidChangeNotification, object: nil)
         if let clip = enclosingScrollView?.contentView {
@@ -144,8 +144,8 @@ final class CanvasView: NSView {
 
     // MARK: Mutation core
 
-    func beginLoad() { suppressNotifications = true }
-    func endLoad() {
+    package func beginLoad() { suppressNotifications = true }
+    package func endLoad() {
         suppressNotifications = false
         selection = []
         edits.removeAllActions()
@@ -159,7 +159,7 @@ final class CanvasView: NSView {
     /// this covers everything else (name, HP, format, background). Both
     /// coalesce on `name` within 0.6 s, so a continuously-firing control
     /// (colour well, slider) collapses into one undo step.
-    func applyDocument(_ newDocument: PanelDocument, name: String) {
+    package func applyDocument(_ newDocument: PanelDocument, name: String) {
         if !suppressUndoRegistration {
             let now = Date()
             let coalesce = (name == lastUndoName && now.timeIntervalSince(lastUndoTime) < 0.6)
@@ -178,7 +178,7 @@ final class CanvasView: NSView {
         needsDisplay = true
     }
 
-    func apply(elements newElements: [PanelElement], name: String) {
+    package func apply(elements newElements: [PanelElement], name: String) {
         if !suppressUndoRegistration {
             let now = Date()
             let coalesce = (name == lastUndoName && now.timeIntervalSince(lastUndoTime) < 0.6)
@@ -196,7 +196,7 @@ final class CanvasView: NSView {
         notifyChange()
     }
 
-    func mutateSelection(_ name: String, _ transform: (inout PanelElement) -> Void) {
+    package func mutateSelection(_ name: String, _ transform: (inout PanelElement) -> Void) {
         var els = document.elements
         for i in els.indices where selection.contains(els[i].id) {
             transform(&els[i])
@@ -204,22 +204,22 @@ final class CanvasView: NSView {
         apply(elements: els, name: name)
     }
 
-    func insert(_ newElements: [PanelElement], name: String) {
+    package func insert(_ newElements: [PanelElement], name: String) {
         apply(elements: document.elements + newElements, name: name)
         setSelection(Set(newElements.map(\.id)))
     }
 
     // Stored state for CanvasView+Clipboard (extensions cannot hold stored properties).
     static let pasteType = NSPasteboard.PasteboardType("dev.peet.PanelGenerator.elements")
-    var canPaste: Bool { !clipboardElements.isEmpty }
+    package var canPaste: Bool { !clipboardElements.isEmpty }
 
     // Stored state for CanvasView+Commands (extensions cannot hold stored properties).
     /// Stand-in element for a homogeneous multi-selection; nil for a mixed one.
-    var uniformSelection: PanelElement? { document.uniformSelection(ids: selection) }
+    package var uniformSelection: PanelElement? { document.uniformSelection(ids: selection) }
 
     // MARK: Keyboard
 
-    override func keyDown(with event: NSEvent) {
+    package override func keyDown(with event: NSEvent) {
         let chars = event.charactersIgnoringModifiers ?? ""
 
         // Escape clears the selection wherever the pointer happens to be.
@@ -270,7 +270,7 @@ final class CanvasView: NSView {
     /// *shape* rather than its coordinates — the layer list — can skip work
     /// while this is set: a drag moves elements, it does not rename or reorder
     /// them, and `onChange` fires from the document's didSet on every frame.
-    var isGestureActive = false
+    package internal(set) var isGestureActive = false
     var downPanelPoint = CGPoint.zero
     var didDrag = false
     let minSize: CGFloat = 6

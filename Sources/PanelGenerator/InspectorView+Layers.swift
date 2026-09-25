@@ -1,5 +1,6 @@
 import AppKit
 import PanelKit
+import PanelCanvas
 
 // Inspector: the layer section.
 

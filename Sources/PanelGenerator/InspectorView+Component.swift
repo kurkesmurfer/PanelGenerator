@@ -1,5 +1,6 @@
 import AppKit
 import PanelKit
+import PanelCanvas
 
 // Inspector: component binding, colour groups and alignment.
 

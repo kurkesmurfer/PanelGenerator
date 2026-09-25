@@ -8,10 +8,10 @@ extension CanvasView {
 
     // MARK: Drag & drop from palette
 
-    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation { .copy }
-    override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation { .copy }
+    package override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation { .copy }
+    package override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation { .copy }
 
-    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+    package override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
         // "kind", "kind#preset" — a specific glyph, a ring knob, and so on —
         // or "stamp:<name>" for a saved fragment.
         guard let raw = sender.draggingPasteboard.string(forType: Paste.elementType) else { return false }

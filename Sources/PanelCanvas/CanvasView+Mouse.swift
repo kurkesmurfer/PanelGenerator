@@ -25,7 +25,7 @@ extension CanvasView {
 
 
 
-    override func mouseDown(with event: NSEvent) {
+    package override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
         isGestureActive = true
         // Reset here rather than per-branch. The marquee branch below used to
@@ -144,7 +144,7 @@ extension CanvasView {
         lastUndoName = nil
     }
 
-    override func mouseDragged(with event: NSEvent) {
+    package override func mouseDragged(with event: NSEvent) {
         let p = panelPoint(from: event)
         let dx = p.x - downPanelPoint.x
         let dy = p.y - downPanelPoint.y
@@ -358,7 +358,7 @@ extension CanvasView {
         notifyChange()
     }
 
-    override func mouseUp(with event: NSEvent) {
+    package override func mouseUp(with event: NSEvent) {
         isGestureActive = false   // before the switch: the notifications below flush the layer list
         switch dragMode {
         case .marquee:

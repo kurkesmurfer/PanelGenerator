@@ -1,6 +1,7 @@
 import AppKit
 import UniformTypeIdentifiers
 import PanelKit
+import PanelCanvas
 
 // Window: SVG, PNG and widget-code export.
 

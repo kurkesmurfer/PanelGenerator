@@ -1,5 +1,6 @@
 import AppKit
 import PanelKit
+import PanelCanvas
 
 // Inspector: the Panel section (size, format, theme, slugs, export units).
 

@@ -1,5 +1,6 @@
 import AppKit
 import PanelKit
+import PanelCanvas
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     var windowController: MainWindowController!

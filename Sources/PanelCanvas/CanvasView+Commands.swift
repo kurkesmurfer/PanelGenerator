@@ -8,29 +8,29 @@ extension CanvasView {
 
     // MARK: Selection & edit commands
 
-    func setSelection(_ ids: Set<UUID>) {
+    package func setSelection(_ ids: Set<UUID>) {
         selection = ids
         needsDisplay = true
         onSelectionChange?()
     }
 
 
-    func selectionAgrees<T: Equatable>(_ keyPath: KeyPath<PanelElement, T>) -> Bool {
+    package func selectionAgrees<T: Equatable>(_ keyPath: KeyPath<PanelElement, T>) -> Bool {
         document.selectionAgrees(keyPath, ids: selection)
     }
 
-    var primaryElement: PanelElement? {
+    package var primaryElement: PanelElement? {
         guard selection.count == 1, let id = selection.first else { return nil }
         return document.elements.first { $0.id == id }
     }
 
-    func deleteSelection() {
+    package func deleteSelection() {
         guard !selection.isEmpty else { return }
         apply(elements: document.elements.filter { !selection.contains($0.id) }, name: "Delete")
         setSelection([])
     }
 
-    func duplicateSelection() {
+    package func duplicateSelection() {
         guard !selection.isEmpty else { return }
         let copies = document.elements
             .filter { selection.contains($0.id) }
@@ -47,7 +47,7 @@ extension CanvasView {
 
     /// Undoable wrapper around `PanelDocument.bindPrimitives()`.
     @discardableResult
-    func bindPrimitives() -> Int {
+    package func bindPrimitives() -> Int {
         var doc = document
         let bound = doc.bindPrimitives()
         guard bound > 0 else { return 0 }
@@ -55,20 +55,20 @@ extension CanvasView {
         return bound
     }
 
-    func selectAllElements() {
+    package func selectAllElements() {
         // Templates stay out: Select All followed by a nudge must not drag the
         // thing you are tracing out from under your drawing.
         setSelection(Set(document.elements.filter { $0.isTemplate != true }.map(\.id)))
     }
 
-    func bringToFront() {
+    package func bringToFront() {
         guard !selection.isEmpty else { return }
         let front = document.elements.filter { selection.contains($0.id) }
         let rest = document.elements.filter { !selection.contains($0.id) }
         apply(elements: rest + front, name: "Reorder")
     }
 
-    func sendToBack() {
+    package func sendToBack() {
         guard !selection.isEmpty else { return }
         let picked = document.elements.filter { selection.contains($0.id) }
         let rest = document.elements.filter { !selection.contains($0.id) }
@@ -80,7 +80,7 @@ extension CanvasView {
     /// own bounding box (needs 2+ selected). `to: "panel"` aligns to the panel
     /// edges / center line and works with any selection size, even one element.
     /// Undoable wrapper around `PanelDocument.nameSequentially`.
-    func nameSelectionSequentially(prefix: String) {
+    package func nameSelectionSequentially(prefix: String) {
         var doc = document
         doc.nameSequentially(ids: selection, prefix: prefix)
         guard doc.elements != document.elements else { return }
@@ -93,7 +93,7 @@ extension CanvasView {
     /// inspector's Size row then writes to all of them at once, so twenty-five
     /// labels are still one action if the size is wrong.
     @discardableResult
-    func labelSelection(placement: LabelPlacement,
+    package func labelSelection(placement: LabelPlacement,
                         gap: CGFloat,
                         fontSize: CGFloat,
                         bold: Bool,
@@ -116,7 +116,7 @@ extension CanvasView {
 
     /// Undoable wrapper around `PanelDocument.setTemplate`.
     @discardableResult
-    func setTemplate(_ on: Bool, ids: Set<UUID>? = nil) -> Int {
+    package func setTemplate(_ on: Bool, ids: Set<UUID>? = nil) -> Int {
         var doc = document
         let scope = ids ?? (selection.isEmpty ? Set(document.elements.map(\.id)) : selection)
         let changed = doc.setTemplate(on, ids: scope)
@@ -127,7 +127,7 @@ extension CanvasView {
 
     /// Undoable wrapper around `PanelDocument.fitToPanel`.
     @discardableResult
-    func fitToPanel(_ mode: PanelDocument.FitMode, margin: CGFloat) -> Int {
+    package func fitToPanel(_ mode: PanelDocument.FitMode, margin: CGFloat) -> Int {
         var doc = document
         let moved = doc.fitToPanel(mode, margin: margin)
         guard moved > 0 else { return 0 }
@@ -137,7 +137,7 @@ extension CanvasView {
 
     /// Undoable wrapper around `PanelDocument.nameFromLabels`.
     @discardableResult
-    func nameFromLabels(within limit: CGFloat) -> (named: Int, skipped: Int) {
+    package func nameFromLabels(within limit: CGFloat) -> (named: Int, skipped: Int) {
         var doc = document
         let scope = selection.isEmpty ? Set(document.elements.map(\.id)) : selection
         let result = doc.nameFromLabels(ids: scope, within: limit)
@@ -148,7 +148,7 @@ extension CanvasView {
 
     /// Undoable wrapper around `PanelDocument.adoptIdentifiers`.
     @discardableResult
-    func adoptIdentifiers(from source: PanelDocument, within limit: CGFloat)
+    package func adoptIdentifiers(from source: PanelDocument, within limit: CGFloat)
     -> (adopted: [PanelDocument.Adoption], unmatched: [String]) {
         var doc = document
         let scope = selection.isEmpty ? Set(document.elements.map(\.id)) : selection
@@ -160,7 +160,7 @@ extension CanvasView {
 
     /// Undoable wrapper around `PanelDocument.makeWidget`.
     @discardableResult
-    func makeWidget(name: String, role: ComponentRole) -> Bool {
+    package func makeWidget(name: String, role: ComponentRole) -> Bool {
         var doc = document
         guard doc.makeWidget(ids: selection, name: name, role: role) else { return false }
         apply(elements: doc.elements, name: "Make Widget")
@@ -168,7 +168,7 @@ extension CanvasView {
     }
 
     /// Undoable wrapper around `PanelDocument.setColour`.
-    func setColour(_ colour: ColorSpec, ids: [UUID], strokes: Bool, name: String) {
+    package func setColour(_ colour: ColorSpec, ids: [UUID], strokes: Bool, name: String) {
         var doc = document
         doc.setColour(colour, ids: ids, strokes: strokes)
         guard doc.elements != document.elements else { return }
@@ -176,7 +176,7 @@ extension CanvasView {
     }
 
     /// Undoable wrapper around `PanelDocument.align`.
-    func alignSelection(_ mode: String, to target: String = "sel") {
+    package func alignSelection(_ mode: String, to target: String = "sel") {
         let toPanel = target == "panel"
         var doc = document
         doc.align(mode, ids: selection, toPanel: toPanel)
@@ -200,7 +200,7 @@ extension CanvasView {
     ///   whitespace statement. `"gap"` cannot express that when the
     ///   elements involved aren't all the same size, since equal edge gaps
     ///   and equal centre spacing only coincide when they are.
-    func distributeSelection(_ axis: String, by mode: String = "gap") {
+    package func distributeSelection(_ axis: String, by mode: String = "gap") {
         let idxs = document.elements.indices.filter { selection.contains(document.elements[$0].id) }
         guard idxs.count > 2 else { return }
         var els = document.elements
@@ -238,7 +238,7 @@ extension CanvasView {
     // MARK: Groups
 
     /// Assign a shared group ID to the selection; clicking any member then selects all.
-    func groupSelection() {
+    package func groupSelection() {
         guard selection.count > 1 else { return }
         let gid = UUID()
         var els = document.elements
@@ -246,7 +246,7 @@ extension CanvasView {
         apply(elements: els, name: "Group")
     }
 
-    func ungroupSelection() {
+    package func ungroupSelection() {
         var els = document.elements
         var hit = false
         for i in els.indices where selection.contains(els[i].id) {
@@ -257,7 +257,7 @@ extension CanvasView {
     }
 
     /// (internal: the layer list expands row clicks to whole groups too)
-    func groupMembers(_ id: UUID) -> Set<UUID> {
+    package func groupMembers(_ id: UUID) -> Set<UUID> {
         guard let el = document.elements.first(where: { $0.id == id }),
               let gid = el.groupID else { return [id] }
         return Set(document.elements.filter { $0.groupID == gid }.map(\.id))

@@ -132,7 +132,7 @@ Renderer — parts(for:) -> [ShapePart(CGPath, fill, stroke)]   ← single sourc
         └── SVGExporter       CGPath → <path d="…"> walker (PathSVG)
 ```
 
-Source layout — two targets (see `Package.swift`):
+Source layout — three targets (see `Package.swift`):
 
 ```
 Sources/PanelKit/            library: everything that does not need a window
@@ -146,8 +146,11 @@ Sources/PanelKit/            library: everything that does not need a window
   Symbols/                   symbol catalogue + one file per category
   Geometry, PathSVG, SVGPath, SVGImport, CppImport, CodeGen, Compare, Emit,
   Exporters, Stamps, Selftest
+Sources/PanelCanvas/         the editing surface, its own module so gesture,
+  CanvasView(+Clipboard,     handle and snapping state stay internal; the editor
+  +Commands, +Drawing,       sees only its `package` API
+  +Handles, +Mouse, +DragDrop)
 Sources/PanelGenerator/      AppKit editor + command-line front end (main.swift)
-  CanvasView(+Clipboard, +Commands, +Drawing, +Handles, +Mouse, +DragDrop)
   InspectorView(+Panel, +Element, +Params, +Component, +Prompts, +Layers)
   MainWindowController(+File, +Import, +Export, +Edit, +View, +Stamps, +Menus)
   PaletteView, LayerListView, SymbolPicker, AppDelegate

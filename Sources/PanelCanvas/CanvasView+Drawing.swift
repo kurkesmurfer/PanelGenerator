@@ -8,7 +8,7 @@ extension CanvasView {
 
     // MARK: Drawing
 
-    override func draw(_ dirtyRect: NSRect) {
+    package override func draw(_ dirtyRect: NSRect) {
         guard let ctx = NSGraphicsContext.current?.cgContext else { return }
 
         // Workspace backdrop

@@ -1,6 +1,7 @@
 import AppKit
 import UniformTypeIdentifiers
 import PanelKit
+import PanelCanvas
 
 // Window: zoom, snap, grids and theme preview.
 
