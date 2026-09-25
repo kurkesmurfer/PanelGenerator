@@ -325,3 +325,7 @@ package enum CustomGrid {
         return CGPoint(x: sx, y: closest.y)
     }
 }
+
+extension CGSize {
+    package init(_ w: CGFloat, _ h: CGFloat) { self.init(width: w, height: h) }
+}
