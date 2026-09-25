@@ -3,14 +3,14 @@ import CoreGraphics
 
 /// Converts a CGPath into an SVG `d` attribute string. This is the bridge that
 /// lets the single shared renderer feed the SVG exporter.
-enum PathSVG {
+package enum PathSVG {
 
     /// `decimals` is two for export, where the unit is a panel pixel and
     /// hundredths are far below what any rasteriser resolves. It has to be
     /// much finer for a path stored normalised into a 0…1 box: at two decimals
     /// a unit path quantises to one part in a hundred, which on a 90 px panel
     /// is a visible staircase.
-    static func d(_ path: CGPath, decimals: Int = 2) -> String {
+    package static func d(_ path: CGPath, decimals: Int = 2) -> String {
         var out = ""
         let format = "%.\(decimals)f"
         func n(_ v: CGFloat) -> String {

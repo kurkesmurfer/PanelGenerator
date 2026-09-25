@@ -14,14 +14,14 @@ import CoreGraphics
 /// `RoundKnob` does it; `momentary` plus one `addFrame` per switch position;
 /// `setHandlePosCentered` for a slider; and the `…Centered` constructors
 /// throughout, which is also what MetaModule's `Coords::Center` expects.
-enum CodeGen {
+package enum CodeGen {
 
     // MARK: - Small helpers
 
     /// Millimetres, at helper.py's precision.
-    static func mm3(_ v: CGFloat) -> String { String(format: "%.3f", Double(v)) }
+    package static func mm3(_ v: CGFloat) -> String { String(format: "%.3f", Double(v)) }
 
-    static func cppIdentifier(_ raw: String, fallback: String) -> String {
+    package static func cppIdentifier(_ raw: String, fallback: String) -> String {
         var out = ""
         for ch in raw {
             if ch.isLetter || ch.isNumber || ch == "_" { out.append(ch) } else { out.append("_") }
@@ -34,7 +34,7 @@ enum CodeGen {
 
     /// PascalCase struct name to the hyphenated lowercase used for asset files
     /// (`KnobLarge` → `knob-large`).
-    static func kebab(_ s: String) -> String {
+    package static func kebab(_ s: String) -> String {
         var out = ""
         var prevWasLowerOrDigit = false
         for ch in s {
@@ -56,7 +56,7 @@ enum CodeGen {
     /// Worth checking here rather than leaving it to Rack, because a slug also
     /// becomes the panel's filename and the string in createModel — so an
     /// invalid one is wrong in three places at once and only fails at load.
-    static func isValidSlug(_ slug: String) -> Bool {
+    package static func isValidSlug(_ slug: String) -> Bool {
         !slug.isEmpty && slug.allSatisfy { ch in
             (ch.isASCII && (ch.isLetter || ch.isNumber)) || ch == "_" || ch == "-"
         }
@@ -72,7 +72,7 @@ enum CodeGen {
     /// character and becomes an underscore anyway. Choose the hyphen and one
     /// panel is spelled two ways in one directory; choose the underscore and
     /// the slug, the filename and the C++ name are the same string.
-    static func slugSuggestion(_ slug: String) -> String {
+    package static func slugSuggestion(_ slug: String) -> String {
         var out = ""
         for ch in slug {
             if ch.isASCII && (ch.isLetter || ch.isNumber) { out.append(ch) }
@@ -84,7 +84,7 @@ enum CodeGen {
         return out.isEmpty ? "MyModule" : out
     }
 
-    static func moduleIdentifier(_ doc: PanelDocument) -> String {
+    package static func moduleIdentifier(_ doc: PanelDocument) -> String {
         cppIdentifier(doc.moduleSlug, fallback: "MyModule")
     }
 
@@ -96,7 +96,7 @@ enum CodeGen {
     /// stale file compares as a panel full of moved and missing components —
     /// which reads as a broken panel rather than an old file, and costs an hour
     /// before anyone checks the timestamps.
-    static func provenance(_ doc: PanelDocument) -> String {
+    package static func provenance(_ doc: PanelDocument) -> String {
         "// PanelGenerator-Source: \(doc.name) · \(doc.components.count) components · digest \(digest(doc))"
     }
 
@@ -106,7 +106,7 @@ enum CodeGen {
     ///
     /// FNV-1a rather than Hasher: Swift seeds Hasher per process, so the same
     /// document would stamp differently on every run.
-    static func digest(_ doc: PanelDocument) -> String {
+    package static func digest(_ doc: PanelDocument) -> String {
         let ids = identifiers(doc)
         var canonical = ""
         for el in doc.components {
@@ -122,7 +122,7 @@ enum CodeGen {
         return String(format: "%08x", UInt32(truncatingIfNeeded: hash))
     }
 
-    static func pluginIdentifier(_ doc: PanelDocument) -> String {
+    package static func pluginIdentifier(_ doc: PanelDocument) -> String {
         cppIdentifier(doc.pluginSlug, fallback: "MyPlugin")
     }
 
@@ -131,17 +131,17 @@ enum CodeGen {
     /// One per plugin, not one per module: two modules that both use the same
     /// jack should compile to one struct and load one SVG, and a widget is a
     /// property of the plugin's visual language rather than of any module.
-    static func uiNamespace(_ doc: PanelDocument) -> String {
+    package static func uiNamespace(_ doc: PanelDocument) -> String {
         doc.widgetNamespace.isEmpty
             ? pluginIdentifier(doc).lowercased() + "ui"
             : cppIdentifier(doc.widgetNamespace, fallback: "ui")
     }
 
-    static func widgetsHeaderName(_ doc: PanelDocument) -> String {
+    package static func widgetsHeaderName(_ doc: PanelDocument) -> String {
         pluginIdentifier(doc) + "Widgets.hpp"
     }
 
-    static func widgetBaseHeaderName(_ doc: PanelDocument) -> String {
+    package static func widgetBaseHeaderName(_ doc: PanelDocument) -> String {
         pluginIdentifier(doc) + "WidgetBase.hpp"
     }
 
@@ -149,14 +149,14 @@ enum CodeGen {
     /// derives from. One per family rather than one per widget: what a knob and
     /// a port need from a plugin's visual language differs, what two knobs need
     /// does not.
-    enum WidgetFamily: String, CaseIterable {
+    package enum WidgetFamily: String, CaseIterable {
         case knob = "KnobBase"
         case port = "PortBase"
         case toggle = "SwitchBase"
         case slider = "SliderBase"
         case plain = "PlainBase"
 
-        var rackBase: String {
+        package var rackBase: String {
             switch self {
             case .knob:   return "app::SvgKnob"
             case .port:   return "app::SvgPort"
@@ -167,7 +167,7 @@ enum CodeGen {
         }
     }
 
-    static func family(for el: PanelElement, in doc: PanelDocument) -> WidgetFamily {
+    package static func family(for el: PanelElement, in doc: PanelDocument) -> WidgetFamily {
         if doc.widgetMembers(of: el).count > 1 {
             switch composedBase(for: el, in: doc) {
             case "port":   return .port
@@ -190,7 +190,7 @@ enum CodeGen {
     /// generated structs below hold only what PanelGenerator actually knows —
     /// which files to load. Regeneration cannot touch your edits because it
     /// never writes this file twice.
-    static func widgetBaseHeader(_ doc: PanelDocument) -> String {
+    package static func widgetBaseHeader(_ doc: PanelDocument) -> String {
         let ns = uiNamespace(doc)
         return lines([
             "// Created once by PanelGenerator. YOURS TO EDIT — it is never overwritten.",
@@ -248,13 +248,13 @@ enum CodeGen {
     /// that does not exist. Those are named verbatim in placement code instead,
     /// which is correct if less tidy — a header that does not compile is worse
     /// than one that is inconsistent.
-    static func isAliasable(_ type: String) -> Bool {
+    package static func isAliasable(_ type: String) -> Bool {
         guard !type.isEmpty, !type.contains("::"), type != "Widget" else { return false }
         return type.allSatisfy { $0.isLetter || $0.isNumber || $0 == "_" || $0 == "<" || $0 == ">" }
     }
 
     /// Rack types used across these panels that can be aliased, as type → alias.
-    static func stockAliases(for docs: [PanelDocument]) -> [String: String] {
+    package static func stockAliases(for docs: [PanelDocument]) -> [String: String] {
         var out: [String: String] = [:]
         for panel in docs {
             for el in panel.components where el.widgetSource == .stock {
@@ -266,12 +266,12 @@ enum CodeGen {
         return out
     }
 
-    static func widgetAlias(_ type: String) -> String {
+    package static func widgetAlias(_ type: String) -> String {
         let mapped = type.map { $0.isLetter || $0.isNumber || $0 == "_" ? $0 : Character(" ") }
         return String(mapped).split(separator: " ").joined()
     }
 
-    static func namespacePrefix(_ doc: PanelDocument) -> String {
+    package static func namespacePrefix(_ doc: PanelDocument) -> String {
         doc.widgetNamespace.isEmpty
             ? ""
             : cppIdentifier(doc.widgetNamespace, fallback: "ui") + "::"
@@ -285,7 +285,7 @@ enum CodeGen {
 
     /// The widget type to instantiate, falling back to Rack's own defaults —
     /// the same ones helper.py uses when a shape carries no `#Class` suffix.
-    static func widgetClass(_ el: PanelElement) -> String {
+    package static func widgetClass(_ el: PanelElement) -> String {
         let w = el.widgetClass
         if !w.isEmpty { return w }
         switch el.role {
@@ -300,7 +300,7 @@ enum CodeGen {
 
     /// Files to write for a custom component, and which slice of the element
     /// each one holds. A knob needs two: Rack rotates only the foreground.
-    static func componentFiles(for el: PanelElement,
+    package static func componentFiles(for el: PanelElement,
                                in doc: PanelDocument? = nil) -> [(name: String, layer: SVGExporter.ComponentLayer)] {
         let base = kebab(el.customWidgetName.isEmpty ? el.identifierStem : el.customWidgetName)
 
@@ -330,14 +330,14 @@ enum CodeGen {
 
     /// Anything Rack draws with an `SvgSwitch`: a button is the two-position
     /// case of the same widget.
-    static func isSwitch(_ el: PanelElement) -> Bool {
+    package static func isSwitch(_ el: PanelElement) -> Bool {
         el.kind == .pushButton || el.kind == .buttonGroup
     }
 
     /// Positions the switch has, and so frames it needs. A button has two; a
     /// group has as many as it draws — and Cross is four by definition, which
     /// is why the inspector disables Count for it.
-    static func switchPositions(_ el: PanelElement) -> Int {
+    package static func switchPositions(_ el: PanelElement) -> Int {
         guard el.kind == .buttonGroup else { return 2 }
         if Int(el.params.layout.rounded()) == 2 { return 4 }
         return max(2, min(12, Int(el.params.segments.rounded())))
@@ -350,7 +350,7 @@ enum CodeGen {
     /// otherwise emit seven FADER_VERTICAL_PARAM entries — a C++ error, not a
     /// subtlety. Numbering them keeps the output compiling; the warning tells
     /// you to name them properly.
-    static func identifiers(_ doc: PanelDocument) -> [UUID: String] {
+    package static func identifiers(_ doc: PanelDocument) -> [UUID: String] {
         // Numbering is per enum, not per panel. Rack keeps ParamId, InputId,
         // OutputId and LightId apart, so ANIMATE_PARAM and ANIMATE_INPUT are
         // not a clash — and treating them as one renamed five perfectly legal
@@ -372,7 +372,7 @@ enum CodeGen {
 
     /// Problems that would produce C++ that does not compile, or compiles into
     /// the wrong thing. Emitted at the top of the file rather than silently.
-    static func warnings(_ doc: PanelDocument) -> [String] {
+    package static func warnings(_ doc: PanelDocument) -> [String] {
         var out: [String] = []
 
         // The plugin slug names the widget library, its header and its
@@ -515,7 +515,7 @@ enum CodeGen {
 
     // MARK: - ID enums
 
-    static func idEnums(_ doc: PanelDocument) -> String {
+    package static func idEnums(_ doc: PanelDocument) -> String {
         let ids = identifiers(doc)
         func block(_ typeName: String, _ role: ComponentRole, _ lenName: String) -> String {
             var l = ["enum \(typeName) {"]
@@ -534,7 +534,7 @@ enum CodeGen {
 
     // MARK: - Custom widget structs
 
-    static func customWidgetStructs(_ doc: PanelDocument) -> String {
+    package static func customWidgetStructs(_ doc: PanelDocument) -> String {
         var seen = Set<String>()
         var out = ""
         for el in doc.components where el.widgetSource == .custom {
@@ -731,7 +731,7 @@ enum CodeGen {
     ///     is named through that namespace, so placement code does not care
     ///     which is which and swapping one for the other is a line in the
     ///     widget header rather than an edit here.
-    static func constructorBody(_ doc: PanelDocument, receiver: String = "",
+    package static func constructorBody(_ doc: PanelDocument, receiver: String = "",
                                 idPrefix: String? = nil,
                                 uiNamespace ui: String? = nil) -> String {
         let mod = moduleIdentifier(doc)
@@ -800,14 +800,14 @@ enum CodeGen {
     /// your own artwork is one line changed here and nothing changed anywhere
     /// else. Without them, swapping a widget means editing every placement that
     /// mentions it — which is exactly the edit a generated file will overwrite.
-    static func widgetsHeader(_ doc: PanelDocument) -> String { widgetsHeader(for: [doc]) }
+    package static func widgetsHeader(_ doc: PanelDocument) -> String { widgetsHeader(for: [doc]) }
 
     /// - Parameter docs: every panel in the plugin. A plugin's modules share a
     ///   visual language, so two modules using the same jack must compile to
     ///   one struct and load one SVG. Emitting this per document meant the
     ///   second module's header overwrote the first's and took its widgets
     ///   with it.
-    static func widgetsHeader(for docs: [PanelDocument]) -> String {
+    package static func widgetsHeader(for docs: [PanelDocument]) -> String {
         guard let doc = docs.first else { return "" }
         let ns = uiNamespace(doc)
 
@@ -872,7 +872,7 @@ enum CodeGen {
         return out
     }
 
-    static func panelHeader(_ doc: PanelDocument) -> String {
+    package static func panelHeader(_ doc: PanelDocument) -> String {
         let mod = moduleIdentifier(doc)
         // The panel's namespace is the module's; the widget library's is the
         // plugin's. Conflating them meant two modules in one plugin could not
@@ -942,7 +942,7 @@ enum CodeGen {
     /// The `createModel` line and the plugin.json entry that go with it.
     /// Without these the generated file is a widget with nothing registering
     /// it, which is the one piece helper.py does emit and we did not.
-    static func registration(_ doc: PanelDocument) -> String {
+    package static func registration(_ doc: PanelDocument) -> String {
         let mod = moduleIdentifier(doc)
         return lines([
             "Model* model\(mod) = createModel<\(mod), \(mod)Widget>(\"\(doc.moduleSlug)\");",
@@ -971,7 +971,7 @@ enum CodeGen {
     /// MetaModule needs no separate element array when the plugin compiles its
     /// VCV sources through the SDK's rack adaptor — the widget code above is
     /// read for the element list. What differs between the targets is artwork.
-    static func metaModuleNotes(_ doc: PanelDocument) -> String {
+    package static func metaModuleNotes(_ doc: PanelDocument) -> String {
         lines([
             "/* ---- MetaModule ----------------------------------------------------",
             "   If the MetaModule build compiles these same VCV sources through the",
@@ -996,7 +996,7 @@ enum CodeGen {
 
     // MARK: - Whole file
 
-    static func rackSource(_ doc: PanelDocument) -> String {
+    package static func rackSource(_ doc: PanelDocument) -> String {
         let mod = moduleIdentifier(doc)
         let comps = doc.components
         let hasCustom = comps.contains { $0.widgetSource == .custom && !$0.customWidgetName.isEmpty }

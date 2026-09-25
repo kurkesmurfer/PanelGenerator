@@ -22,40 +22,42 @@ import CoreGraphics
 /// filters, `<use>`, embedded rasters, and CSS in `<style>` blocks. `<text>`
 /// is reported too, though no Rack panel has any: nanosvg drops text, so
 /// every panel in the wild has its labels already converted to outlines.
-enum SVGImport {
+package enum SVGImport {
 
-    struct Options {
+    package struct Options {
         /// Import as a locked tracing template rather than as editable artwork.
-        var asTemplate = false
+        package var asTemplate = false
         /// Treat a viewBox-sized opaque rect as the panel background rather
         /// than as an element.
-        var adoptBackground = true
+        package var adoptBackground = true
         /// Read a helper.py-style components layer, if there is one.
-        var bindComponents = true
+        package var bindComponents = true
+
+        package init() {}
     }
 
-    struct Outcome {
-        var elements: [PanelElement] = []
-        var widthHP: Int = 8
-        var format: PanelFormat = .u3
-        var background: ColorSpec? = nil
-        var warnings: [String] = []
+    package struct Outcome {
+        package var elements: [PanelElement] = []
+        package var widthHP: Int = 8
+        package var format: PanelFormat = .u3
+        package var background: ColorSpec? = nil
+        package var warnings: [String] = []
         /// Panel size in pixels as the file declares it, before rounding to HP.
-        var sourceSize: CGSize = .zero
+        package var sourceSize: CGSize = .zero
         /// The document's own name, when the file says what it is: a
         /// PanelGenerator export's header comment names itself, so
         /// re-importing one recovers its title instead of landing as
         /// "Untitled". nil for any other SVG -- the caller falls back to
         /// the file's own name on disk.
-        var suggestedName: String? = nil
+        package var suggestedName: String? = nil
     }
 
-    enum Failure: LocalizedError {
+    package enum Failure: LocalizedError {
         case notSVG
         case noViewBox
         case empty
 
-        var errorDescription: String? {
+        package var errorDescription: String? {
             switch self {
             case .notSVG:    return "That file is not an SVG PanelGenerator can read."
             case .noViewBox: return "The SVG has no viewBox, so its coordinates cannot be placed on a panel."
@@ -66,7 +68,7 @@ enum SVGImport {
 
     // MARK: - Entry point
 
-    static func outcome(from data: Data, options: Options = Options()) throws -> Outcome {
+    package static func outcome(from data: Data, options: Options = Options()) throws -> Outcome {
         let reader = Reader()
         let parser = XMLParser(data: data)
         parser.delegate = reader
@@ -82,7 +84,7 @@ enum SVGImport {
     ///
     /// Cheap enough to run just to learn how wide a module is — which is what
     /// resolves `box.size.x` in a module's constructor.
-    static func panelSize(from data: Data) -> CGSize? {
+    package static func panelSize(from data: Data) -> CGSize? {
         let reader = Reader()
         let parser = XMLParser(data: data)
         parser.delegate = reader
@@ -115,13 +117,13 @@ enum SVGImport {
         return (s, nil)
     }
 
-    struct Length {
-        var value: CGFloat
-        var unit: String
+    package struct Length {
+        package var value: CGFloat
+        package var unit: String
 
         /// In 75-dpi panel pixels — Rack's own SVG_DPI, the scale at which
         /// 1 HP is 15 px and a 3U panel is 380 px tall.
-        var pixels: CGFloat {
+        package var pixels: CGFloat {
             switch unit {
             case "mm": return value * 75.0 / 25.4
             case "cm": return value * 10 * 75.0 / 25.4
@@ -132,7 +134,7 @@ enum SVGImport {
             }
         }
 
-        static func parse(_ text: String?) -> Length? {
+        package static func parse(_ text: String?) -> Length? {
             guard let text else { return nil }
             var tokens = SVGPath.Tokens(text)
             guard let v = tokens.number() else { return nil }
@@ -361,56 +363,56 @@ enum SVGImport {
 
     // MARK: - XML reader
 
-    final class Reader: NSObject, XMLParserDelegate {
+    package final class Reader: NSObject, XMLParserDelegate {
 
-        struct Shape {
-            var tag: String
-            var path: CGPath
-            var ctm: CGAffineTransform
-            var fill: ColorSpec?
-            var stroke: ColorSpec?
-            var strokeWidth: CGFloat?
-            var radius: CGFloat?          // rect rx, in the shape's own units
-            var label: String?
-            var role: ComponentRole?      // from a helper.py components layer
-            var identifier: String?       // from data-name
+        package struct Shape {
+            package var tag: String
+            package var path: CGPath
+            package var ctm: CGAffineTransform
+            package var fill: ColorSpec?
+            package var stroke: ColorSpec?
+            package var strokeWidth: CGFloat?
+            package var radius: CGFloat?          // rect rx, in the shape's own units
+            package var label: String?
+            package var role: ComponentRole?      // from a helper.py components layer
+            package var identifier: String?       // from data-name
         }
 
         /// Inherited presentation state. SVG inherits fill and stroke down the
         /// tree, so a group's fill is every child's default.
-        struct State {
-            var ctm: CGAffineTransform = .identity
-            var fill: ColorSpec? = .black          // SVG's initial fill is black
-            var stroke: ColorSpec? = nil
-            var strokeWidth: CGFloat? = nil
-            var inComponents = false
+        package struct State {
+            package var ctm: CGAffineTransform = .identity
+            package var fill: ColorSpec? = .black          // SVG's initial fill is black
+            package var stroke: ColorSpec? = nil
+            package var strokeWidth: CGFloat? = nil
+            package var inComponents = false
             // Text inherits down the tree like everything else: a group can
             // carry the size and the anchor for every label inside it.
-            var fontSize: CGFloat = 3
-            var anchor: String = "start"
-            var bold = false
+            package var fontSize: CGFloat = 3
+            package var anchor: String = "start"
+            package var bold = false
         }
 
         /// A label as the file gives it: a baseline position, an anchor, and
         /// the words. Kept separate from shapes because it is placed by its
         /// baseline, not by a bounding box.
-        struct TextRun {
-            var text: String
-            var origin: CGPoint          // the SVG's x,y — a baseline point
-            var ctm: CGAffineTransform
-            var fontSize: CGFloat        // user units
-            var anchor: String
-            var bold: Bool
-            var fill: ColorSpec?
+        package struct TextRun {
+            package var text: String
+            package var origin: CGPoint          // the SVG's x,y — a baseline point
+            package var ctm: CGAffineTransform
+            package var fontSize: CGFloat        // user units
+            package var anchor: String
+            package var bold: Bool
+            package var fill: ColorSpec?
         }
 
-        var viewBox: CGRect?
-        var widthAttribute: String?
-        var heightAttribute: String?
-        var shapes: [Shape] = []
-        var texts: [TextRun] = []
-        var warnings: [String] = []
-        var suggestedName: String? = nil
+        package var viewBox: CGRect?
+        package var widthAttribute: String?
+        package var heightAttribute: String?
+        package var shapes: [Shape] = []
+        package var texts: [TextRun] = []
+        package var warnings: [String] = []
+        package var suggestedName: String? = nil
         private var pendingText: TextRun? = nil
         private var textDepth = 0
 
@@ -440,7 +442,7 @@ enum SVGImport {
             warnings.append(message)
         }
 
-        func parser(_ parser: XMLParser, didStartElement name: String, namespaceURI: String?,
+        package func parser(_ parser: XMLParser, didStartElement name: String, namespaceURI: String?,
                     qualifiedName: String?, attributes a: [String: String]) {
             let tag = name.contains(":") ? String(name.split(separator: ":").last!) : name
 
@@ -579,7 +581,7 @@ enum SVGImport {
             stack.append(state)
         }
 
-        func parser(_ parser: XMLParser, didEndElement name: String, namespaceURI: String?,
+        package func parser(_ parser: XMLParser, didEndElement name: String, namespaceURI: String?,
                     qualifiedName: String?) {
             if skipDepth > 0 {
                 skipDepth -= 1
@@ -607,7 +609,7 @@ enum SVGImport {
             if stack.count > 1 { stack.removeLast() }
         }
 
-        func parser(_ parser: XMLParser, foundCharacters string: String) {
+        package func parser(_ parser: XMLParser, foundCharacters string: String) {
             guard skipDepth == 0, pendingText != nil else { return }
             pendingText?.text += string
         }
@@ -626,7 +628,7 @@ enum SVGImport {
         /// NAME from it is what lets re-importing one of our own panels keep
         /// its title instead of coming back "Untitled" -- XMLParser reports
         /// comments to the delegate by default, no extra configuration needed.
-        func parser(_ parser: XMLParser, foundComment comment: String) {
+        package func parser(_ parser: XMLParser, foundComment comment: String) {
             guard suggestedName == nil,
                   comment.contains("Generated by PanelGenerator"),
                   let openQuote = comment.firstIndex(of: "\""),
@@ -636,7 +638,7 @@ enum SVGImport {
             if !name.isEmpty { suggestedName = name }
         }
 
-        func parserDidEndDocument(_ parser: XMLParser) {
+        package func parserDidEndDocument(_ parser: XMLParser) {
             guard !skippedSummary.isEmpty else { return }
             let parts = skippedSummary.keys.sorted().compactMap { root -> String? in
                 guard let contents = skippedSummary[root], !contents.isEmpty else { return nil }
@@ -692,18 +694,18 @@ enum SVGImport {
 
         // MARK: Presentation attributes
 
-        struct Paint {
-            var colour: ColorSpec?
-            var isNone: Bool
+        package struct Paint {
+            package var colour: ColorSpec?
+            package var isNone: Bool
         }
 
-        struct Presentation {
-            var fill: Paint?
-            var stroke: Paint?
-            var strokeWidth: CGFloat?
-            var fontSize: CGFloat?
-            var anchor: String?
-            var weight: Bool?
+        package struct Presentation {
+            package var fill: Paint?
+            package var stroke: Paint?
+            package var strokeWidth: CGFloat?
+            package var fontSize: CGFloat?
+            package var anchor: String?
+            package var weight: Bool?
         }
 
         /// Presentation attributes, with `style="…"` overriding them — which is
@@ -765,9 +767,9 @@ enum SVGImport {
 
 // MARK: - Colours
 
-enum SVGColour {
+package enum SVGColour {
 
-    static func parse(_ text: String) -> ColorSpec? {
+    package static func parse(_ text: String) -> ColorSpec? {
         let v = text.trimmingCharacters(in: .whitespaces).lowercased()
         if v.hasPrefix("#") {
             let hex = String(v.dropFirst())

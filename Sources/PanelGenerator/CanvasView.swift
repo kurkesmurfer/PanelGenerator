@@ -1,5 +1,6 @@
 import AppKit
 import CoreGraphics
+import PanelKit
 
 /// The panel editing surface. Owns the live document during an editing session,
 /// the undo stack and the selection; reports changes back via closures.

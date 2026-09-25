@@ -14,32 +14,32 @@ import CoreGraphics
 /// So the comparison is on meaning, not text. Each side is reduced to a table
 /// of identifier, role, widget type and centre in millimetres, matched by
 /// identifier, and reported as moved / renamed / missing / added.
-enum Compare {
+package enum Compare {
 
     /// One component, in the only terms the three forms agree on.
-    struct Item {
-        var identifier: String          // CUTOFF_PARAM — the name Rack uses
-        var role: ComponentRole
-        var widget: String
-        var mm: CGPoint
+    package struct Item {
+        package var identifier: String          // CUTOFF_PARAM — the name Rack uses
+        package var role: ComponentRole
+        package var widget: String
+        package var mm: CGPoint
     }
 
-    struct Side {
-        var label: String
+    package struct Side {
+        package var label: String
         /// The panel a generated file says it came from, if it says.
-        var source: String? = nil
-        var digest: String? = nil
-        var items: [Item] = []
+        package var source: String? = nil
+        package var digest: String? = nil
+        package var items: [Item] = []
         /// Text by content: labels carry no identifier, so the words are the key.
-        var labels: [(text: String, mm: CGPoint)] = []
-        var notes: [String] = []
+        package var labels: [(text: String, mm: CGPoint)] = []
+        package var notes: [String] = []
     }
 
-    enum Failure: LocalizedError {
+    package enum Failure: LocalizedError {
         case unreadable(String)
         case unknownKind(String)
 
-        var errorDescription: String? {
+        package var errorDescription: String? {
             switch self {
             case .unreadable(let p):  return "Could not read \(p)."
             case .unknownKind(let p): return "Don't know how to read \(p) — expected .panelgen, .cpp or .svg."
@@ -49,7 +49,7 @@ enum Compare {
 
     // MARK: - Reading a side
 
-    static func side(from rawPath: String) throws -> Side {
+    package static func side(from rawPath: String) throws -> Side {
         let path = (rawPath as NSString).expandingTildeInPath
         let url = URL(fileURLWithPath: path)
         let name = url.lastPathComponent
@@ -115,11 +115,11 @@ enum Compare {
 
     // MARK: - The comparison
 
-    struct Difference {
-        enum Kind { case moved, role, widget, missing, added, renamed }
-        var kind: Kind
-        var identifier: String
-        var detail: String
+    package struct Difference {
+        package enum Kind { case moved, role, widget, missing, added, renamed }
+        package var kind: Kind
+        package var identifier: String
+        package var detail: String
     }
 
     /// `tolerance` is in millimetres. Zero is the wrong default: the three
@@ -127,7 +127,7 @@ enum Compare {
     /// document holds panel pixels, the SVG holds two decimals — so an exact
     /// match would report every component as moved. A hundredth of a millimetre
     /// is far below anything a panel can express.
-    static func differences(_ a: Side, _ b: Side, tolerance: CGFloat) -> [Difference] {
+    package static func differences(_ a: Side, _ b: Side, tolerance: CGFloat) -> [Difference] {
         var out: [Difference] = []
         var byIdentifierB = Dictionary(grouping: b.items, by: \.identifier)
             .compactMapValues { $0.first }
@@ -177,7 +177,7 @@ enum Compare {
     /// Labels have no identifiers, so they are matched by their words. Two
     /// labels reading the same thing are matched nearest-first, which is what
     /// you want on a panel with four jacks all labelled "CV".
-    static func labelDifferences(_ a: Side, _ b: Side, tolerance: CGFloat) -> [Difference] {
+    package static func labelDifferences(_ a: Side, _ b: Side, tolerance: CGFloat) -> [Difference] {
         var remaining = b.labels
         var out: [Difference] = []
 
@@ -205,7 +205,7 @@ enum Compare {
     }
 
     /// Reads back the stamp `CodeGen.provenance` writes.
-    static func provenance(in text: String) -> (source: String, digest: String)? {
+    package static func provenance(in text: String) -> (source: String, digest: String)? {
         guard let line = text.split(separator: "\n", omittingEmptySubsequences: false)
             .first(where: { $0.contains("PanelGenerator-Source:") }) else { return nil }
         let parts = line.components(separatedBy: "·").map {
@@ -232,7 +232,7 @@ enum Compare {
 
     // MARK: - Command line
 
-    static func run(_ pathA: String, _ pathB: String, tolerance: CGFloat, labels: Bool) -> Never {
+    package static func run(_ pathA: String, _ pathB: String, tolerance: CGFloat, labels: Bool) -> Never {
         do {
             let a = try side(from: pathA)
             let b = try side(from: pathB)

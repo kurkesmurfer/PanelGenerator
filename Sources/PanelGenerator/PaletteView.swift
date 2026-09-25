@@ -1,4 +1,5 @@
 import AppKit
+import PanelKit
 
 /// Sidebar repository of primitives, shapes and symbols. Items drag onto the
 /// canvas; double-click inserts at the panel centre.

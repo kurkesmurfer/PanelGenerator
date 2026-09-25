@@ -12,11 +12,11 @@ import CoreGraphics
 /// nothing at all, because a `d` string that is only partly understood draws a
 /// wrong shape silently. Anything unparseable returns nil so the caller can
 /// warn rather than draw a lie.
-enum SVGPath {
+package enum SVGPath {
 
     // MARK: - Path data
 
-    static func path(fromD d: String) -> CGPath? {
+    package static func path(fromD d: String) -> CGPath? {
         var scanner = Tokens(d)
         let path = CGMutablePath()
 
@@ -228,7 +228,7 @@ enum SVGPath {
     /// Returns identity for an empty or absent list and nil for a malformed
     /// one — a transform that is silently ignored puts artwork in the wrong
     /// place, which is harder to spot than nothing being drawn.
-    static func transform(from text: String) -> CGAffineTransform? {
+    package static func transform(from text: String) -> CGAffineTransform? {
         var result = CGAffineTransform.identity
         var rest = Substring(text)
         var sawOne = false
@@ -291,13 +291,13 @@ enum SVGPath {
     /// SVG number grammar, which is not Double(String): "1-2" is two numbers,
     /// ".5.5" is two numbers, and flags in an arc may be written without any
     /// separator at all.
-    struct Tokens {
+    package struct Tokens {
         private let chars: [Character]
         private var i: Int = 0
 
-        init(_ s: String) { chars = Array(s) }
+        package init(_ s: String) { chars = Array(s) }
 
-        var atEnd: Bool {
+        package var atEnd: Bool {
             var j = i
             while j < chars.count, isSeparator(chars[j]) { j += 1 }
             return j >= chars.count
@@ -307,21 +307,21 @@ enum SVGPath {
             c == " " || c == "," || c == "\n" || c == "\r" || c == "\t"
         }
 
-        mutating func skipSeparators() {
+        package mutating func skipSeparators() {
             while i < chars.count, isSeparator(chars[i]) { i += 1 }
         }
 
-        mutating func advance() { i += 1 }
+        package mutating func advance() { i += 1 }
 
         /// The next command letter, if the scanner is sitting on one.
-        mutating func peekCommand() -> Character? {
+        package mutating func peekCommand() -> Character? {
             skipSeparators()
             guard i < chars.count else { return nil }
             let c = chars[i]
             return "MmZzLlHhVvCcSsQqTtAa".contains(c) ? c : nil
         }
 
-        mutating func number() -> CGFloat? {
+        package mutating func number() -> CGFloat? {
             skipSeparators()
             guard i < chars.count else { return nil }
             let startIndex = i
@@ -346,14 +346,14 @@ enum SVGPath {
             return CGFloat(v)
         }
 
-        mutating func point() -> CGPoint? {
+        package mutating func point() -> CGPoint? {
             guard let x = number(), let y = number() else { return nil }
             return CGPoint(x: x, y: y)
         }
 
         /// An arc flag is a single character, and "a1 1 0 011 1" is legal:
         /// the two flags and the first coordinate run together.
-        mutating func flag() -> Bool? {
+        package mutating func flag() -> Bool? {
             skipSeparators()
             guard i < chars.count else { return nil }
             switch chars[i] {

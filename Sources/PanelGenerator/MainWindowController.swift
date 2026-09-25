@@ -1,5 +1,6 @@
 import AppKit
 import UniformTypeIdentifiers
+import PanelKit
 
 final class MainWindowController: NSWindowController, NSMenuItemValidation {
 
