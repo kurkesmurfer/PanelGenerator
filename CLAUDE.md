@@ -105,5 +105,9 @@ Tests/PanelKitTests/
 - Peet prefers direct, professional communication and challenges where there
   is reasonable doubt. Don't guess at his hardware or design intent: ask.
 - If `git` reports `index.lock` exists and no git process is running, the
-  lock is stale (one blocked commits for two weeks); remove it.
+  lock is stale; remove it. Cause, confirmed: Cowork sessions reach this
+  folder through a Linux VM that can create files here but not delete them,
+  so any git command run there leaves `index.lock` behind (one blocked
+  commits for two weeks). From Cowork, run git only on the Mac (agent-runner),
+  never through the VM shell.
 - `_to_delete/` and `build/` are ignored scratch; don't commit from them.

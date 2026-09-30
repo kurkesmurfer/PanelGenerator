@@ -65,9 +65,13 @@ Or plain SPM: `swift build && .build/debug/PanelGenerator`.
    (native colour picker + LCARS swatches), stroke, and per-kind parameters
    (knob pointer angle, fader value, corner radii, elbow geometry, ring
    angles, text content).
-3. Compose the backdrop first (big elbows + ring sectors + capsules read as
+3. To swap a control for another kind, hold ⌘ while dropping a palette item
+   onto it (or use *Edit ▸ Replace With*). It keeps its id, centre, rotation,
+   identifier, role, label binding and group; size and look come from the
+   new item. Dropping on a selected control replaces the whole selection.
+4. Compose the backdrop first (big elbows + ring sectors + capsules read as
    instant TNG), then place controls on top.
-4. **File ▸ Export SVG… / Export PNG…**.
+5. **File ▸ Export SVG… / Export PNG…**.
 
 ### Shortcuts
 
@@ -76,6 +80,7 @@ Or plain SPM: `swift build && .build/debug/PanelGenerator`.
 | Undo / Redo | ⌘Z / ⇧⌘Z |
 | Copy / Cut / Paste | ⌘C / ⌘X / ⌘V |
 | Duplicate / Delete | ⌘D / ⌫ or ⌦ |
+| Replace control in place | ⌘-drag a palette item onto it, or Edit ▸ Replace With |
 | Nudge selection | Arrow keys (⇧ + arrows = grid step) |
 | Rotate selection | drag the blue ↻ badge (⇧ = 15° steps) |
 | Mirror (elbow) | click or drag across the orange ⇄ / ⇅ badges |

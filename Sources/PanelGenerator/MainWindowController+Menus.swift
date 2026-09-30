@@ -65,6 +65,7 @@ extension MainWindowController {
         case #selector(paste(_:)):
             return canvas.canPaste
         case #selector(pgDuplicate(_:)), #selector(pgFront(_:)), #selector(pgBack(_:)),
+             #selector(pgReplaceWith(_:)),
              #selector(pgMakeWidget(_:)), #selector(pgLabelSelection(_:)),
              #selector(pgAddStamp(_:)):
             return !canvas.selection.isEmpty

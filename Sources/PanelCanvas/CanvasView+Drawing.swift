@@ -49,6 +49,7 @@ extension CanvasView {
 
         drawSelectionOverlay(in: ctx)
         drawMarqueeOverlay(in: ctx)
+        drawDropReplaceOverlay(in: ctx)
 
         ctx.restoreGState()
     }
@@ -237,5 +238,19 @@ extension CanvasView {
         ctx.setLineWidth(1 / zoom)
         ctx.setLineDash(phase: 0, lengths: [3 / zoom, 3 / zoom])
         ctx.stroke(m)
+    }
+
+    /// Dashed orange outline on the elements a ⌘-drop would replace.
+    func drawDropReplaceOverlay(in ctx: CGContext) {
+        guard !dropReplaceTargets.isEmpty else { return }
+        ctx.saveGState()
+        ctx.setStrokeColor(ColorSpec.swatch("Orange").nsColor.cgColor)
+        ctx.setLineWidth(2 / zoom)
+        ctx.setLineDash(phase: 0, lengths: [4 / zoom, 3 / zoom])
+        for el in document.elements where dropReplaceTargets.contains(el.id) {
+            ctx.addPath(transformedPath(for: el))
+            ctx.strokePath()
+        }
+        ctx.restoreGState()
     }
 }

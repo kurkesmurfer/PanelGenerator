@@ -21,6 +21,8 @@ package final class CanvasView: NSView {
     package let edits = UndoManager()
 
     package internal(set) var selection: Set<UUID> = []
+    /// Elements a ⌘-drop in progress would replace; drawn as a highlight.
+    var dropReplaceTargets: Set<UUID> = []
     package var snapEnabled = true
     /// Grid step in panel pixels. 15 px is 1 HP (5.08 mm); the default is a
     /// quarter of that, fine enough not to fight hand placement but still a
