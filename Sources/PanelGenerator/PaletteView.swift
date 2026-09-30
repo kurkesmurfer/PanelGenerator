@@ -293,7 +293,7 @@ final class PaletteItemView: NSView {
 extension PaletteItemView: NSDraggingSource {
     func draggingSession(_ session: NSDraggingSession,
                          sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation {
-        .copy
+        [.copy, .generic]
     }
 }
 
@@ -388,6 +388,6 @@ final class StampItemView: NSView {
 extension StampItemView: NSDraggingSource {
     func draggingSession(_ session: NSDraggingSession,
                          sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation {
-        .copy
+        [.copy, .generic]
     }
 }

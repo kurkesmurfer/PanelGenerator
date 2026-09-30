@@ -49,6 +49,7 @@ extension CanvasView {
 
         drawSelectionOverlay(in: ctx)
         drawMarqueeOverlay(in: ctx)
+        drawDropReplaceOverlay(in: ctx)
 
         ctx.restoreGState()
     }
@@ -237,5 +238,31 @@ extension CanvasView {
         ctx.setLineWidth(1 / zoom)
         ctx.setLineDash(phase: 0, lengths: [3 / zoom, 3 / zoom])
         ctx.stroke(m)
+    }
+
+    /// Marks the elements a ⌘-drop would replace: a translucent wash plus a
+    /// dark-and-light dashed outline set just outside the frame, so it reads
+    /// on any fill (an orange outline vanished on the default orange knob).
+    func drawDropReplaceOverlay(in ctx: CGContext) {
+        guard !dropReplaceTargets.isEmpty else { return }
+        let outset = 3 / zoom
+        ctx.saveGState()
+        for el in document.elements where dropReplaceTargets.contains(el.id) {
+            var t = CGAffineTransform(translationX: el.center.x, y: el.center.y)
+                .rotated(by: Geo.deg2rad(el.rotation))
+                .translatedBy(x: -el.center.x, y: -el.center.y)
+            let path = CGPath(rect: el.frame.insetBy(dx: -outset, dy: -outset), transform: &t)
+            ctx.addPath(path)
+            ctx.setFillColor(NSColor.systemPink.withAlphaComponent(0.25).cgColor)
+            ctx.fillPath()
+            ctx.setLineWidth(2 / zoom)
+            ctx.setLineDash(phase: 0, lengths: [])
+            ctx.setStrokeColor(NSColor.black.cgColor)
+            ctx.addPath(path); ctx.strokePath()
+            ctx.setLineDash(phase: 0, lengths: [4 / zoom, 4 / zoom])
+            ctx.setStrokeColor(NSColor.white.cgColor)
+            ctx.addPath(path); ctx.strokePath()
+        }
+        ctx.restoreGState()
     }
 }

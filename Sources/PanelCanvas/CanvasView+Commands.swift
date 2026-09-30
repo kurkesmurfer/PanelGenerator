@@ -277,4 +277,16 @@ extension CanvasView {
             return e
         }
     }
+
+    /// Replace `ids` (default: the selection) with `kind` in place, keeping
+    /// each control's identity and centre. One undo step; the replaced
+    /// elements stay selected.
+    package func replace(ids: Set<UUID>? = nil, with kind: ElementKind, preset: String? = nil) {
+        let targets = ids ?? selection
+        guard !targets.isEmpty else { return }
+        var doc = document
+        guard doc.replace(ids: targets, with: kind, preset: preset) > 0 else { return }
+        apply(elements: doc.elements, name: "Replace with \(kind.displayName)")
+        setSelection(targets)
+    }
 }

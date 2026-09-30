@@ -32,6 +32,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
 enum MenuBuilder {
 
+    /// Edit ▸ Replace With: every palette entry, grouped as in the palette.
+    /// Also reachable by ⌘-dropping a palette item onto a control.
+    static func replaceWithMenu(target wc: MainWindowController) -> NSMenuItem {
+        let top = NSMenuItem(title: "Replace With", action: nil, keyEquivalent: "")
+        let menu = NSMenu(title: "Replace With")
+        func entry(_ title: String, _ kind: ElementKind, _ preset: String?) -> NSMenuItem {
+            let mi = item(title, #selector(MainWindowController.pgReplaceWith(_:)), target: wc)
+            mi.representedObject = preset.map { "\(kind.rawValue)#\($0)" } ?? kind.rawValue
+            return mi
+        }
+        for section in DesignLanguage.paletteSections {
+            let sub = NSMenuItem(title: section.title, action: nil, keyEquivalent: "")
+            let subMenu = NSMenu(title: section.title)
+            for e in section.entries { subMenu.addItem(entry(e.title, e.kind, e.preset)) }
+            sub.submenu = subMenu
+            menu.addItem(sub)
+        }
+        menu.addItem(entry(ElementKind.text.displayName, .text, nil))
+        top.submenu = menu
+        return top
+    }
+
     static func item(_ title: String,
                      _ action: Selector?,
                      key: String = "",
@@ -89,6 +111,7 @@ enum MenuBuilder {
         edit.addItem(item("Paste", #selector(MainWindowController.paste(_:)), key: "v"))
         edit.addItem(.separator())
         edit.addItem(item("Duplicate", #selector(MainWindowController.pgDuplicate(_:)), key: "d", target: wc))
+        edit.addItem(replaceWithMenu(target: wc))
         // Plain Backspace (no ⌘) deletes the selection. Safe with an empty
         // modifier mask because it is nil-targeted (see delete(_:) below): a
         // real text edit in progress resolves to the field editor's own

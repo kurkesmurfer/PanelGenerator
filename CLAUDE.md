@@ -44,8 +44,9 @@ make app          # release build + PanelGenerator.app (icon, stamps, manual)
 `--grid` byte for byte. Run it before every refactor commit. Every commit
 should build on its own.
 
-The GUI cannot be tested headless. After UI changes, launch the app and ask
-Peet to check the affected interactions by hand.
+The GUI cannot be tested headless. After UI changes, run `make app` (Peet
+launches the bundle, not `.build/debug`) and ask him to check the affected
+interactions by hand; a stale `PanelGenerator.app` looks like a broken feature.
 
 ## Layout and boundaries
 
@@ -105,5 +106,9 @@ Tests/PanelKitTests/
 - Peet prefers direct, professional communication and challenges where there
   is reasonable doubt. Don't guess at his hardware or design intent: ask.
 - If `git` reports `index.lock` exists and no git process is running, the
-  lock is stale (one blocked commits for two weeks); remove it.
+  lock is stale; remove it. Cause, confirmed: Cowork sessions reach this
+  folder through a Linux VM that can create files here but not delete them,
+  so any git command run there leaves `index.lock` behind (one blocked
+  commits for two weeks). From Cowork, run git only on the Mac (agent-runner),
+  never through the VM shell.
 - `_to_delete/` and `build/` are ignored scratch; don't commit from them.

@@ -180,6 +180,6 @@ final class SymbolPaletteCell: NSView {
 extension SymbolPaletteCell: NSDraggingSource {
     func draggingSession(_ session: NSDraggingSession,
                          sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation {
-        .copy
+        [.copy, .generic]
     }
 }

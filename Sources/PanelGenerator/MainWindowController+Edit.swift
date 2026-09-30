@@ -22,6 +22,14 @@ extension MainWindowController {
     }
 
     @objc func pgDuplicate(_ sender: Any?) { canvas.duplicateSelection() }
+
+    /// Edit ▸ Replace With ▸ …: the menu item carries "kind" or "kind#preset".
+    @objc func pgReplaceWith(_ sender: Any?) {
+        guard let raw = (sender as? NSMenuItem)?.representedObject as? String else { return }
+        let parts = raw.split(separator: "#", maxSplits: 1).map(String.init)
+        guard let kind = ElementKind(rawValue: parts[0]) else { return }
+        canvas.replace(with: kind, preset: parts.count > 1 ? parts[1] : nil)
+    }
     // Standard NSText-matching selector names, deliberately not pg-prefixed
     // and wired with a nil target (AppDelegate.swift) -- see the note above
     // validateMenuItem for why.
