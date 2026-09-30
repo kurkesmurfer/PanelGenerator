@@ -61,9 +61,23 @@ extension CanvasView {
         guard NSEvent.modifierFlags.contains(.command),
               let raw = sender.draggingPasteboard.string(forType: Paste.elementType),
               !raw.hasPrefix(Paste.stampPrefix),
-              let hit = element(at: panelPoint(fromWindowLocation: sender.draggingLocation))
+              let hit = replaceCandidate(at: panelPoint(fromWindowLocation: sender.draggingLocation))
         else { return [] }
         return selection.contains(hit.id) ? selection : [hit.id]
+    }
+
+    /// The element a replacing drop means, when several overlap the point:
+    /// a selected one first, then a control (component role or primitive
+    /// kind), then whatever is on top. Labels and transparent group boxes
+    /// often lie over a small knob, and replacing those instead is never
+    /// what the drop intends.
+    private func replaceCandidate(at p: CGPoint) -> PanelElement? {
+        let under = document.elements.reversed().filter {
+            $0.isHidden != true && $0.isTemplate != true && $0.contains(globalPoint: p)
+        }
+        return under.first { selection.contains($0.id) }
+            ?? under.first { $0.role.isComponent || $0.kind.category == .primitive }
+            ?? under.first
     }
 
     /// `.generic` while replacing, so the cursor loses its "+" badge.

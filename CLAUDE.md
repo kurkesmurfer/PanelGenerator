@@ -44,8 +44,9 @@ make app          # release build + PanelGenerator.app (icon, stamps, manual)
 `--grid` byte for byte. Run it before every refactor commit. Every commit
 should build on its own.
 
-The GUI cannot be tested headless. After UI changes, launch the app and ask
-Peet to check the affected interactions by hand.
+The GUI cannot be tested headless. After UI changes, run `make app` (Peet
+launches the bundle, not `.build/debug`) and ask him to check the affected
+interactions by hand; a stale `PanelGenerator.app` looks like a broken feature.
 
 ## Layout and boundaries
 
