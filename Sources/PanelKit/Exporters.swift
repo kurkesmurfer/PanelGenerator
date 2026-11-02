@@ -12,9 +12,9 @@ import UniformTypeIdentifiers
 /// stretched into something that is no longer a panel. It is drawn at its own
 /// proportions on a plate instead — which is what a module looks like in a
 /// rack, and reads at 32 px because the silhouette is the recognisable part.
-enum IconExporter {
+package enum IconExporter {
 
-    static func pngData(_ doc: PanelDocument, size: Int) throws -> Data {
+    package static func pngData(_ doc: PanelDocument, size: Int) throws -> Data {
         let side = max(16, size)
         guard let rep = NSBitmapImageRep(bitmapDataPlanes: nil,
                                          pixelsWide: side, pixelsHigh: side,
@@ -75,7 +75,7 @@ enum IconExporter {
 
 // MARK: - SVG export
 
-enum SVGExporter {
+package enum SVGExporter {
 
     /// `variant` selects which of a themed document's two colour pairs to
     /// render -- `.dark` (the default) reproduces a document's own untouched
@@ -83,7 +83,7 @@ enum SVGExporter {
     /// light variant defined at all, so every existing call site keeps
     /// emitting exactly what it always has unless it explicitly asks for
     /// `.light`.
-    static func documentSVG(_ doc: PanelDocument, variant: ThemeVariant = .dark) -> String {
+    package static func documentSVG(_ doc: PanelDocument, variant: ThemeVariant = .dark) -> String {
         let size = doc.pixelSize
         var s = """
         <?xml version="1.0" encoding="UTF-8"?>
@@ -118,7 +118,7 @@ enum SVGExporter {
     /// 128.69 mm against the spec's 128.5, because Rack's own RACK_GRID_HEIGHT
     /// is 380 px. Rack forces the module box height anyway, and both round to
     /// the same 240 px MetaModule faceplate.
-    static func svgOpenTag(width: CGFloat, height: CGFloat, units: SVGUnits) -> String {
+    package static func svgOpenTag(width: CGFloat, height: CGFloat, units: SVGUnits) -> String {
         let w: String, h: String
         switch units {
         case .pixels:
@@ -133,7 +133,7 @@ enum SVGExporter {
     }
 
     /// Path elements for a set of parts, without the enclosing group.
-    static func partsBody(_ parts: [ShapePart]) -> String {
+    package static func partsBody(_ parts: [ShapePart]) -> String {
         var body = ""
         for part in parts {
             let d = PathSVG.d(part.path)
@@ -143,7 +143,7 @@ enum SVGExporter {
         return body
     }
 
-    static func paintAttrs(fill: ColorSpec?, stroke: ColorSpec?, width: CGFloat) -> String {
+    package static func paintAttrs(fill: ColorSpec?, stroke: ColorSpec?, width: CGFloat) -> String {
         var a = ""
         if let f = fill {
             a += " fill=\"\(f.hexString)\""
@@ -158,7 +158,7 @@ enum SVGExporter {
         return a
     }
 
-    static func elementSVG(_ el: PanelElement, textAsPaths: Bool = true) -> String {
+    package static func elementSVG(_ el: PanelElement, textAsPaths: Bool = true) -> String {
         let c = el.center
 
         // Live <text> is only for handing a panel to a vector editor. VCV Rack
@@ -207,7 +207,7 @@ enum SVGExporter {
     /// Kept out of the panel file deliberately: everything in the panel SVG is
     /// artwork as far as Rack is concerned, and hiding a marker layer behind
     /// `display="none"` is a gamble on the SVG parser's attribute support.
-    static func componentsSVG(_ doc: PanelDocument) -> String {
+    package static func componentsSVG(_ doc: PanelDocument) -> String {
         let size = doc.pixelSize
         var s = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
         s += "<!-- PanelGenerator components layer for \"\(escape(doc.name))\".\n"
@@ -240,7 +240,7 @@ enum SVGExporter {
     }
 
     /// Which slice of a component's artwork a file holds.
-    enum ComponentLayer {
+    package enum ComponentLayer {
         case whole
         /// A knob's static body — Rack's `bg` SvgWidget, below the transform.
         case knobBackground
@@ -258,7 +258,7 @@ enum SVGExporter {
     /// size here *is* the control's size in Rack.
     /// A composed widget's artwork: every member of the group, moved so the
     /// widget's own bounds start at the origin, split by which parts turn.
-    static func componentSVG(_ anchor: PanelElement,
+    package static func componentSVG(_ anchor: PanelElement,
                              in doc: PanelDocument,
                              layer: ComponentLayer = .whole,
                              units: SVGUnits = .millimetres) -> String {
@@ -313,7 +313,7 @@ enum SVGExporter {
         return s
     }
 
-    static func componentSVG(_ el: PanelElement,
+    package static func componentSVG(_ el: PanelElement,
                              layer: ComponentLayer = .whole,
                              units: SVGUnits = .millimetres) -> String {
         var local = el
@@ -346,7 +346,7 @@ enum SVGExporter {
         return s
     }
 
-    static func escape(_ s: String) -> String {
+    package static func escape(_ s: String) -> String {
         s.replacingOccurrences(of: "&", with: "&amp;")
          .replacingOccurrences(of: "<", with: "&lt;")
          .replacingOccurrences(of: ">", with: "&gt;")
@@ -356,15 +356,15 @@ enum SVGExporter {
 
 // MARK: - PNG export
 
-enum PNGExporter {
+package enum PNGExporter {
 
-    struct PNGError: LocalizedError {
-        let message: String
-        var errorDescription: String? { message }
+    package struct PNGError: LocalizedError {
+        package let message: String
+        package var errorDescription: String? { message }
     }
 
     /// Rasterises the panel at `scale`× panel pixels (4× ≈ print quality).
-    static func pngData(_ doc: PanelDocument, scale: CGFloat = 4) throws -> Data {
+    package static func pngData(_ doc: PanelDocument, scale: CGFloat = 4) throws -> Data {
         let size = doc.pixelSize
         let pw = Int((size.width * scale).rounded())
         let ph = Int((size.height * scale).rounded())
@@ -426,7 +426,7 @@ enum PNGExporter {
     /// Same as `pngData(_:scale:)`, with the active Serge grid's row/column
     /// intersections drawn as dots on top -- a debug aid for `--grid`, not
     /// used by the normal export path.
-    static func pngDataWithGrid(_ doc: PanelDocument, scale: CGFloat = 4) throws -> Data {
+    package static func pngDataWithGrid(_ doc: PanelDocument, scale: CGFloat = 4) throws -> Data {
         let size = doc.pixelSize
         let pw = Int((size.width * scale).rounded())
         let ph = Int((size.height * scale).rounded())
@@ -497,5 +497,5 @@ enum PNGExporter {
         return data
     }
 
-    static var suggestedType: UTType { .png }
+    package static var suggestedType: UTType { .png }
 }

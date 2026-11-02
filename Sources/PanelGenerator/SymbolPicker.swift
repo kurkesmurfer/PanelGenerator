@@ -1,5 +1,5 @@
 import AppKit
-import CoreGraphics
+import PanelKit
 
 // MARK: - Swatches
 //

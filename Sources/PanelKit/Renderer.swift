@@ -7,24 +7,24 @@ import CoreText
 // One paintable piece of an element. Canvas, PNG and SVG exporters all consume
 // exactly these, so what you see is what exports.
 
-struct ShapePart {
-    var path: CGPath
-    var fill: ColorSpec?
-    var stroke: ColorSpec?
-    var lineWidth: CGFloat = 1
+package struct ShapePart {
+    package var path: CGPath
+    package var fill: ColorSpec?
+    package var stroke: ColorSpec?
+    package var lineWidth: CGFloat = 1
     /// Marks the parts of a knob that turn with the parameter. Rack's SvgKnob
     /// rotates one SVG over a static background, so the split has to be
     /// declared here rather than guessed from part ordering.
-    var rotates: Bool = false
+    package var rotates: Bool = false
 }
 
 // MARK: - Renderer
 
-enum Renderer {
+package enum Renderer {
 
     // MARK: Path builders
 
-    static func ellipsePath(_ r: CGRect) -> CGPath {
+    package static func ellipsePath(_ r: CGRect) -> CGPath {
         CGPath(ellipseIn: r, transform: nil)
     }
 
@@ -34,7 +34,7 @@ enum Renderer {
     /// control point sideways from the straight midpoint -- 0 is dead
     /// straight; Serge's own hardware often bows this kind of connector
     /// slightly around whatever sits between a knob and its jack.
-    static func linePath(_ f: CGRect, bow: CGFloat) -> CGPath {
+    package static func linePath(_ f: CGRect, bow: CGFloat) -> CGPath {
         let top = CGPoint(x: f.midX, y: f.minY)
         let bottom = CGPoint(x: f.midX, y: f.maxY)
         let p = CGMutablePath()
@@ -47,7 +47,7 @@ enum Renderer {
         return p
     }
 
-    static func roundedRectPath(_ f: CGRect,
+    package static func roundedRectPath(_ f: CGRect,
                                 tl: CGFloat, tr: CGFloat,
                                 br: CGFloat, bl: CGFloat) -> CGPath {
         let maxR = min(f.width, f.height) / 2
@@ -86,7 +86,7 @@ enum Renderer {
     /// corners exactly as well as convex ones -- unlike `roundedRectPath`,
     /// which only ever sees convex corners, this is the general case a
     /// notched box's reentrant corners need.
-    static func roundedPolygonPath(_ vertices: [CGPoint], radii: [CGFloat]) -> CGPath {
+    package static func roundedPolygonPath(_ vertices: [CGPoint], radii: [CGFloat]) -> CGPath {
         let n = vertices.count
         guard n >= 3, radii.count == n else {
             let p = CGMutablePath()
@@ -137,7 +137,7 @@ enum Renderer {
     /// and this box needs to make room for it, rather than reach out to
     /// wrap around it. Degenerates to a plain `roundedRectPath` equivalent
     /// when the edge is out of range or the tab has no size.
-    static func notchedBoxPath(_ f: CGRect,
+    package static func notchedBoxPath(_ f: CGRect,
                                tl: CGFloat, tr: CGFloat, br: CGFloat, bl: CGFloat,
                                edge: Int, start: CGFloat, length: CGFloat, depth: CGFloat,
                                notchRadius: CGFloat, invert: Bool = false) -> CGPath {
@@ -219,7 +219,7 @@ enum Renderer {
     /// running right along the top, vertical arm running down the left side.
     /// Outer corner radius is derived as thickness + innerRadius (the classic
     /// Okudagram proportion). Flips mirror it into the other three corners.
-    static func elbowPath(_ f: CGRect,
+    package static func elbowPath(_ f: CGRect,
                           thickness t: CGFloat,
                           thicknessV tv: CGFloat,
                           innerRi: CGFloat,
@@ -279,7 +279,7 @@ enum Renderer {
     /// bridge two corners that would otherwise want to be on opposite sides.
     /// Canonical orientation (no flips): comes from the left at the bottom,
     /// goes to the right at the top -- flipX/flipY mirror it as usual.
-    static func swirlPath(_ f: CGRect,
+    package static func swirlPath(_ f: CGRect,
                           thickness t: CGFloat,
                           thicknessV tv: CGFloat,
                           innerRi: CGFloat,
@@ -330,7 +330,7 @@ enum Renderer {
 
     /// Annulus arc (ring sector) inscribed in the frame — the big sweeping
     /// curved bands of the TNG aesthetic.
-    static func ringSectorPath(_ f: CGRect,
+    package static func ringSectorPath(_ f: CGRect,
                                thickness: CGFloat,
                                startDeg: CGFloat,
                                sweepDeg: CGFloat) -> CGPath {
@@ -351,7 +351,7 @@ enum Renderer {
 
     // MARK: Element → parts
 
-    static func parts(for el: PanelElement) -> [ShapePart] {
+    package static func parts(for el: PanelElement) -> [ShapePart] {
         let f = el.frame
         let accent = el.fill
         let ink = ColorSpec.hex("#101216")
@@ -668,7 +668,7 @@ enum Renderer {
     /// An imported path, scaled from its unit box into the element's frame.
     /// That is what makes dragging a corner resize the artwork rather than
     /// crop it.
-    static func importedParts(for el: PanelElement) -> [ShapePart] {
+    package static func importedParts(for el: PanelElement) -> [ShapePart] {
         guard let d = el.pathData, !d.isEmpty else { return [] }
         let unit: CGPath
         if let hit = importCache[d] {
@@ -698,7 +698,7 @@ enum Renderer {
     /// The value arc deliberately lands in the background: Rack turns one SVG
     /// over a static one, and an arc that *grows* cannot be produced by
     /// rotation. CodeGen warns when a custom knob relies on it.
-    static func knobLayers(_ parts: [ShapePart]) -> (bg: [ShapePart], fg: [ShapePart])? {
+    package static func knobLayers(_ parts: [ShapePart]) -> (bg: [ShapePart], fg: [ShapePart])? {
         let fg = parts.filter { $0.rotates }
         guard !fg.isEmpty else { return nil }
         return (parts.filter { !$0.rotates }, fg)
@@ -735,7 +735,7 @@ enum Renderer {
     /// line by its cap height, padded so the frame stays grabbable. Needed when
     /// a label is created in code and has no frame to inherit — the glyph run,
     /// not the string length, is what decides the width.
-    static func textSize(for el: PanelElement) -> CGSize {
+    package static func textSize(for el: PanelElement) -> CGSize {
         guard let o = outline(for: el) else {
             return CGSize(width: max(8, el.params.fontSize * 2),
                           height: max(8, el.params.fontSize * 1.4))
@@ -744,7 +744,7 @@ enum Renderer {
                       height: max(8, o.capHeight * 1.5))
     }
 
-    static func textParts(for el: PanelElement) -> [ShapePart] {
+    package static func textParts(for el: PanelElement) -> [ShapePart] {
         guard let o = outline(for: el) else { return [] }
         // Centre the cap-height box in the frame: visually centred for the
         // all-caps labels these panels are actually made of.
@@ -877,12 +877,12 @@ enum Renderer {
 
     // MARK: Drawing
 
-    static func drawBackground(_ doc: PanelDocument, in ctx: CGContext, variant: ThemeVariant = .dark) {
+    package static func drawBackground(_ doc: PanelDocument, in ctx: CGContext, variant: ThemeVariant = .dark) {
         ctx.setFillColor(doc.paper(for: variant).nsColor.cgColor)
         ctx.fill(CGRect(origin: .zero, size: doc.pixelSize))
     }
 
-    static func applyRotation(_ el: PanelElement, _ ctx: CGContext) {
+    package static func applyRotation(_ el: PanelElement, _ ctx: CGContext) {
         guard el.rotation != 0 else { return }
         let c = el.center
         ctx.translateBy(x: c.x, y: c.y)
@@ -895,7 +895,7 @@ enum Renderer {
     /// before this parameter existed. Passing no `doc` (every call site that
     /// predates theming) is therefore a no-op: `followsInk` elements simply
     /// keep whatever colour their `fill` already holds.
-    static func draw(_ el: PanelElement, in ctx: CGContext, doc: PanelDocument? = nil, variant: ThemeVariant = .dark) {
+    package static func draw(_ el: PanelElement, in ctx: CGContext, doc: PanelDocument? = nil, variant: ThemeVariant = .dark) {
         ctx.saveGState()
         applyRotation(el, ctx)
         let el = doc?.resolved(el, for: variant) ?? el
@@ -931,7 +931,7 @@ extension StampLibrary.Stamp {
     /// different system font — so the wordmark is stored as text plus a size
     /// and given its box on arrival. Nothing the person saves themselves is
     /// affected: `save` always records a real frame.
-    var resolved: StampLibrary.Stamp {
+    package var resolved: StampLibrary.Stamp {
         guard elements.contains(where: { $0.kind == .text && ($0.w <= 0 || $0.h <= 0) }) else {
             return self
         }

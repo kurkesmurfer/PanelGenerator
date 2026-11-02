@@ -3,24 +3,24 @@ import CoreGraphics
 
 // MARK: - Panel metrics (VCV Rack SVG conventions)
 
-enum PanelMetrics {
-    static let pixelsPerHP: CGFloat = 15      // VCV Rack SVG convention
-    static let height3U: CGFloat = 380        // 3U panel height in px
-    static let height1U: CGFloat = 127        // common 1U tile height in px
-    static let minPanelWidthHP = 2
+package enum PanelMetrics {
+    package static let pixelsPerHP: CGFloat = 15      // VCV Rack SVG convention
+    package static let height3U: CGFloat = 380        // 3U panel height in px
+    package static let height1U: CGFloat = 127        // common 1U tile height in px
+    package static let minPanelWidthHP = 2
     /// 84 HP is a full 19-inch rack row (426.7 mm), which is as wide as a
     /// single panel gets in practice.
-    static let maxPanelWidthHP = 84
+    package static let maxPanelWidthHP = 84
 
     /// Corner-screw inset from each edge and their side length, in px --
     /// shared with `PanelDocument.addCornerScrews` so there is one source
     /// of truth for where a screw actually sits. `CustomGrid` uses their
     /// combined reach to keep its row grid clear of them (and of the
     /// module name / brand mark that usually live in the same margin).
-    static let screwInset: CGFloat = 7
-    static let screwSide: CGFloat = 11
+    package static let screwInset: CGFloat = 7
+    package static let screwSide: CGFloat = 11
 
-    static func height(for format: PanelFormat) -> CGFloat {
+    package static func height(for format: PanelFormat) -> CGFloat {
         switch format {
         case .u1: return height1U
         case .u3: return height3U
@@ -29,11 +29,11 @@ enum PanelMetrics {
 
     /// Rack authors panel SVGs at 75 dpi, so panel pixels convert to the
     /// millimetres that `mm2px()` and MetaModule's `x_mm` both expect.
-    static let mmPerPixel: CGFloat = 25.4 / 75
+    package static let mmPerPixel: CGFloat = 25.4 / 75
 
-    static func mm(_ px: CGFloat) -> CGFloat { px * mmPerPixel }
+    package static func mm(_ px: CGFloat) -> CGFloat { px * mmPerPixel }
 
-    static func size(hp: Int, format: PanelFormat) -> CGSize {
+    package static func size(hp: Int, format: PanelFormat) -> CGSize {
         CGSize(width: CGFloat(max(hp, 1)) * pixelsPerHP,
                height: height(for: format))
     }
@@ -41,19 +41,19 @@ enum PanelMetrics {
 
 // MARK: - Geometry helpers
 
-enum Geo {
+package enum Geo {
     /// Half-HP snap grid keeps placements on the module grid.
-    static var defaultSnap: CGFloat { PanelMetrics.pixelsPerHP / 2 }
+    package static var defaultSnap: CGFloat { PanelMetrics.pixelsPerHP / 2 }
 
-    static func snap(_ v: CGFloat, to grid: CGFloat) -> CGFloat {
+    package static func snap(_ v: CGFloat, to grid: CGFloat) -> CGFloat {
         grid <= 0 ? v : (v / grid).rounded() * grid
     }
 
-    static func deg2rad(_ d: CGFloat) -> CGFloat { d * .pi / 180 }
+    package static func deg2rad(_ d: CGFloat) -> CGFloat { d * .pi / 180 }
 
     /// Rotate point p around c. Positive degrees appear clockwise in the
     /// y-down canvas coordinate space.
-    static func rotate(_ p: CGPoint, around c: CGPoint, degrees d: CGFloat) -> CGPoint {
+    package static func rotate(_ p: CGPoint, around c: CGPoint, degrees d: CGFloat) -> CGPoint {
         let a = deg2rad(d)
         let s = sin(a), co = cos(a)
         let dx = p.x - c.x, dy = p.y - c.y
@@ -61,7 +61,7 @@ enum Geo {
                        y: c.y + dx * s + dy * co)
     }
 
-    static func fmt(_ v: CGFloat) -> String {
+    package static func fmt(_ v: CGFloat) -> String {
         String(format: "%.2f", Double(v))
     }
 }
@@ -82,15 +82,15 @@ enum Geo {
 /// style guide (~/Development/Serge/docs/Panel-language.md), cross-checked
 /// against DUSG-spec.md's "five canonical lanes" and a real built module's
 /// coordinates.
-enum SergeGrid {
+package enum SergeGrid {
     /// The 5 canonical row centre-lines for a 3U panel, in millimetres,
     /// top to bottom. These are fixed reference values, not `height3U / 5`.
-    static let mainRowsMM: [CGFloat] = [27.2, 48.2, 69.2, 90.2, 111.2]
+    package static let mainRowsMM: [CGFloat] = [27.2, 48.2, 69.2, 90.2, 111.2]
 
     /// 42 HP spans exactly 10 main column positions -> 63 px (21.34 mm) pitch.
-    static let columnPitchPx: CGFloat = 42 * PanelMetrics.pixelsPerHP / 10
+    package static let columnPitchPx: CGFloat = 42 * PanelMetrics.pixelsPerHP / 10
 
-    static var mainRowsPx: [CGFloat] {
+    package static var mainRowsPx: [CGFloat] {
         mainRowsMM.map { $0 / PanelMetrics.mmPerPixel }
     }
 
@@ -98,7 +98,7 @@ enum SergeGrid {
     /// consecutive main rows. Serge inserts these one at a time, top to
     /// bottom, as density requires; PanelGenerator offers all four as snap
     /// targets at once rather than tracking a density heuristic.
-    static var halfRowsPx: [CGFloat] {
+    package static var halfRowsPx: [CGFloat] {
         let rows = mainRowsPx
         guard rows.count > 1 else { return [] }
         return (0..<rows.count - 1).map { (rows[$0] + rows[$0 + 1]) / 2 }
@@ -115,7 +115,7 @@ enum SergeGrid {
     /// The interior half rows, plus -- when `includingOuter` is set from
     /// `PanelDocument.sergeGridOuterHalfSteps` -- one further row at the same
     /// half-step pitch beyond the topmost and bottommost main rows.
-    static func halfRowsPx(includingOuter: Bool) -> [CGFloat] {
+    package static func halfRowsPx(includingOuter: Bool) -> [CGFloat] {
         let interior = halfRowsPx
         guard includingOuter, let first = mainRowsPx.first, let last = mainRowsPx.last else {
             return interior
@@ -125,17 +125,17 @@ enum SergeGrid {
         return [first - step] + interior + [last + step]
     }
 
-    struct Lines {
-        var mainRows: [CGFloat] = []
-        var halfRows: [CGFloat] = []
-        var mainCols: [CGFloat] = []
-        var halfCols: [CGFloat] = []
+    package struct Lines {
+        package var mainRows: [CGFloat] = []
+        package var halfRows: [CGFloat] = []
+        package var mainCols: [CGFloat] = []
+        package var halfCols: [CGFloat] = []
     }
 
     /// Builds the grid line set for a document. Rows only apply to 3U
     /// panels (Serge's row grid is a 3U convention); columns are derived
     /// from panel width and offered for any format.
-    static func lines(for doc: PanelDocument) -> Lines {
+    package static func lines(for doc: PanelDocument) -> Lines {
         var l = Lines()
         if doc.format == .u3 {
             l.mainRows = mainRowsPx
@@ -196,7 +196,7 @@ enum SergeGrid {
     /// LED had to sit on the outer half-step row instead (visually one row
     /// too high). Falls back to plain column-pitch snapping when the
     /// document has no rows to offer (non-3U formats).
-    static func snapCenter(_ p: CGPoint, in doc: PanelDocument) -> CGPoint {
+    package static func snapCenter(_ p: CGPoint, in doc: PanelDocument) -> CGPoint {
         let l = lines(for: doc)
         let rows = l.mainRows + l.halfRows
         guard let closestY = rows.min(by: { abs($0 - p.y) < abs($1 - p.y) }) else {
@@ -218,7 +218,7 @@ enum SergeGrid {
 /// standardised grid -- e.g. an imported panel that genuinely has 5
 /// columns, not Serge's 4 -- set the divisions to match via View > Snap
 /// Step > Custom Grid..., which asks for both counts in a dialog.
-enum CustomGrid {
+package enum CustomGrid {
     /// Rows keep clear of the corner screws by default: a screw's far edge
     /// sits `screwInset + screwSide` in from the panel edge, and a module's
     /// name (top) and brand mark (bottom) typically live in that same
@@ -226,34 +226,34 @@ enum CustomGrid {
     /// "bottom of [top] screw" for the top bound, "top of [bottom] screw"
     /// for the bottom bound. Columns are unrestricted; nothing about a
     /// panel's left/right edges asks for the same treatment.
-    static var rowMargin: CGFloat { PanelMetrics.screwInset + PanelMetrics.screwSide }
+    package static var rowMargin: CGFloat { PanelMetrics.screwInset + PanelMetrics.screwSide }
 
-    struct Lines {
-        var mainCols: [CGFloat] = []
-        var mainRows: [CGFloat] = []
+    package struct Lines {
+        package var mainCols: [CGFloat] = []
+        package var mainRows: [CGFloat] = []
         /// Serge-style intermediate positions (`PanelDocument.
         /// customGridHalfPositions`): half-lane columns sit at the interior
         /// cell boundaries, half rows at the interior row boundaries --
         /// exactly `SergeGrid`'s own half-row/half-lane convention, just
         /// generalised to whatever N x M the document is set to, rather
         /// than Serge's fixed 5 x 10. Empty when the checkbox is off.
-        var halfCols: [CGFloat] = []
-        var halfRows: [CGFloat] = []
+        package var halfCols: [CGFloat] = []
+        package var halfRows: [CGFloat] = []
         /// Finer, uncorrelated quarter-cell positions (`PanelDocument.
         /// customGridFinerPositions`): two per cell per axis, at 1/4 and 3/4
         /// of each column's width / row's height. Unlike the half tier,
         /// these aren't tied to a particular row/column kind -- they're
         /// candidates on every row and column alike. Empty when the
         /// checkbox is off.
-        var quarterCols: [CGFloat] = []
-        var quarterRows: [CGFloat] = []
+        package var quarterCols: [CGFloat] = []
+        package var quarterRows: [CGFloat] = []
     }
 
     /// Column/row centre-lines. Columns divide the full panel width evenly;
     /// rows divide only the band between the corner screws (see
     /// `rowMargin`), so the outer rows land well clear of a module's name
     /// and brand mark instead of the panel's bare edges.
-    static func lines(for doc: PanelDocument) -> Lines {
+    package static func lines(for doc: PanelDocument) -> Lines {
         let size = doc.pixelSize
         let n = max(1, doc.customGridColumns)
         let m = max(1, doc.customGridRows)
@@ -300,7 +300,7 @@ enum CustomGrid {
     /// first (main or half, whichever is closer), then columns of the
     /// matching kind -- main columns on a main row, half-lane columns on a
     /// half row.
-    static func snapCenter(_ p: CGPoint, in doc: PanelDocument) -> CGPoint {
+    package static func snapCenter(_ p: CGPoint, in doc: PanelDocument) -> CGPoint {
         let l = lines(for: doc)
         guard doc.customGridHalfPositions else {
             let xs = l.mainCols + l.quarterCols

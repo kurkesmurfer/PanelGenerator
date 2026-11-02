@@ -1,4 +1,5 @@
 import AppKit
+import PanelKit
 
 /// Bottom of the left sidebar: z-ordered element list, top layer first.
 /// Click selects · ⇧/⌘-click extends · ◉/○ toggles visibility · ▲▼ reorder.

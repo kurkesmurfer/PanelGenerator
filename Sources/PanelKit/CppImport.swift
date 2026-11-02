@@ -18,21 +18,21 @@ import CoreGraphics
 /// module sources are written in — named constants, `7.0f` literals, simple
 /// arithmetic, namespaced widget types, `#ifdef METAMODULE` — and reports
 /// everything it could not resolve rather than guessing a position.
-enum CppImport {
+package enum CppImport {
 
-    struct Outcome {
-        var elements: [PanelElement] = []
-        var moduleSlug: String? = nil
+    package struct Outcome {
+        package var elements: [PanelElement] = []
+        package var moduleSlug: String? = nil
         /// The panel resource the widget sets, e.g. "res/Muse.svg".
-        var panelResource: String? = nil
+        package var panelResource: String? = nil
         /// Only when the source sets `box.size` explicitly; normally the panel
         /// SVG is what says how wide the module is.
-        var widthHP: Int? = nil
-        var warnings: [String] = []
+        package var widthHP: Int? = nil
+        package var warnings: [String] = []
     }
 
     /// Rack constants a module source may use in a position expression.
-    static let builtinConstants: [String: CGFloat] = [
+    package static let builtinConstants: [String: CGFloat] = [
         "RACK_GRID_WIDTH": 15,
         "RACK_GRID_HEIGHT": 380,
         "SVG_DPI": 75,
@@ -52,7 +52,7 @@ enum CppImport {
     ///   right-hand screws of nearly every third-party plugin are unreadable.
     ///   `setPanel` names the panel it is taken from, which is how the caller
     ///   knows it.
-    static func outcome(from source: String, headers: [String] = [],
+    package static func outcome(from source: String, headers: [String] = [],
                         panelSize: CGSize? = nil) -> Outcome {
         var out = Outcome()
 
@@ -214,7 +214,7 @@ enum CppImport {
     /// The shape is what identifies these, not the name: four arguments, the
     /// first literally `this`, two that evaluate to numbers, and a string. That
     /// is tight enough that a draw call like `nvgText(args.vg, …)` cannot match.
-    static func isLabelShaped(_ call: Call) -> Bool {
+    package static func isLabelShaped(_ call: Call) -> Bool {
         call.args.count == 4 && call.args[0] == "this"
             && call.args[3].hasPrefix("\"") && !stringLiterals(in: call.args[3]).isEmpty
     }
@@ -249,7 +249,7 @@ enum CppImport {
     /// `addLabel(w, x, y, text, font, 7.5f, …)` — so the sixth argument of the
     /// first call in the body is the size. Where that does not hold, the label
     /// falls back to a default and the report says so.
-    static func labelHelpers(in text: String) -> [String: CGFloat] {
+    package static func labelHelpers(in text: String) -> [String: CGFloat] {
         let pattern = #"(?:inline\s+)?(?:static\s+)?void\s+(\w+)\s*\([^)]*\)\s*\{([^}]*)\}"#
         guard let re = try? NSRegularExpression(pattern: pattern, options: [.dotMatchesLineSeparators]) else {
             return [:]
@@ -275,7 +275,7 @@ enum CppImport {
     /// The size that follows is a placeholder — Rack takes it from the widget's
     /// own SVG — but the count is not, and it is the one the generated code
     /// depends on.
-    static func switchPositions(_ widget: String) -> CGFloat? {
+    package static func switchPositions(_ widget: String) -> CGFloat? {
         let bare = widget.components(separatedBy: "::").last ?? widget
         if let digit = bare.first(where: { $0.isNumber }), let n = Int(String(digit)), n >= 2, n <= 12 {
             return CGFloat(n)
@@ -347,7 +347,7 @@ enum CppImport {
     ///
     /// The distinction is not cosmetic: read a millimetre position as pixels
     /// and every component lands at a third of its proper place.
-    static func position(_ text: String, table: [String: CGFloat]) -> CGPoint? {
+    package static func position(_ text: String, table: [String: CGFloat]) -> CGPoint? {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
 
         if let inner = call(named: "mm2px", in: trimmed),
@@ -396,7 +396,7 @@ enum CppImport {
 
     /// `constexpr float PRIMARY_Y = 27.2f;` and its relatives, resolved in a
     /// few passes so a constant defined in terms of another one lands.
-    static func constants(in text: String) -> [String: CGFloat] {
+    package static func constants(in text: String) -> [String: CGFloat] {
         let patterns = [
             #"(?:static\s+)?(?:inline\s+)?constexpr\s+(?:float|double|int|auto)\s+(\w+)\s*=\s*([^;]+);"#,
             #"(?:static\s+)?const\s+(?:float|double|int)\s+(\w+)\s*=\s*([^;]+);"#,
@@ -435,7 +435,7 @@ enum CppImport {
     /// import the same panel twice. METAMODULE is taken as undefined, because
     /// the Rack branch is the one whose positions are authoritative; any other
     /// condition keeps its first branch and says so.
-    static func preprocess(_ source: String) -> (text: String, warnings: [String]) {
+    package static func preprocess(_ source: String) -> (text: String, warnings: [String]) {
         var warnings: [String] = []
         let uncommented = stripComments(source)
 
@@ -497,7 +497,7 @@ enum CppImport {
 
     /// Comments out, string and character literals intact, newlines kept so
     /// the line numbers in warnings still point at the source.
-    static func stripComments(_ s: String) -> String {
+    package static func stripComments(_ s: String) -> String {
         let chars = Array(s)
         var out = ""
         out.reserveCapacity(chars.count)
@@ -551,12 +551,12 @@ enum CppImport {
 
     // MARK: - Call scanning
 
-    struct Call {
-        var name: String
-        var template: String
-        var args: [String]
-        var line: Int
-        var isCentered: Bool { name.hasSuffix("Centered") }
+    package struct Call {
+        package var name: String
+        package var template: String
+        package var args: [String]
+        package var line: Int
+        package var isCentered: Bool { name.hasSuffix("Centered") }
     }
 
     /// Every `name<T>(args)` call in the text, outer before inner.
@@ -566,7 +566,7 @@ enum CppImport {
     /// nested inside others — `addParam(createParamCentered<T>(…))` — and a
     /// scanner that consumed the outer call would never see the inner one.
     /// Recording calls we have no use for is cheaper than missing those.
-    static func calls(in text: String) -> [Call] {
+    package static func calls(in text: String) -> [Call] {
         let chars = Array(text)
         var lineOf: [Int] = []
         var running = 1
@@ -639,7 +639,7 @@ enum CppImport {
     }
 
     /// Split on commas that are not inside brackets or a string.
-    static func splitTopLevel(_ text: String) -> [String] {
+    package static func splitTopLevel(_ text: String) -> [String] {
         var parts: [String] = []
         var current = ""
         var depth = 0
@@ -706,9 +706,9 @@ enum CppImport {
 /// `grid::PRIMARY_Y`, `panelW / 2` — arithmetic simple enough to evaluate and
 /// too common to refuse. Anything it cannot resolve returns nil, which becomes
 /// a skipped component and a warning naming the line.
-enum Expression {
+package enum Expression {
 
-    static func evaluate(_ text: String, constants: [String: CGFloat]) -> CGFloat? {
+    package static func evaluate(_ text: String, constants: [String: CGFloat]) -> CGFloat? {
         var parser = Parser(text: text, constants: constants)
         guard let v = parser.expression(), parser.atEnd else { return nil }
         return v

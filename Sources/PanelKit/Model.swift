@@ -4,7 +4,7 @@ import AppKit
 
 // MARK: - Panel format
 
-enum PanelFormat: String, Codable, CaseIterable {
+package enum PanelFormat: String, Codable, CaseIterable {
     case u1 = "1U"
     case u3 = "3U"
 }
@@ -15,26 +15,26 @@ enum PanelFormat: String, Codable, CaseIterable {
 /// the document's own untouched `background`/`inkDark`/element `fill`
 /// values, so nothing about an existing, non-themed document changes
 /// unless something explicitly asks for `.light`.
-enum ThemeVariant: String, Codable, CaseIterable {
+package enum ThemeVariant: String, Codable, CaseIterable {
     case dark, light
 }
 
 // MARK: - Colour
 
-struct ColorSpec: Codable, Hashable {
-    var r: Double
-    var g: Double
-    var b: Double
-    var a: Double
+package struct ColorSpec: Codable, Hashable {
+    package var r: Double
+    package var g: Double
+    package var b: Double
+    package var a: Double
 
-    init(r: Double, g: Double, b: Double, a: Double = 1) {
+    package init(r: Double, g: Double, b: Double, a: Double = 1) {
         self.r = r; self.g = g; self.b = b; self.a = a
     }
 
-    static let black = ColorSpec(r: 0, g: 0, b: 0)
-    static let white = ColorSpec(r: 1, g: 1, b: 1)
+    package static let black = ColorSpec(r: 0, g: 0, b: 0)
+    package static let white = ColorSpec(r: 1, g: 1, b: 1)
 
-    init(color: NSColor) {
+    package init(color: NSColor) {
         let c = color.usingColorSpace(.sRGB) ?? NSColor.black
         r = Double(c.redComponent)
         g = Double(c.greenComponent)
@@ -42,16 +42,16 @@ struct ColorSpec: Codable, Hashable {
         a = Double(c.alphaComponent)
     }
 
-    var nsColor: NSColor { NSColor(srgbRed: r, green: g, blue: b, alpha: a) }
+    package var nsColor: NSColor { NSColor(srgbRed: r, green: g, blue: b, alpha: a) }
 
-    var hexString: String {
+    package var hexString: String {
         String(format: "#%02X%02X%02X",
                Int((r * 255).rounded()),
                Int((g * 255).rounded()),
                Int((b * 255).rounded()))
     }
 
-    static func hex(_ s: String) -> ColorSpec {
+    package static func hex(_ s: String) -> ColorSpec {
         var t = s.trimmingCharacters(in: .whitespacesAndNewlines)
         if t.hasPrefix("#") { t.removeFirst() }
         guard t.count == 6, let v = UInt32(t, radix: 16) else { return ColorSpec(r: 0, g: 0, b: 0) }
@@ -60,18 +60,18 @@ struct ColorSpec: Codable, Hashable {
                          b: Double(v & 0xFF) / 255)
     }
 
-    func mixed(toward target: ColorSpec, fraction f: Double) -> ColorSpec {
+    package func mixed(toward target: ColorSpec, fraction f: Double) -> ColorSpec {
         ColorSpec(r: r + (target.r - r) * f,
                   g: g + (target.g - g) * f,
                   b: b + (target.b - b) * f,
                   a: a + (target.a - a) * f)
     }
 
-    func darkened(_ f: Double) -> ColorSpec { mixed(toward: ColorSpec.black, fraction: f) }
-    func lightened(_ f: Double) -> ColorSpec { mixed(toward: ColorSpec.white, fraction: f) }
+    package func darkened(_ f: Double) -> ColorSpec { mixed(toward: ColorSpec.black, fraction: f) }
+    package func lightened(_ f: Double) -> ColorSpec { mixed(toward: ColorSpec.white, fraction: f) }
 
     // Curated LCARS / TNG palette ("Okudagram" classics).
-    static let lcarsPresets: [(String, ColorSpec)] = [
+    package static let lcarsPresets: [(String, ColorSpec)] = [
         // First in the bank on purpose (Peet's own request, 2026-09-09):
         // the shared light-panel background flavour, exactly the value
         // already saved in GTO_Light.panelgen/GTS_Light.panelgen's own
@@ -119,7 +119,7 @@ struct ColorSpec: Codable, Hashable {
     /// "Orange" instead of repeating "#FF9C00" -- one moves, the other
     /// follows. Falls back to the first swatch on a typo'd name rather
     /// than crashing.
-    static func lcars(_ name: String) -> ColorSpec {
+    package static func lcars(_ name: String) -> ColorSpec {
         lcarsPresets.first { $0.0 == name }?.1 ?? lcarsPresets[0].1
     }
 }
@@ -133,9 +133,9 @@ struct ColorSpec: Codable, Hashable {
 /// Millimetres are what Rack's own documentation, helper.py's `mm` branch and
 /// every MetaModule rasteriser expect. A unitless pixel size is not merely
 /// less idiomatic: a rasteriser that reads `width="…mm"` fails outright on it.
-enum SVGUnits: String, Codable, CaseIterable {
+package enum SVGUnits: String, Codable, CaseIterable {
     case millimetres, pixels
-    var displayName: String { self == .millimetres ? "Millimetres" : "Pixels" }
+    package var displayName: String { self == .millimetres ? "Millimetres" : "Pixels" }
 }
 
 // MARK: - Component binding
@@ -144,10 +144,10 @@ enum SVGUnits: String, Codable, CaseIterable {
 /// artwork — it stays in the exported panel. Everything else is a live
 /// component: Rack and MetaModule draw those themselves, so they are excluded
 /// from the panel artwork and exported as positions instead.
-enum ComponentRole: String, Codable, CaseIterable {
+package enum ComponentRole: String, Codable, CaseIterable {
     case decoration, param, input, output, light, custom
 
-    var displayName: String {
+    package var displayName: String {
         switch self {
         case .decoration: return "Decoration (artwork)"
         case .param:      return "Param"
@@ -159,7 +159,7 @@ enum ComponentRole: String, Codable, CaseIterable {
     }
 
     /// Fill colour Rack's `helper.py` classifies a components-layer shape by.
-    var helperFill: String? {
+    package var helperFill: String? {
         switch self {
         case .decoration: return nil
         case .param:      return "#ff0000"
@@ -171,7 +171,7 @@ enum ComponentRole: String, Codable, CaseIterable {
     }
 
     /// Suffix `helper.py` appends to the identifier it reads from `data-name`.
-    var enumSuffix: String {
+    package var enumSuffix: String {
         switch self {
         case .param:  return "_PARAM"
         case .input:  return "_INPUT"
@@ -181,12 +181,12 @@ enum ComponentRole: String, Codable, CaseIterable {
         }
     }
 
-    var isComponent: Bool { self != .decoration }
+    package var isComponent: Bool { self != .decoration }
 
     /// One-letter badge for the layer list. The colours are helper.py's own
     /// classification colours, so what you see in the list is what lands in the
     /// components layer.
-    var badge: String {
+    package var badge: String {
         switch self {
         case .decoration: return ""
         case .param:      return "P"
@@ -199,7 +199,7 @@ enum ComponentRole: String, Codable, CaseIterable {
 }
 
 /// Where a component's artwork comes from.
-enum WidgetSource: String, Codable, CaseIterable {
+package enum WidgetSource: String, Codable, CaseIterable {
     /// A Rack ComponentLibrary type. Its size is fixed by Rack's own SVG, so
     /// the on-canvas element is a placement guide only — resizing it here
     /// changes nothing in Rack.
@@ -209,20 +209,20 @@ enum WidgetSource: String, Codable, CaseIterable {
     /// the way you resize the control.
     case custom
 
-    var displayName: String { self == .stock ? "Rack default" : "Custom (own art)" }
+    package var displayName: String { self == .stock ? "Rack default" : "Custom (own art)" }
 }
 
 // MARK: - Label placement
 
 /// Where "Label Selection…" puts a generated label relative to its component.
-enum LabelPlacement: String, Codable, CaseIterable {
+package enum LabelPlacement: String, Codable, CaseIterable {
     case above, below, left, right
-    var displayName: String { rawValue.capitalized }
+    package var displayName: String { rawValue.capitalized }
 }
 
 // MARK: - Element kinds
 
-enum ElementKind: String, Codable, CaseIterable {
+package enum ElementKind: String, Codable, CaseIterable {
     // Primitives
     case jack
     case knobLarge, knobMedium, knobSmall
@@ -252,11 +252,11 @@ enum ElementKind: String, Codable, CaseIterable {
     // Text
     case text
 
-    enum Category { case primitive, shape, text }
+    package enum Category { case primitive, shape, text }
 
-    var isKnob: Bool { self == .knobLarge || self == .knobMedium || self == .knobSmall }
+    package var isKnob: Bool { self == .knobLarge || self == .knobMedium || self == .knobSmall }
 
-    var category: Category {
+    package var category: Category {
         switch self {
         case .box, .ellipse, .triangle, .line, .elbow, .swirl, .ringSector, .symbol, .path: return .shape
         case .text: return .text
@@ -264,7 +264,7 @@ enum ElementKind: String, Codable, CaseIterable {
         }
     }
 
-    var displayName: String {
+    package var displayName: String {
         switch self {
         case .jack: return "Jack (3.5 mm)"
         case .knobLarge: return "Knob · Large"
@@ -295,7 +295,7 @@ enum ElementKind: String, Codable, CaseIterable {
     /// produced JACK_3_5_MM_7_INPUT — which names the widget you dropped rather
     /// than the thing it controls. These at least read like a Rack enum while
     /// you are still deciding what to call it.
-    var shortIdentifier: String {
+    package var shortIdentifier: String {
         switch self {
         case .jack: return "JACK"
         case .knobLarge, .knobMedium, .knobSmall: return "KNOB"
@@ -311,7 +311,7 @@ enum ElementKind: String, Codable, CaseIterable {
 
     /// What a freshly dropped element most likely is. Jacks default to input
     /// because that is the commoner case; flip it in the inspector.
-    var defaultRole: ComponentRole {
+    package var defaultRole: ComponentRole {
         switch self {
         case .jack: return .input
         case .knobLarge, .knobMedium, .knobSmall,
@@ -323,7 +323,7 @@ enum ElementKind: String, Codable, CaseIterable {
     }
 
     /// Rack ComponentLibrary type that matches this primitive most closely.
-    var defaultStockWidget: String {
+    package var defaultStockWidget: String {
         switch self {
         case .jack: return "PJ301MPort"
         case .knobLarge: return "RoundLargeBlackKnob"
@@ -339,7 +339,7 @@ enum ElementKind: String, Codable, CaseIterable {
 
     /// Rack types worth offering for this primitive. Free text either way —
     /// the list is a shortcut, not a constraint.
-    var stockWidgetChoices: [String] {
+    package var stockWidgetChoices: [String] {
         switch self {
         case .jack:
             return ["PJ301MPort", "PJ3410Port"]
@@ -364,7 +364,7 @@ enum ElementKind: String, Codable, CaseIterable {
         }
     }
 
-    func defaultElement(at point: CGPoint) -> PanelElement {
+    package func defaultElement(at point: CGPoint) -> PanelElement {
         var e = PanelElement(kind: self)
         e.role = defaultRole
         e.stockWidget = defaultStockWidget
@@ -437,44 +437,44 @@ enum ElementKind: String, Codable, CaseIterable {
 
 // MARK: - Element parameters (flat & robust for JSON round-trips)
 
-struct ElementParams: Codable, Hashable {
+package struct ElementParams: Codable, Hashable {
     // Box per-corner radii
-    var cornerTL: CGFloat = 0
-    var cornerTR: CGFloat = 0
-    var cornerBR: CGFloat = 0
-    var cornerBL: CGFloat = 0
+    package var cornerTL: CGFloat = 0
+    package var cornerTR: CGFloat = 0
+    package var cornerBR: CGFloat = 0
+    package var cornerBL: CGFloat = 0
     /// Box notch: a rectangular tab added to the middle of one edge, for
     /// "sculpting" a box's outline around a neighbouring one -- e.g. Serge's
     /// GTO channel brackets, which step out around a central zone while
     /// every corner, including the two new reentrant ones, stays rounded.
     /// 0 = no notch (a plain rounded rect); 1/2/3/4 = top/right/bottom/left.
-    var notchEdge: CGFloat = 0
+    package var notchEdge: CGFloat = 0
     /// Distance from that edge's start corner to the tab, in the direction
     /// of travel (top: left-to-right, right: top-to-bottom, bottom:
     /// right-to-left, left: bottom-to-top) -- so `start`/`length` read the
     /// same way regardless of which edge is chosen.
-    var notchStart: CGFloat = 0
+    package var notchStart: CGFloat = 0
     /// How far the tab spans along the edge.
-    var notchLength: CGFloat = 0
+    package var notchLength: CGFloat = 0
     /// How far the tab protrudes beyond the edge.
-    var notchDepth: CGFloat = 0
+    package var notchDepth: CGFloat = 0
     /// Fillet radius at the tab's 4 new corners (both the two convex ones at
     /// its far end and the two concave ones where it meets the base edge).
-    var notchRadius: CGFloat = 4
+    package var notchRadius: CGFloat = 4
     /// false (default): the notch is a tab that protrudes OUT beyond the
     /// edge, reaching toward a smaller neighbour (Serge's GTO brackets).
     /// true: the notch cuts IN instead, biting a rectangular recess out of
     /// this box so a bigger neighbour can overlap into what would
     /// otherwise be this box's own territory -- the same "sculpt around a
     /// neighbour" idea, the other direction round.
-    var notchInvert: Bool = false
+    package var notchInvert: Bool = false
     /// Sideways offset of a `.line` element's curve control point from its
     /// straight midpoint -- 0 is a plain straight line; Serge's own hardware
     /// often bows this kind of connector slightly around whatever sits
     /// between the knob and its jack.
-    var lineBow: CGFloat = 0
+    package var lineBow: CGFloat = 0
     // Elbow / Swirl
-    var thickness: CGFloat = 16   // horizontal-arm thickness
+    package var thickness: CGFloat = 16   // horizontal-arm thickness
     /// Vertical-arm thickness, independent of `thickness` so the vertical
     /// run can be much wider (or narrower) than the horizontal one while
     /// both the outer and inner corner fillets stay perfectly circular --
@@ -482,68 +482,68 @@ struct ElementParams: Codable, Hashable {
     /// rather than assuming they match. Falls back to `thickness` when
     /// decoding older documents that predate this field, so old shapes
     /// keep rendering with symmetric arms exactly as before.
-    var thicknessV: CGFloat = 16
-    var innerRadius: CGFloat = 8
-    var armH: CGFloat = 56       // elbow's only arm; swirl's bottom arm
-    var armV: CGFloat = 56
+    package var thicknessV: CGFloat = 16
+    package var innerRadius: CGFloat = 8
+    package var armH: CGFloat = 56       // elbow's only arm; swirl's bottom arm
+    package var armV: CGFloat = 56
     /// Swirl's top arm. Independent of `armH` so the knee (the spine) can
     /// sit off-centre -- equal values keep it where `armH` alone would put
     /// it. Unused by `.elbow`.
-    var armH2: CGFloat = 56
-    var flipX: Bool = false
-    var flipY: Bool = false
+    package var armH2: CGFloat = 56
+    package var flipX: Bool = false
+    package var flipY: Bool = false
     // Ring sector
-    var startAngle: CGFloat = -90
-    var sweepAngle: CGFloat = 100
+    package var startAngle: CGFloat = -90
+    package var sweepAngle: CGFloat = 100
     // Knobs
-    var pointerAngle: CGFloat = 45       // degrees, 0 = pointing up
+    package var pointerAngle: CGFloat = 45       // degrees, 0 = pointing up
     /// 0 pointer only, 1 position ring only, 2 both. A plain knob is what Rack
     /// draws, so it stays the default and the ring is a separate palette entry
     /// rather than a changed meaning for an existing one.
-    var knobStyle: CGFloat = 0
+    package var knobStyle: CGFloat = 0
     /// Total sweep of the open ring, degrees. 298.8 is Rack's own ±0.83·π.
-    var arcSpan: CGFloat = 298.8
+    package var arcSpan: CGFloat = 298.8
     /// Ring thickness as a fraction of the knob's diameter.
-    var arcWidth: CGFloat = 0.10
+    package var arcWidth: CGFloat = 0.10
     // Faders
-    var value: CGFloat = 0.5             // 0..1
+    package var value: CGFloat = 0.5             // 0..1
     // Button groups
-    var segments: CGFloat = 4            // buttons in the group (2…12)
-    var layout: CGFloat = 0              // 0 column, 1 row, 2 cross, 3 circular
+    package var segments: CGFloat = 4            // buttons in the group (2…12)
+    package var layout: CGFloat = 0              // 0 column, 1 row, 2 cross, 3 circular
     // Text
-    var text: String = "LABEL"
-    var fontSize: CGFloat = 12
-    var bold: Bool = true
+    package var text: String = "LABEL"
+    package var fontSize: CGFloat = 12
+    package var bold: Bool = true
     // Symbols. `weight` is a fraction of the symbol's short side, so a glyph
     // keeps its proportions at any size. The four slots are generic: what each
     // means is declared by the symbol's SymbolSpec, which is what lets the
     // catalogue grow without touching the model.
-    var symbol: String = "sine"
-    var weight: CGFloat = 0.16
-    var symbolA: CGFloat = 0.5
-    var symbolB: CGFloat = 0.5
-    var symbolC: CGFloat = 0.5
-    var symbolD: CGFloat = 0.5
+    package var symbol: String = "sine"
+    package var weight: CGFloat = 0.16
+    package var symbolA: CGFloat = 0.5
+    package var symbolB: CGFloat = 0.5
+    package var symbolC: CGFloat = 0.5
+    package var symbolD: CGFloat = 0.5
 }
 
 // MARK: - Element
 
-struct PanelElement: Codable, Hashable, Identifiable {
-    var id = UUID()
-    var kind: ElementKind
-    var name: String = ""
-    var isHidden: Bool? = nil            // optional so old documents decode cleanly
-    var groupID: UUID? = nil             // elements sharing a groupID act as one
-    var x: CGFloat = 0, y: CGFloat = 0, w: CGFloat = 30, h: CGFloat = 30
-    var rotation: CGFloat = 0            // degrees clockwise
-    var fill: ColorSpec = .lcars("Orange")
+package struct PanelElement: Codable, Hashable, Identifiable {
+    package var id = UUID()
+    package var kind: ElementKind
+    package var name: String = ""
+    package var isHidden: Bool? = nil            // optional so old documents decode cleanly
+    package var groupID: UUID? = nil             // elements sharing a groupID act as one
+    package var x: CGFloat = 0, y: CGFloat = 0, w: CGFloat = 30, h: CGFloat = 30
+    package var rotation: CGFloat = 0            // degrees clockwise
+    package var fill: ColorSpec = .lcars("Orange")
     /// Theme facility: when true, this element ignores its own `fill` and
     /// draws in the document's active ink colour instead (`PanelDocument.
     /// ink(for:)`) -- e.g. a text label that should read white on a dark
     /// panel and black on a light one. `fill` is left untouched either way,
     /// so turning this off (or opening the document somewhere theme-unaware)
     /// falls straight back to whatever colour was last set explicitly.
-    var followsInk: Bool = false
+    package var followsInk: Bool = false
     /// The other half of the theme facility: draws in the document's active
     /// *paper* colour (`PanelDocument.paper(for:)`) instead of ink. For a
     /// shape whose job is to blend into the panel background rather than
@@ -554,55 +554,55 @@ struct PanelElement: Codable, Hashable, Identifiable {
     /// ink), so following ink on a background-matching shape makes it stand
     /// out instead of disappear. `fill` is left untouched either way, same
     /// as `followsInk`.
-    var followsPaper: Bool = false
-    var stroke: ColorSpec? = nil         // outline (shapes only); nil = none
-    var strokeWidth: CGFloat = 1.5
-    var params = ElementParams()
+    package var followsPaper: Bool = false
+    package var stroke: ColorSpec? = nil         // outline (shapes only); nil = none
+    package var strokeWidth: CGFloat = 1.5
+    package var params = ElementParams()
 
     // Component binding — what this element becomes in generated widget code.
     // Defaults to .decoration so documents written before this existed keep
     // exporting exactly as they always did.
-    var role: ComponentRole = .decoration
+    package var role: ComponentRole = .decoration
     /// Identifier stem, e.g. "CUTOFF" → CUTOFF_PARAM. Empty means "derive it".
-    var enumName: String = ""
-    var widgetSource: WidgetSource = .stock
+    package var enumName: String = ""
+    package var widgetSource: WidgetSource = .stock
     /// Rack ComponentLibrary type when `widgetSource == .stock`.
-    var stockWidget: String = ""
+    package var stockWidget: String = ""
     /// Struct name to generate when `widgetSource == .custom`, e.g. LcarsKnob.
-    var customWidgetName: String = ""
+    package var customWidgetName: String = ""
     /// For a composed widget: this part turns with the parameter, so it lands
     /// in the `-fg` file that Rack rotates. Everything else is background.
     /// Only knobs rotate; for other widget types the split is not used yet.
-    var rotatesWithValue: Bool = false
+    package var rotatesWithValue: Bool = false
     /// Set on a text element made by "Label Selection…": the component it
     /// annotates. Re-running the command replaces its own labels rather than
     /// stacking a second copy on the first — invisible on canvas, doubled in
     /// the export.
-    var labelOwner: UUID? = nil
+    package var labelOwner: UUID? = nil
     /// SVG path data for a `.path` element, normalised into a 0…1 box so the
     /// frame drives its size. Optional so every document written before the
     /// importer existed decodes unchanged.
-    var pathData: String? = nil
+    package var pathData: String? = nil
     /// Imported tracing template: drawn faintly, never exported, and not
     /// selectable by clicking through it. Draw over it, then delete it.
-    var isTemplate: Bool? = nil
+    package var isTemplate: Bool? = nil
 
-    var frame: CGRect {
+    package var frame: CGRect {
         get { CGRect(x: x, y: y, width: w, height: h) }
         set { x = newValue.origin.x; y = newValue.origin.y
               w = newValue.size.width; h = newValue.size.height }
     }
-    var center: CGPoint { CGPoint(x: x + w / 2, y: y + h / 2) }
+    package var center: CGPoint { CGPoint(x: x + w / 2, y: y + h / 2) }
 
     /// Centre in millimetres — the unit both `mm2px()` and MetaModule's
     /// `x_mm`/`y_mm` are expressed in, so one table serves both targets.
-    var centerMM: CGPoint {
+    package var centerMM: CGPoint {
         CGPoint(x: PanelMetrics.mm(center.x), y: PanelMetrics.mm(center.y))
     }
 
     /// Widget type to instantiate: the custom struct name when there is one,
     /// otherwise the chosen Rack type.
-    var widgetClass: String {
+    package var widgetClass: String {
         widgetSource == .custom
             ? (customWidgetName.isEmpty ? "SvgKnob" : customWidgetName)
             : stockWidget
@@ -610,7 +610,7 @@ struct PanelElement: Codable, Hashable, Identifiable {
 
     /// `enumName` if set, otherwise something usable derived from the layer
     /// name — uppercased, non-alphanumerics collapsed to underscores.
-    var identifierStem: String {
+    package var identifierStem: String {
         var raw = enumName.isEmpty ? name : enumName
         // An untouched layer name is the kind's display name — good in the
         // palette, useless in an enum.
@@ -629,7 +629,7 @@ struct PanelElement: Codable, Hashable, Identifiable {
     /// pasteboard (`kind#preset`), which is how one element kind appears as
     /// several entries without multiplying ElementKind — and the same hook the
     /// symbol grid already used.
-    mutating func applyPreset(_ id: String) {
+    package mutating func applyPreset(_ id: String) {
         switch kind {
         case .symbol:
             applySymbol(id)
@@ -723,7 +723,7 @@ struct PanelElement: Codable, Hashable, Identifiable {
     /// Switch this element to a symbol, taking that symbol's own defaults for
     /// the four parameter slots — otherwise a pulse's width would survive as
     /// an ADSR's attack.
-    mutating func applySymbol(_ id: String) {
+    package mutating func applySymbol(_ id: String) {
         let spec = SymbolCatalogue.spec(id)
         params.symbol = spec.id
         params.symbolA = spec.defaults[0]
@@ -732,37 +732,40 @@ struct PanelElement: Codable, Hashable, Identifiable {
         params.symbolD = spec.defaults[3]
     }
 
-    func contains(globalPoint p: CGPoint) -> Bool {
+    package func contains(globalPoint p: CGPoint) -> Bool {
         frame.contains(Geo.rotate(p, around: center, degrees: -rotation))
     }
 }
 
 // MARK: - Document
 
-struct PanelDocument: Codable, Hashable {
+package struct PanelDocument: Codable, Hashable {
     /// On-disk shape version. Decoding is tolerant (a missing key falls back to
     /// the property default), so this is for diagnostics and future migrations,
     /// not for gating loads. 0 means "read from a file written before versioning
     /// existed"; `save` stamps the current version, so it never survives a
     /// round-trip.
-    static let currentSchemaVersion = 2
-    var schemaVersion: Int = PanelDocument.currentSchemaVersion
-    var name: String = "Untitled"
-    var widthHP: Int = 8
-    var format: PanelFormat = .u3
+    package static let currentSchemaVersion = 2
+    package var schemaVersion: Int = PanelDocument.currentSchemaVersion
+
+    /// An empty document with every setting at its default.
+    package init() {}
+    package var name: String = "Untitled"
+    package var widthHP: Int = 8
+    package var format: PanelFormat = .u3
     /// Divisions for `.customGrid` snap mode: an evenly-spaced N x M grid
     /// across the panel, for real modules whose actual layout doesn't
     /// follow Serge's standardised grid -- e.g. an imported panel that
     /// genuinely has 5 columns, not Serge's 4. Edited via View > Snap Step
     /// > Custom Grid..., which asks for both counts in a dialog.
-    var customGridColumns: Int = 4
-    var customGridRows: Int = 5
+    package var customGridColumns: Int = 4
+    package var customGridRows: Int = 5
     /// Serge-style intermediate snap positions for the custom grid -- half
     /// rows and half-lane columns at the interior cell boundaries, on the
     /// diagonal cross between four main-grid points, exactly like
     /// `SergeGrid`'s own half-row/half-lane convention (reserved for LEDs/
     /// switches/jacks, never knobs, by Serge's own unenforced convention).
-    var customGridHalfPositions: Bool = false
+    package var customGridHalfPositions: Bool = false
     /// Finer, uncorrelated quarter-cell snap positions for the custom grid --
     /// two per cell per axis (at 1/4 and 3/4 of each column's width / row's
     /// height), available on any row or column regardless of main/half kind.
@@ -771,7 +774,7 @@ struct PanelDocument: Codable, Hashable {
     /// position rather than share it -- e.g. a RISE/FALL knob pair's
     /// independent EXPO switches flanking the single half-lane column their
     /// shared CYCLE switch already occupies (the real GTO panel does this).
-    var customGridFinerPositions: Bool = false
+    package var customGridFinerPositions: Bool = false
     /// Extends `SergeGrid`'s half-row ladder by one further half-step (the
     /// same pitch as the existing interior half rows) beyond the topmost and
     /// bottommost main rows. Real Serge panels occasionally push a row of
@@ -779,7 +782,7 @@ struct PanelDocument: Codable, Hashable {
     /// roughly a half-step above the standard grid's row 1 -- a position the
     /// interior half-row ladder alone can't reach. Opt-in because it's not
     /// part of Serge's own documented grid.
-    var sergeGridOuterHalfSteps: Bool = false
+    package var sergeGridOuterHalfSteps: Bool = false
     // #1D1713 -- confirmed against the real SpaceTime (Kurkesmurfer) plugin's
     // own shipped panel SVGs (~/Development/SpaceTime/vcv/res/*.svg): every
     // one of them, without exception, paints its background rect exactly
@@ -789,7 +792,7 @@ struct PanelDocument: Codable, Hashable {
     // uses (Panel-language.md's own reference), so the two design languages
     // share one true background colour rather than two that merely look
     // similar.
-    var background: ColorSpec = .hex("#1D1713")
+    package var background: ColorSpec = .hex("#1D1713")
     /// Theme facility: a panel is theme-aware once this is set to something
     /// other than nil -- that's the "paper" colour for the light variant
     /// (`background` itself is always the dark/default paper, so an
@@ -802,24 +805,24 @@ struct PanelDocument: Codable, Hashable {
     /// between a dark and light panel was exactly these two things -- the
     /// backdrop and the label colour -- with every other element (jacks,
     /// knobs, LEDs) unchanged between variants.
-    var lightBackground: ColorSpec? = nil
-    var inkDark: ColorSpec = .hex("#E8E8F0")
-    var inkLight: ColorSpec = .black
+    package var lightBackground: ColorSpec? = nil
+    package var inkDark: ColorSpec = .hex("#E8E8F0")
+    package var inkLight: ColorSpec = .black
     /// True once a document has an explicit light variant to emit/preview.
-    var isThemed: Bool { lightBackground != nil }
+    package var isThemed: Bool { lightBackground != nil }
     /// The paper (background) or ink (label) colour to actually draw, for
     /// the given theme variant -- `dark` reproduces the document's own
     /// untouched values, so an unthemed document renders identically
     /// whichever variant is asked for.
-    func paper(for variant: ThemeVariant) -> ColorSpec {
+    package func paper(for variant: ThemeVariant) -> ColorSpec {
         variant == .dark ? background : (lightBackground ?? background)
     }
-    func ink(for variant: ThemeVariant) -> ColorSpec {
+    package func ink(for variant: ThemeVariant) -> ColorSpec {
         variant == .dark ? inkDark : inkLight
     }
     /// The colour an element actually draws in, for the given theme variant:
     /// its own literal `fill` unless it opted into following the panel's ink.
-    func resolvedFill(_ element: PanelElement, for variant: ThemeVariant) -> ColorSpec {
+    package func resolvedFill(_ element: PanelElement, for variant: ThemeVariant) -> ColorSpec {
         if element.followsPaper { return paper(for: variant) }
         if element.followsInk { return ink(for: variant) }
         return element.fill
@@ -832,7 +835,7 @@ struct PanelDocument: Codable, Hashable {
     /// checks itself. `followsPaper` wins if an element somehow has both set
     /// -- not a combination the Inspector offers, but paper is the more
     /// specific "blend into the background" intent of the two.
-    func resolved(_ element: PanelElement, for variant: ThemeVariant) -> PanelElement {
+    package func resolved(_ element: PanelElement, for variant: ThemeVariant) -> PanelElement {
         guard element.followsPaper || element.followsInk else { return element }
         var e = element
         e.fill = resolvedFill(element, for: variant)
@@ -841,21 +844,21 @@ struct PanelDocument: Codable, Hashable {
     /// Export labels as glyph outlines. Must stay on for VCV Rack: its SVG
     /// parser (nanosvg) has no text support and silently drops <text>. Turn it
     /// off only to hand editable text to Illustrator / Inkscape.
-    var textAsPaths: Bool = true
+    package var textAsPaths: Bool = true
     /// Plugin and module slugs used by the generated widget code. Slugs are
     /// permanent once a patch has been saved with the module — treat them as
     /// immutable from first use.
-    var pluginSlug: String = "MyPlugin"
-    var moduleSlug: String = "MyModule"
+    package var pluginSlug: String = "MyPlugin"
+    package var moduleSlug: String = "MyModule"
     /// Namespace to wrap generated custom widgets in, e.g. `museui`. Empty
     /// puts them at file scope.
-    var widgetNamespace: String = ""
-    var svgUnits: SVGUnits = .millimetres
-    var elements: [PanelElement] = []
+    package var widgetNamespace: String = ""
+    package var svgUnits: SVGUnits = .millimetres
+    package var elements: [PanelElement] = []
 
     /// Elements Rack / MetaModule will draw themselves, in stable top-left
     /// reading order so generated code and enums keep a sensible sequence.
-    var components: [PanelElement] {
+    package var components: [PanelElement] {
         elements
             .filter { $0.role.isComponent && $0.isHidden != true && !isWidgetArtwork($0) }
             .sorted(by: PanelDocument.readingOrder)
@@ -866,7 +869,7 @@ struct PanelDocument: Codable, Hashable {
     /// The row tolerance matters: a row of jacks aligned by eye is not aligned
     /// to the micron, and exact equality on y would order a row by that noise
     /// instead of by position — scrambling the generated enum.
-    static func readingOrder(_ a: PanelElement, _ b: PanelElement) -> Bool {
+    package static func readingOrder(_ a: PanelElement, _ b: PanelElement) -> Bool {
         let rowHeight: CGFloat = 8
         let rowA = (a.center.y / rowHeight).rounded()
         let rowB = (b.center.y / rowHeight).rounded()
@@ -876,7 +879,7 @@ struct PanelDocument: Codable, Hashable {
     /// Number these elements from one prefix, in reading order. Naming fifteen
     /// jacks one at a time is the tedium this removes; the identifiers are what
     /// make the generated enum readable as IN_1 rather than JACK_3_5_MM_7.
-    mutating func nameSequentially(ids: Set<UUID>, prefix: String) {
+    package mutating func nameSequentially(ids: Set<UUID>, prefix: String) {
         let trimmed = prefix.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else { return }
         let ordered = elements.filter { ids.contains($0.id) }.sorted(by: PanelDocument.readingOrder)
@@ -890,7 +893,7 @@ struct PanelDocument: Codable, Hashable {
     /// element, not the kind it happens to be. An element still holding its
     /// default layer name gets no label — twenty jacks all reading
     /// "Jack (3.5 mm)" is worse than none, and the fix is to name them first.
-    func labelText(for el: PanelElement, uppercase: Bool, spaceUnderscores: Bool) -> String? {
+    package func labelText(for el: PanelElement, uppercase: Bool, spaceUnderscores: Bool) -> String? {
         var raw = el.enumName.trimmingCharacters(in: .whitespaces)
         if raw.isEmpty && el.name != el.kind.displayName {
             raw = el.name.trimmingCharacters(in: .whitespaces)
@@ -909,7 +912,7 @@ struct PanelDocument: Codable, Hashable {
     /// moment you decide to keep it. Without this the only way back is to
     /// import the file again and lose the work done since.
     @discardableResult
-    mutating func setTemplate(_ on: Bool, ids: Set<UUID>) -> Int {
+    package mutating func setTemplate(_ on: Bool, ids: Set<UUID>) -> Int {
         var changed = 0
         for i in elements.indices where ids.contains(elements[i].id) {
             let now = elements[i].isTemplate == true
@@ -921,12 +924,12 @@ struct PanelDocument: Codable, Hashable {
     }
 
     /// Elements that will not reach any export because they are templates.
-    var templateElements: [PanelElement] { elements.filter { $0.isTemplate == true } }
+    package var templateElements: [PanelElement] { elements.filter { $0.isTemplate == true } }
 
     // MARK: - Fitting a panel
 
     /// How to bring a panel's contents back inside its edges.
-    enum FitMode: String, CaseIterable {
+    package enum FitMode: String, CaseIterable {
         /// Scale every position horizontally about the left margin, sizes
         /// unchanged. Keeps the column structure of a layout exactly — which is
         /// what narrowing a panel usually means — at the cost of closing the
@@ -936,7 +939,7 @@ struct PanelDocument: Codable, Hashable {
         /// already fits is disturbed.
         case nudge
 
-        var displayName: String {
+        package var displayName: String {
             self == .squeeze ? "Squeeze horizontally (keeps the layout's proportions)"
                              : "Bring strays inside (moves nothing else)"
         }
@@ -947,7 +950,7 @@ struct PanelDocument: Codable, Hashable {
     /// Rack places a component exactly where the code says, so one beyond the
     /// module's box is drawn outside it: invisible, unclickable, and still
     /// occupying a parameter.
-    func strayComponents() -> [PanelElement] {
+    package func strayComponents() -> [PanelElement] {
         let panel = CGRect(origin: .zero, size: pixelSize)
         return components.filter {
             let box = widgetBounds(of: $0)
@@ -976,7 +979,7 @@ struct PanelDocument: Codable, Hashable {
 
     /// Bring the panel's contents inside its edges. Returns how many elements moved.
     @discardableResult
-    mutating func fitToPanel(_ mode: FitMode, margin: CGFloat) -> Int {
+    package mutating func fitToPanel(_ mode: FitMode, margin: CGFloat) -> Int {
         let panel = CGRect(origin: .zero, size: pixelSize)
         guard panel.width > margin * 2, panel.height > margin * 2 else { return 0 }
         let inner = panel.insetBy(dx: margin, dy: margin)
@@ -1027,7 +1030,7 @@ struct PanelDocument: Codable, Hashable {
     ///
     /// Distance between centres, not overlap: a label sits beside the control
     /// it names, never on it.
-    func nearestLabel(to el: PanelElement, within limit: CGFloat) -> PanelElement? {
+    package func nearestLabel(to el: PanelElement, within limit: CGFloat) -> PanelElement? {
         elements
             .filter { $0.kind == .text && $0.isHidden != true && $0.isTemplate != true }
             .map { ($0, PanelDocument.gap(from: $0.center, to: widgetBounds(of: el))) }
@@ -1041,7 +1044,7 @@ struct PanelDocument: Codable, Hashable {
     /// from the control's rim whatever size the control is, so measuring from
     /// centres puts a big knob's own label out of range while a small one's
     /// stays in. That alone lost every large knob on a real panel.
-    static func gap(from p: CGPoint, to box: CGRect) -> CGFloat {
+    package static func gap(from p: CGPoint, to box: CGRect) -> CGFloat {
         let dx = max(box.minX - p.x, 0, p.x - box.maxX)
         let dy = max(box.minY - p.y, 0, p.y - box.maxY)
         return hypot(dx, dy)
@@ -1049,12 +1052,12 @@ struct PanelDocument: Codable, Hashable {
 
     /// A label reduced to what two panels can be expected to agree on.
     /// "LFO 1" and "LFO1" are the same control named twice.
-    static func labelKey(_ text: String) -> String {
+    package static func labelKey(_ text: String) -> String {
         String(text.uppercased().filter { $0.isLetter || $0.isNumber })
     }
 
     /// A label's text as a C++ identifier stem: "X CV" → X_CV.
-    static func identifier(fromLabel text: String) -> String {
+    package static func identifier(fromLabel text: String) -> String {
         let mapped = text.uppercased().map { $0.isLetter || $0.isNumber ? $0 : Character("_") }
         var out = String(mapped)
         while out.contains("__") { out = out.replacingOccurrences(of: "__", with: "_") }
@@ -1069,7 +1072,7 @@ struct PanelDocument: Codable, Hashable {
     /// Greedy by distance rather than per-component nearest: two knobs in a row
     /// would otherwise both claim the label that sits between them, and the one
     /// that actually owns it would be left unnamed.
-    func labelPairs(ids: Set<UUID>, within limit: CGFloat) -> [(component: UUID, label: String)] {
+    package func labelPairs(ids: Set<UUID>, within limit: CGFloat) -> [(component: UUID, label: String)] {
         let targets = elements.filter {
             ids.contains($0.id) && $0.role.isComponent && !isWidgetArtwork($0)
         }
@@ -1107,7 +1110,7 @@ struct PanelDocument: Codable, Hashable {
     /// panel, the other reaches the generated enum — but on a panel that is
     /// already labelled, the label is what you would have typed anyway.
     @discardableResult
-    mutating func nameFromLabels(ids: Set<UUID>, within limit: CGFloat) -> (named: Int, skipped: Int) {
+    package mutating func nameFromLabels(ids: Set<UUID>, within limit: CGFloat) -> (named: Int, skipped: Int) {
         let pairs = labelPairs(ids: ids, within: limit)
         var named = 0
         for pair in pairs {
@@ -1122,7 +1125,7 @@ struct PanelDocument: Codable, Hashable {
     }
 
     /// How a component's identifier was arrived at when adopting.
-    enum AdoptionKind: String {
+    package enum AdoptionKind: String {
         /// The two panels say the same thing.
         case exact
         /// The same thing spelled differently — "LFO 1" and "LFO1".
@@ -1131,10 +1134,10 @@ struct PanelDocument: Codable, Hashable {
         case abbreviated
     }
 
-    struct Adoption {
-        var label: String
-        var identifier: String
-        var kind: AdoptionKind
+    package struct Adoption {
+        package var label: String
+        package var identifier: String
+        package var kind: AdoptionKind
     }
 
     /// Copy identifiers across from another panel, matching on the label beside
@@ -1151,7 +1154,7 @@ struct PanelDocument: Codable, Hashable {
     /// which pass found each one, because a redesign renames as it goes and a
     /// guess you cannot see is worse than no guess.
     @discardableResult
-    mutating func adoptIdentifiers(from source: PanelDocument, ids: Set<UUID>,
+    package mutating func adoptIdentifiers(from source: PanelDocument, ids: Set<UUID>,
                                    within limit: CGFloat)
     -> (adopted: [Adoption], unmatched: [String]) {
         // Source labels, by role and normalised text. A list rather than one
@@ -1237,7 +1240,7 @@ struct PanelDocument: Codable, Hashable {
     /// frame: for a composed widget that is the whole artwork, so a label sits
     /// under the knob rather than under whichever part happens to be the anchor.
     @discardableResult
-    mutating func labelSelection(ids: Set<UUID>,
+    package mutating func labelSelection(ids: Set<UUID>,
                                  placement: LabelPlacement,
                                  gap: CGFloat,
                                  fontSize: CGFloat,
@@ -1301,7 +1304,7 @@ struct PanelDocument: Codable, Hashable {
         return (created, skipped)
     }
 
-    var pixelSize: CGSize { PanelMetrics.size(hp: widthHP, format: format) }
+    package var pixelSize: CGSize { PanelMetrics.size(hp: widthHP, format: format) }
 
     /// Give every still-unbound primitive the role its kind implies, returning
     /// how many changed.
@@ -1322,7 +1325,7 @@ struct PanelDocument: Codable, Hashable {
 
     /// Members of the composed widget anchored on `anchor`, in draw order.
     /// A custom component that is not grouped is a widget of one.
-    func widgetMembers(of anchor: PanelElement) -> [PanelElement] {
+    package func widgetMembers(of anchor: PanelElement) -> [PanelElement] {
         // Only a promoted widget unions its group. A group is also just a
         // selection convenience — rows of controls grouped so they move
         // together — and treating those as widgets collapsed every component in
@@ -1336,7 +1339,7 @@ struct PanelDocument: Codable, Hashable {
     /// The widget's own frame: the union of its members. This is what the
     /// generated code positions by and what the artwork is sized to — not the
     /// anchor's frame, which is just one piece of the drawing.
-    func widgetBounds(of anchor: PanelElement) -> CGRect {
+    package func widgetBounds(of anchor: PanelElement) -> CGRect {
         let members = widgetMembers(of: anchor)
         guard let first = members.first else { return anchor.frame }
         return members.dropFirst().reduce(first.frame) { $0.union($1.frame) }
@@ -1344,14 +1347,14 @@ struct PanelDocument: Codable, Hashable {
 
     /// Centre in millimetres of the thing Rack positions: the widget's bounds
     /// for a composed widget, the element itself otherwise.
-    func componentCentreMM(_ el: PanelElement) -> CGPoint {
+    package func componentCentreMM(_ el: PanelElement) -> CGPoint {
         let bounds = widgetBounds(of: el)
         return CGPoint(x: PanelMetrics.mm(bounds.midX), y: PanelMetrics.mm(bounds.midY))
     }
 
     /// True when this element is artwork belonging to someone else's widget,
     /// and so must not be drawn into the panel or treated as a component.
-    func isWidgetArtwork(_ el: PanelElement) -> Bool {
+    package func isWidgetArtwork(_ el: PanelElement) -> Bool {
         guard let group = el.groupID, !el.role.isComponent else { return false }
         return elements.contains {
             $0.groupID == group && $0.role.isComponent && $0.widgetSource == .custom
@@ -1363,7 +1366,7 @@ struct PanelDocument: Codable, Hashable {
     /// nearest the centre of the whole, which for a knob is the piece you would
     /// expect the control to be positioned by.
     @discardableResult
-    mutating func makeWidget(ids: Set<UUID>, name: String, role: ComponentRole) -> Bool {
+    package mutating func makeWidget(ids: Set<UUID>, name: String, role: ComponentRole) -> Bool {
         let members = elements.filter { ids.contains($0.id) }
         guard members.count >= 1, !name.isEmpty else { return false }
 
@@ -1399,7 +1402,7 @@ struct PanelDocument: Codable, Hashable {
     /// the same symbol — because otherwise the inspector's rows would not mean
     /// the same thing for every element it is about to write to. Returns in
     /// document order, so the stand-in does not change between rebuilds.
-    func uniformSelection(ids: Set<UUID>) -> PanelElement? {
+    package func uniformSelection(ids: Set<UUID>) -> PanelElement? {
         let selected = elements.filter { ids.contains($0.id) }
         guard selected.count > 1, let first = selected.first else { return nil }
         guard selected.allSatisfy({ $0.kind == first.kind }) else { return nil }
@@ -1412,7 +1415,7 @@ struct PanelDocument: Codable, Hashable {
     /// Whether every selected element already agrees on a value. The inspector
     /// marks the ones that do not, so a slider showing a single number never
     /// implies the rest match it.
-    func selectionAgrees<T: Equatable>(_ keyPath: KeyPath<PanelElement, T>, ids: Set<UUID>) -> Bool {
+    package func selectionAgrees<T: Equatable>(_ keyPath: KeyPath<PanelElement, T>, ids: Set<UUID>) -> Bool {
         let selected = elements.filter { ids.contains($0.id) }
         guard let first = selected.first else { return true }
         return selected.allSatisfy { $0[keyPath: keyPath] == first[keyPath: keyPath] }
@@ -1424,7 +1427,7 @@ struct PanelDocument: Codable, Hashable {
     /// Ordering is stable — count, then the colour itself — because the
     /// inspector rebuilds constantly and a well that jumps position between
     /// rebuilds is worse than no well at all.
-    func colourGroups(ids: Set<UUID>, strokes: Bool) -> [(colour: ColorSpec, ids: [UUID])] {
+    package func colourGroups(ids: Set<UUID>, strokes: Bool) -> [(colour: ColorSpec, ids: [UUID])] {
         var buckets: [ColorSpec: [UUID]] = [:]
         for el in elements where ids.contains(el.id) {
             guard let colour = strokes ? el.stroke : el.fill else { continue }
@@ -1444,7 +1447,7 @@ struct PanelDocument: Codable, Hashable {
     /// matching the old colour: a colour well fires continuously while the
     /// picker is open, and after the first change the old colour no longer
     /// matches anything.
-    mutating func setColour(_ colour: ColorSpec, ids: [UUID], strokes: Bool) {
+    package mutating func setColour(_ colour: ColorSpec, ids: [UUID], strokes: Bool) {
         let wanted = Set(ids)
         for i in elements.indices where wanted.contains(elements[i].id) {
             if strokes { elements[i].stroke = colour } else { elements[i].fill = colour }
@@ -1458,7 +1461,7 @@ struct PanelDocument: Codable, Hashable {
     /// every selected element at the topmost edge *present in the selection*.
     /// The panel's own top edge is a different operation and has to be asked
     /// for — conflating the two is the whole reason this takes a flag.
-    mutating func align(_ mode: String, ids: Set<UUID>, toPanel: Bool) {
+    package mutating func align(_ mode: String, ids: Set<UUID>, toPanel: Bool) {
         let bounds: CGRect
         if toPanel {
             guard !ids.isEmpty else { return }
@@ -1484,7 +1487,7 @@ struct PanelDocument: Codable, Hashable {
     }
 
     @discardableResult
-    mutating func bindPrimitives() -> Int {
+    package mutating func bindPrimitives() -> Int {
         var bound = 0
         for i in elements.indices {
             let kind = elements[i].kind
@@ -1496,7 +1499,7 @@ struct PanelDocument: Codable, Hashable {
         return bound
     }
 
-    mutating func addCornerScrews() {
+    package mutating func addCornerScrews() {
         let inset = PanelMetrics.screwInset, side = PanelMetrics.screwSide
         let sz = pixelSize
         let origins = [
@@ -1512,9 +1515,9 @@ struct PanelDocument: Codable, Hashable {
 
     // MARK Persistence
 
-    static let fileExtension = "panelgen"
+    package static let fileExtension = "panelgen"
 
-    func save(to url: URL) throws {
+    package func save(to url: URL) throws {
         // Stamp on write: a document loaded from a pre-versioning file decodes
         // as 0, and without this it would carry that 0 for the rest of its life.
         var out = self
@@ -1524,13 +1527,13 @@ struct PanelDocument: Codable, Hashable {
         try enc.encode(out).write(to: url, options: [.atomic])
     }
 
-    static func load(from url: URL) throws -> PanelDocument {
+    package static func load(from url: URL) throws -> PanelDocument {
         try JSONDecoder().decode(PanelDocument.self, from: Data(contentsOf: url))
     }
 }
 
 extension CGSize {
-    init(_ w: CGFloat, _ h: CGFloat) { self.init(width: w, height: h) }
+    package init(_ w: CGFloat, _ h: CGFloat) { self.init(width: w, height: h) }
 }
 
 // MARK: - Tolerant decoding
@@ -1551,7 +1554,7 @@ extension CGSize {
 extension KeyedDecodingContainer {
     /// Missing key → `fallback`. A key that is present but malformed still
     /// throws: that is a corrupt file, not an old one, and should be reported.
-    func decodeOr<T: Decodable>(_ key: Key, _ fallback: T) throws -> T {
+    package func decodeOr<T: Decodable>(_ key: Key, _ fallback: T) throws -> T {
         try decodeIfPresent(T.self, forKey: key) ?? fallback
     }
 }
@@ -1561,7 +1564,7 @@ extension KeyedDecodingContainer {
 // itself — it cannot drift out of sync with the property declaration.
 
 extension ElementParams {
-    init(from decoder: Decoder) throws {
+    package init(from decoder: Decoder) throws {
         self.init()
         let c = try decoder.container(keyedBy: CodingKeys.self)
         cornerTL     = try c.decodeOr(.cornerTL, cornerTL)
@@ -1611,7 +1614,7 @@ extension PanelDocument {
     /// growing the reach no longer eats into the rendered thickness. This
     /// recomputes every pre-v2 elbow/swirl element's stored values so it
     /// keeps rendering exactly as it did before the change.
-    static func migrateReachSemantics(_ elements: inout [PanelElement]) {
+    package static func migrateReachSemantics(_ elements: inout [PanelElement]) {
         for i in elements.indices {
             switch elements[i].kind {
             case .elbow, .swirl:
@@ -1635,7 +1638,7 @@ extension PanelDocument {
 }
 
 extension PanelElement {
-    init(from decoder: Decoder) throws {
+    package init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         // `kind` stays strict: there is no sane default, and guessing one would
         // quietly turn an element the reader does not understand into a box.
@@ -1669,7 +1672,7 @@ extension PanelElement {
 }
 
 extension PanelDocument {
-    init(from decoder: Decoder) throws {
+    package init(from decoder: Decoder) throws {
         self.init()
         let c = try decoder.container(keyedBy: CodingKeys.self)
         // Explicit 0, not the current default: no key means the file predates

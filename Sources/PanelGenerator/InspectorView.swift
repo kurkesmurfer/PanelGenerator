@@ -1,4 +1,5 @@
 import AppKit
+import PanelKit
 
 /// Right-hand inspector. Rebuilt whenever selection or document identity
 /// changes; controls write straight back into the canvas via `mutateSelection`.

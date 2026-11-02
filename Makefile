@@ -1,4 +1,4 @@
-.PHONY: build release run app selftest emit compare demo clean
+.PHONY: build release run app test selftest emit compare demo clean
 
 build:
 	swift build
@@ -11,6 +11,10 @@ run: build
 
 app: release
 	bash Scripts/make-app.sh
+
+# Unit tests for PanelKit (includes every --selftest check group, one case each).
+test:
+	swift test
 
 selftest: build
 	.build/debug/PanelGenerator --selftest Docs

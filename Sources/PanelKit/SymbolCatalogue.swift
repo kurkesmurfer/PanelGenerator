@@ -17,10 +17,10 @@ import CoreGraphics
 //  * The content box is inset by half the weight, so the outline — round caps
 //    included — can never spill outside the element's frame.
 
-enum SymbolCategory: String, Codable, CaseIterable {
+package enum SymbolCategory: String, Codable, CaseIterable {
     case signal, function, filter, mark, glyph
 
-    var displayName: String {
+    package var displayName: String {
         switch self {
         case .signal:   return "Signal"
         case .function: return "Function"
@@ -32,28 +32,28 @@ enum SymbolCategory: String, Codable, CaseIterable {
 }
 
 /// Everything a symbol's geometry is allowed to depend on.
-struct SymbolContext {
+package struct SymbolContext {
     /// The inset unit box the centreline is drawn in.
-    let box: CGRect
+    package let box: CGRect
     /// Four normalised parameters, 0…1. Meaning is per symbol.
-    let p: [CGFloat]
+    package let p: [CGFloat]
 
-    func at(_ t: CGFloat, _ v: CGFloat) -> CGPoint {
+    package func at(_ t: CGFloat, _ v: CGFloat) -> CGPoint {
         CGPoint(x: box.minX + t * box.width, y: box.minY + v * box.height)
     }
 }
 
-struct SymbolSpec {
-    let id: String
-    let name: String
-    let category: SymbolCategory
+package struct SymbolSpec {
+    package let id: String
+    package let name: String
+    package let category: SymbolCategory
     /// Waveforms stretch to whatever frame you give them; marks whose meaning
     /// depends on their proportions are drawn in the largest centred square.
-    let preservesAspect: Bool
+    package let preservesAspect: Bool
     /// Labels for the four parameter slots. nil means the symbol ignores it.
-    let parameters: [String?]
-    let defaults: [CGFloat]
-    let centreline: (SymbolContext) -> CGPath
+    package let parameters: [String?]
+    package let defaults: [CGFloat]
+    package let centreline: (SymbolContext) -> CGPath
 }
 
 // MARK: - Geometry helpers
@@ -131,29 +131,29 @@ private func rotated(_ pts: [(CGFloat, CGFloat)], _ quarter: Int) -> [(CGFloat, 
 
 // MARK: - Catalogue
 
-enum SymbolCatalogue {
+package enum SymbolCatalogue {
 
     /// Weight as a fraction of the short side. Clamped so the inset rule below
     /// always has room to work.
-    static let defaultWeight: CGFloat = 0.16
-    static let minWeight: CGFloat = 0.04
-    static let maxWeight: CGFloat = 0.28
+    package static let defaultWeight: CGFloat = 0.16
+    package static let minWeight: CGFloat = 0.04
+    package static let maxWeight: CGFloat = 0.28
     /// Never let a ribbon collapse below this in panel pixels — 1.2 px is
     /// roughly 0.4 mm, which is about the finest a panel is worth printing.
-    static let minWeightPixels: CGFloat = 1.2
+    package static let minWeightPixels: CGFloat = 1.2
 
-    static let all: [SymbolSpec] = signals + functions + filters + marks + glyphs
+    package static let all: [SymbolSpec] = signals + functions + filters + marks + glyphs
 
-    static func spec(_ id: String) -> SymbolSpec {
+    package static func spec(_ id: String) -> SymbolSpec {
         all.first { $0.id == id } ?? all[0]
     }
 
-    static func specs(in category: SymbolCategory) -> [SymbolSpec] {
+    package static func specs(in category: SymbolCategory) -> [SymbolSpec] {
         all.filter { $0.category == category }
     }
 
     /// The finished, fillable outline for an element, in panel coordinates.
-    static func path(for el: PanelElement) -> CGPath {
+    package static func path(for el: PanelElement) -> CGPath {
         let spec = spec(el.params.symbol)
         let f = el.frame
 

@@ -10,7 +10,7 @@ import Foundation
 /// regenerate panel, component artwork and widget code from the document on
 /// every build, which is the only way artwork and code stay in step once a
 /// panel is revised more than twice.
-enum Emit {
+package enum Emit {
 
     /// Which of a themed document's colour variants `--emit` actually writes.
     /// `.auto` (the default -- no `--theme` flag) always writes the dark
@@ -22,13 +22,13 @@ enum Emit {
     /// both files without needing to ask. The explicit values exist because
     /// Goose asked for a way to say exactly which variant(s) a given build
     /// step wants, rather than relying on what a document happens to declare.
-    enum ThemeSelection: String {
+    package enum ThemeSelection: String {
         case auto, dark, light, both
 
-        static func parse(_ s: String) -> ThemeSelection? { ThemeSelection(rawValue: s) }
+        package static func parse(_ s: String) -> ThemeSelection? { ThemeSelection(rawValue: s) }
 
         /// Which variants to actually write for a given document.
-        func variants(for doc: PanelDocument) -> [ThemeVariant] {
+        package func variants(for doc: PanelDocument) -> [ThemeVariant] {
             switch self {
             case .auto:  return doc.isThemed ? [.dark, .light] : [.dark]
             case .dark:  return [.dark]
@@ -38,7 +38,7 @@ enum Emit {
         }
     }
 
-    static func run(documentPath: String, outDir rawOut: String, theme: ThemeSelection = .auto) -> Never {
+    package static func run(documentPath: String, outDir rawOut: String, theme: ThemeSelection = .auto) -> Never {
         guard !documentPath.isEmpty else {
             print("usage: PanelGenerator --emit <document.panelgen | directory> [output-dir] [--theme dark|light|both]")
             fflush(stdout)
@@ -177,7 +177,7 @@ enum Emit {
     /// so emitting into a plugin should land each in its own place rather than
     /// piling headers next to plugin.json. When there is no `src/`, the output
     /// directory is a scratch folder and everything stays together.
-    static func headerDirectory(_ out: URL) -> URL {
+    package static func headerDirectory(_ out: URL) -> URL {
         var isDirectory: ObjCBool = false
         let src = out.appendingPathComponent("src")
         if FileManager.default.fileExists(atPath: src.path, isDirectory: &isDirectory),
