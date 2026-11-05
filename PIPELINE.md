@@ -34,22 +34,11 @@ Every direction of that diagram is implemented:
 | a document | artwork, widget library, placement header | `--emit` |
 | two of the above | a difference report | `--compare` |
 
-`Import SVG…` skips `<defs>`, `clipPath`, `mask`, `marker`, `pattern`,
-`filter` and `symbol` entirely rather than resolving what references them —
-walking into a `<defs>` block would draw its contents as if they were real
-visible artwork, which they are not. A warning fires only when one of these
-actually held something (an empty `<defs/>`, routine cruft most exporters
-leave behind, is silent) and names exactly what was found, e.g. `<defs>
-(clipPath, linearGradient, stop)`.
-
-Run `Scripts/flatten-svg.py <file.svg>` on the source first — it losslessly
-removes the common, harmless case (defs nothing actually references, `<use>`/
-`<symbol>` reuse, which it unlinks into real geometry) via Inkscape's CLI,
-and reports exactly what's left, by tag and id, when something is genuinely
-in use (a real clip, mask, gradient, pattern or filter). Those need a manual
-call — a clip becomes a Boolean intersection with the shape it clips, a
-gradient becomes a chosen flat colour — not something to guess at
-automatically; the script's own output says which.
+`Import SVG…` resolves CSS classes, `<use>`/`<symbol>`, clip paths and hidden
+layers, and reports what it cannot draw (masks, filters, patterns); see
+`Docs/IMPORT.md`. `PanelGenerator --import-check <file|folder>` shows what a
+file will import as without opening it. `Scripts/flatten-svg.py` is still
+useful for files that lean on masks or filters.
 
 ---
 

@@ -9,11 +9,85 @@ import PanelKit
 //   PanelGenerator --compare <a> <b>   → do two forms of a panel agree?
 //   PanelGenerator --icon <doc> <png>  → a panel as a square app icon
 //   PanelGenerator --png <doc> <png> [scale]  → full panel artwork as a PNG
+//   PanelGenerator --import-check <svg|cpp|folder> [pngdir]  → import every SVG
+//                                                 and module .cpp,
+//                                                 report what came in and what
+//                                                 was lost; optionally render it
 //   PanelGenerator --grid <doc> [png] [scale]  → print the active Serge grid's
 //                                                 lines (px & mm); optionally
 //                                                 render them over the panel
 
 let arguments = Array(CommandLine.arguments.dropFirst())
+
+if let i = arguments.firstIndex(of: "--import-check") {
+    guard i + 1 < arguments.count else {
+        print("usage: PanelGenerator --import-check <file.svg|folder> [png-output-folder]")
+        fflush(stdout)
+        exit(2)
+    }
+    let root = URL(fileURLWithPath: (arguments[i + 1] as NSString).expandingTildeInPath)
+        .resolvingSymlinksInPath()
+    let pngDir = i + 2 < arguments.count
+        ? URL(fileURLWithPath: (arguments[i + 2] as NSString).expandingTildeInPath) : nil
+    var files: [URL] = []
+    var isDir: ObjCBool = false
+    if FileManager.default.fileExists(atPath: root.path, isDirectory: &isDir), isDir.boolValue {
+        let walker = FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil)
+        while let u = walker?.nextObject() as? URL {
+            let ext = u.pathExtension.lowercased()
+            if ext == "svg" || ext == "cpp" { files.append(u.resolvingSymlinksInPath()) }
+        }
+        files.sort { $0.path < $1.path }
+    } else {
+        files = [root]
+    }
+    if let pngDir { try? FileManager.default.createDirectory(at: pngDir, withIntermediateDirectories: true) }
+    var failed = 0
+    for url in files {
+        let rel = url.path.hasPrefix(root.path) && url.path != root.path
+            ? String(url.path.dropFirst(root.path.count + 1)) : url.lastPathComponent
+        if url.pathExtension.lowercased() == "cpp" {
+            guard let source = try? String(contentsOf: url, encoding: .utf8),
+                  source.contains("ModuleWidget") else { continue }
+            let dir = url.deletingLastPathComponent()
+            let headers = ((try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? [])
+                .filter { ["h", "hpp"].contains($0.pathExtension.lowercased()) }
+                .compactMap { try? String(contentsOf: $0, encoding: .utf8) }
+            let o = CppImport.outcome(from: source, headers: headers)
+            var roles: [String: Int] = [:]
+            for e in o.elements { roles[e.role.rawValue, default: 0] += 1 }
+            let summary = roles.keys.sorted().map { "\(roles[$0]!) \($0)" }.joined(separator: ", ")
+            print("CPP   \(rel): \(o.elements.count) elements (\(summary))"
+                  + (o.moduleSlug.map { ", slug \($0)" } ?? "") + (o.panelResource.map { ", panel \($0)" } ?? ""))
+            for w in o.warnings { print("      - \(w)") }
+            continue
+        }
+        do {
+            let o = try SVGImport.outcome(from: try Data(contentsOf: url))
+            var kinds: [String: Int] = [:]
+            for e in o.elements { kinds[e.kind.rawValue, default: 0] += 1 }
+            let summary = kinds.keys.sorted().map { "\(kinds[$0]!) \($0)" }.joined(separator: ", ")
+            print("OK    \(rel): \(o.widthHP)HP \(o.format.rawValue), \(o.elements.count) elements (\(summary))"
+                  + (o.background.map { ", background \($0.hexString)" } ?? ""))
+            for w in o.warnings { print("      - \(w)") }
+            if let pngDir {
+                var doc = PanelDocument()
+                doc.widthHP = o.widthHP
+                doc.format = o.format
+                if let bg = o.background { doc.background = bg }
+                doc.elements = o.elements
+                let name = rel.replacingOccurrences(of: "/", with: "__") + ".png"
+                try PNGExporter.pngData(doc, scale: 2).write(to: pngDir.appendingPathComponent(name))
+            }
+        } catch {
+            failed += 1
+            print("FAIL  \(rel): \(error.localizedDescription)")
+        }
+    }
+    print("\(files.count) file\(files.count == 1 ? "" : "s"), \(failed) failed")
+    fflush(stdout)
+    exit(failed == 0 ? 0 : 1)
+}
 
 if let i = arguments.firstIndex(of: "--grid") {
     guard i + 1 < arguments.count else {

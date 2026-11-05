@@ -17,6 +17,17 @@ package enum SVGPath {
     // MARK: - Path data
 
     package static func path(fromD d: String) -> CGPath? {
+        parse(d, lenient: false)
+    }
+
+    /// The path up to its first error, the way browsers draw malformed data.
+    /// nil if nothing before the error was drawable. For importing other
+    /// tools' files; `path(fromD:)` stays strict for our own round trips.
+    package static func partialPath(fromD d: String) -> CGPath? {
+        parse(d, lenient: true)
+    }
+
+    private static func parse(_ d: String, lenient: Bool) -> CGPath? {
         var scanner = Tokens(d)
         let path = CGMutablePath()
 
@@ -26,6 +37,10 @@ package enum SVGPath {
         var lastQuad: CGPoint? = nil      // reflection point for T
         var command: Character = " "
         var haveStarted = false
+
+        func fail() -> CGPath? {
+            lenient && !path.isEmpty ? path.copy() : nil
+        }
 
         func rel(_ p: CGPoint, _ relative: Bool) -> CGPoint {
             relative ? CGPoint(x: current.x + p.x, y: current.y + p.y) : p
@@ -39,13 +54,13 @@ package enum SVGPath {
                 break
             } else if !haveStarted {
                 // Numbers before any command: not a path.
-                return nil
+                return fail()
             } else if command == "M" || command == "m" {
                 // An implicit repeat of moveto is lineto, per the spec. Getting
                 // this wrong turns a polygon into a scatter of dots.
                 command = command == "M" ? "L" : "l"
             } else if command == "Z" || command == "z" {
-                return nil
+                return fail()
             }
 
             let lower = Character(command.lowercased())
@@ -53,7 +68,7 @@ package enum SVGPath {
 
             switch lower {
             case "m":
-                guard let x = scanner.number(), let y = scanner.number() else { return nil }
+                guard let x = scanner.number(), let y = scanner.number() else { return fail() }
                 current = rel(CGPoint(x: x, y: y), isRelative)
                 start = current
                 path.move(to: current)
@@ -61,44 +76,44 @@ package enum SVGPath {
                 lastCubic = nil; lastQuad = nil
 
             case "l":
-                guard let x = scanner.number(), let y = scanner.number() else { return nil }
+                guard let x = scanner.number(), let y = scanner.number() else { return fail() }
                 current = rel(CGPoint(x: x, y: y), isRelative)
                 path.addLine(to: current)
                 lastCubic = nil; lastQuad = nil
 
             case "h":
-                guard let x = scanner.number() else { return nil }
+                guard let x = scanner.number() else { return fail() }
                 current = CGPoint(x: isRelative ? current.x + x : x, y: current.y)
                 path.addLine(to: current)
                 lastCubic = nil; lastQuad = nil
 
             case "v":
-                guard let y = scanner.number() else { return nil }
+                guard let y = scanner.number() else { return fail() }
                 current = CGPoint(x: current.x, y: isRelative ? current.y + y : y)
                 path.addLine(to: current)
                 lastCubic = nil; lastQuad = nil
 
             case "c":
-                guard let a = scanner.point(), let b = scanner.point(), let e = scanner.point() else { return nil }
+                guard let a = scanner.point(), let b = scanner.point(), let e = scanner.point() else { return fail() }
                 let c1 = rel(a, isRelative), c2 = rel(b, isRelative), end = rel(e, isRelative)
                 path.addCurve(to: end, control1: c1, control2: c2)
                 current = end; lastCubic = c2; lastQuad = nil
 
             case "s":
-                guard let b = scanner.point(), let e = scanner.point() else { return nil }
+                guard let b = scanner.point(), let e = scanner.point() else { return fail() }
                 let c1 = reflect(lastCubic, about: current)
                 let c2 = rel(b, isRelative), end = rel(e, isRelative)
                 path.addCurve(to: end, control1: c1, control2: c2)
                 current = end; lastCubic = c2; lastQuad = nil
 
             case "q":
-                guard let a = scanner.point(), let e = scanner.point() else { return nil }
+                guard let a = scanner.point(), let e = scanner.point() else { return fail() }
                 let c = rel(a, isRelative), end = rel(e, isRelative)
                 path.addQuadCurve(to: end, control: c)
                 current = end; lastQuad = c; lastCubic = nil
 
             case "t":
-                guard let e = scanner.point() else { return nil }
+                guard let e = scanner.point() else { return fail() }
                 let c = reflect(lastQuad, about: current)
                 let end = rel(e, isRelative)
                 path.addQuadCurve(to: end, control: c)
@@ -108,7 +123,7 @@ package enum SVGPath {
                 guard let rx = scanner.number(), let ry = scanner.number(),
                       let rotation = scanner.number(),
                       let largeArc = scanner.flag(), let sweep = scanner.flag(),
-                      let e = scanner.point() else { return nil }
+                      let e = scanner.point() else { return fail() }
                 let end = rel(e, isRelative)
                 addArc(to: path, from: current, to: end,
                        rx: rx, ry: ry, rotationDegrees: rotation,
@@ -121,7 +136,7 @@ package enum SVGPath {
                 lastCubic = nil; lastQuad = nil
 
             default:
-                return nil
+                return fail()
             }
 
             scanner.skipSeparators()

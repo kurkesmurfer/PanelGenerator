@@ -68,31 +68,58 @@ normally authored with the viewBox **in millimetres**:
 <svg width="71.12mm" height="128.5mm" viewBox="0 0 71.12 128.5">
 ```
 
-PanelGenerator works in 75-dpi pixels, where 1 HP is 15 px. The importer reads
-the `width` attribute's unit and scales by it — 75/25.4 ≈ 2.953 for millimetres.
-A file with no `width` is assumed to be in pixels already, and says so in the
-import report.
+PanelGenerator works in 75-dpi pixels, where 1 HP is 15 px. A physical `width`
+(mm, cm, in, pt) settles the scale. When the file gives no width, or a width in
+pixels, the importer checks whether that yields a real Eurorack height (3U, or a
+Pulp Logic / Intellijel 1U strip). If not, it tries millimetres, Illustrator's
+points (72 dpi) and web pixels (96 dpi) and takes the one whose height *and*
+whole-HP width fit, saying so in the report. A file with only `width` and
+`height` and no viewBox is read as CSS pixels at those sizes.
 
 The panel's HP is rounded from the result; if the file is not a whole number of
 HP wide, the report says by how much.
+
+## Styles, references and hidden layers
+
+- **CSS** in `<style>` blocks applies, for the selectors panel files use:
+  `.class`, `#id`, `tag`, `tag.class`, `*`. The cascade is the spec's:
+  presentation attributes, then rules by specificity, then `style="…"`.
+- **Hidden layers stay out.** `display:none` and `visibility:hidden` (a hidden
+  Inkscape layer) are not imported; the report counts them. The one exception is
+  helper.py's `components` layer, which is normally hidden and is always read.
+- **`<use>` and `<symbol>`** are resolved, including a symbol's viewBox scaled
+  to the use's width and height.
+- **Clip paths** are applied: the clipped geometry is intersected with the clip.
+  A shape entirely outside its clip is left out and counted.
+- **fill-rule:evenodd** is kept, by normalising the path so holes survive the
+  non-zero fill PanelGenerator draws with.
+- **Opacity** multiplies down the tree into the fill and stroke alpha.
+- **Colours**: every CSS form — `#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa`,
+  `rgb()`/`rgba()` with numbers or percentages, `hsl()`, all 147 named colours
+  and `currentColor`. An unrecognised colour draws black and is named in the
+  report rather than making the shape disappear.
+- **Malformed path data** is drawn up to the first error, as browsers do.
 
 ## What does not survive
 
 Each of these produces a warning in the import report rather than a silently
 wrong drawing:
 
-- **Gradients.** PanelGenerator fills are solid. A gradient fill imports as
-  flat grey.
-- **Clip paths, masks, markers, patterns, filters, `<symbol>`.** The subtree is
-  skipped, so artwork that depended on it will differ.
-- **`<use>`.** References are not resolved; that artwork is missing.
+- **Gradients** come in as their average colour; PanelGenerator fills are solid.
+- **Masks, filters (shadows, blurs, glows) and pattern fills** are named in the
+  report and not applied.
 - **Embedded rasters.**
-- **CSS in `<style>` blocks.** Presentation attributes and `style="…"` on the
-  element are read; a shape styled only by a class comes in unfilled.
-- **`<text>`.** No Rack panel has any — nanosvg drops text, so every panel in
-  the wild already has its labels converted to outlines. Those import as paths,
-  which means an imported panel's labels are shapes, not editable text. Retype
-  them.
+- **Multi-line text** split across positioned `<tspan>`s comes in as one line.
+
+To see what an import will do before opening it, or across a whole folder of
+panels:
+
+```
+PanelGenerator --import-check <file.svg|file.cpp|folder> [png-folder]
+```
+
+prints what each file imports as and every warning, and optionally renders each
+import to PNG.
 
 ## Reading positions out of a plugin
 
@@ -113,12 +140,22 @@ level up — the import offers to bring the artwork in at the same time.
 - `createParam` / `createInput` / `createOutput` / `createLight`, with and
   without `Centered`, plus `createWidget` for screws and other decoration.
 - `mm2px(Vec(x, y))` and bare `Vec(x, y)` in panel pixels. Mixing these up is
-  the mistake that puts every component at a third of its proper place.
+  the mistake that puts every component at a third of its proper place. Also
+  `Vec(mm2px(x), mm2px(y))` and helpers such as `millimetersToPixelsVec(x, y)`.
 - Arithmetic: `RACK_GRID_WIDTH * 2`, `7.0f`, `panelW / 2`, `(a + b) * -1`.
 - **Named constants**, including from a sibling header. A panel laid out on a
   grid — `mm2px(Vec(7.0f, grid::PRIMARY_Y))` — is unreadable without them, so
   every `.h`/`.hpp` in the same directory is scanned for `constexpr`, `const`
-  and `#define` values. Qualified names resolve by their last component.
+  and `#define` values, including several per declaration
+  (`constexpr float X0 = 9.4f, PITCH = 11.f;`) and arrays
+  (`laneY[5] = {…}`, used as `laneY[3]`). Qualified names resolve by their
+  last component.
+- **Locals, in order.** `float y = 30.f;` before one call and `y = 50.f;` or
+  `y += 10.f;` before the next give each call its own value.
+- **Loops with constant bounds are unrolled**, nested ones too:
+  `for (int i = 0; i < 4; i++) addInput(… Vec(X0 + i * PITCH, Y) …, IN_INPUT + i)`
+  gives four jacks named `IN_1` … `IN_4`.
+- Casts: `(float) x`, `float(x)`, `static_cast<float>(x)`.
 - Nested widget templates: `MediumLight<GreenRedLight>` survives verbatim.
 - **Namespaced types are your own widgets.** `museui::IoJack` imports as a
   custom widget named `IoJack`, not as a substituted Rack part, so generating
@@ -153,7 +190,7 @@ them would bury the cases that matter.
 ### What it does not do
 
 It is a reader, not a compiler. Positions built from anything it cannot
-evaluate — a function call, a member lookup, a loop counter — are skipped, with
-the line number and the expression in the report. A module that places its
-widgets in a `for` loop will import with holes; those are the ones to place by
-hand.
+evaluate — a function call, a member lookup, a loop whose bound is not a
+constant — are skipped, with the line number and the expression in the report;
+those are the ones to place by hand. `box.size.x` (right-hand screws) resolves
+when the panel SVG that `setPanel` names is found beside the source.
