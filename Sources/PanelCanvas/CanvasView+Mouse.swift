@@ -27,6 +27,13 @@ extension CanvasView {
 
     package override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
+        if pen != nil { penMouseDown(event); return }
+        if pointEdit != nil {
+            pointEditMouseDown(event)
+            if pointEdit != nil { return }
+            // The click finished point editing; it falls through to an
+            // ordinary click below.
+        }
         isGestureActive = true
         // Reset here rather than per-branch. The marquee branch below used to
         // omit it, so a click on empty canvas after a resize or a group drag
@@ -34,8 +41,10 @@ extension CanvasView {
         didDrag = false
         let p = panelPoint(from: event)
 
-        if event.clickCount == 2, let el = element(at: p), selection == [el.id] {
-            // Double-click cycles nothing for now; keep selection.
+        // Double-click a freeform shape to edit its points.
+        if event.clickCount == 2, let el = element(at: p), el.kind == .path, beginPointEdit(el.id) {
+            isGestureActive = false
+            return
         }
 
         // -1. Multi-selection: group resize / rotate handles.
@@ -130,7 +139,7 @@ extension CanvasView {
         return d
     }
 
-    private func beginGestureUndo(_ name: String) {
+    func beginGestureUndo(_ name: String) {
         let old = document.elements
         edits.registerUndo(withTarget: self) { target in
             target.apply(elements: old, name: name)
@@ -139,12 +148,14 @@ extension CanvasView {
         lastUndoName = nil
     }
 
-    private func endGesture() {
+    func endGesture() {
         suppressUndoRegistration = false
         lastUndoName = nil
     }
 
     package override func mouseDragged(with event: NSEvent) {
+        if pen != nil { penMouseDragged(event); return }
+        if pointEdit != nil { pointEditMouseDragged(event); return }
         let p = panelPoint(from: event)
         let dx = p.x - downPanelPoint.x
         let dy = p.y - downPanelPoint.y
@@ -359,6 +370,8 @@ extension CanvasView {
     }
 
     package override func mouseUp(with event: NSEvent) {
+        if pen != nil { penMouseUp(event); return }
+        if pointEdit != nil { pointEditMouseUp(event); return }
         isGestureActive = false   // before the switch: the notifications below flush the layer list
         switch dragMode {
         case .marquee:

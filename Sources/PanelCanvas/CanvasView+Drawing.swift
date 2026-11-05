@@ -50,8 +50,11 @@ extension CanvasView {
         drawSelectionOverlay(in: ctx)
         drawMarqueeOverlay(in: ctx)
         drawDropReplaceOverlay(in: ctx)
+        drawPointEditOverlay(in: ctx)
+        drawPenOverlay(in: ctx)
 
         ctx.restoreGState()
+        drawToolHint()
     }
 
     private func drawGrid(in ctx: CGContext) {

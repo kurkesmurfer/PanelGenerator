@@ -54,6 +54,22 @@ enum MenuBuilder {
         return top
     }
 
+    /// Edit ▸ Shape: combining shapes and turning shapes into editable ones.
+    static func shapeMenu(target wc: MainWindowController) -> NSMenuItem {
+        let top = NSMenuItem(title: "Shape", action: nil, keyEquivalent: "")
+        let menu = NSMenu(title: "Shape")
+        for op in ShapeOperation.allCases {
+            let mi = item(op.displayName, #selector(MainWindowController.pgShapeOperation(_:)), target: wc)
+            mi.representedObject = op.rawValue
+            menu.addItem(mi)
+        }
+        menu.addItem(.separator())
+        menu.addItem(item("Convert to Freeform Shape", #selector(MainWindowController.pgConvertToPath(_:)), target: wc))
+        menu.addItem(item("Outline Stroke", #selector(MainWindowController.pgOutlineStroke(_:)), target: wc))
+        top.submenu = menu
+        return top
+    }
+
     static func item(_ title: String,
                      _ action: Selector?,
                      key: String = "",
@@ -112,6 +128,13 @@ enum MenuBuilder {
         edit.addItem(.separator())
         edit.addItem(item("Duplicate", #selector(MainWindowController.pgDuplicate(_:)), key: "d", target: wc))
         edit.addItem(replaceWithMenu(target: wc))
+        edit.addItem(.separator())
+        // P on the canvas toggles the pen. Not a menu key equivalent: a plain
+        // letter would be taken from every text field in the inspector.
+        let pen = item("Pen Tool  (P)", #selector(MainWindowController.pgPen(_:)), target: wc)
+        edit.addItem(pen)
+        edit.addItem(item("Edit Points  (Return)", #selector(MainWindowController.pgEditPoints(_:)), target: wc))
+        edit.addItem(shapeMenu(target: wc))
         // Plain Backspace (no ⌘) deletes the selection. Safe with an empty
         // modifier mask because it is nil-targeted (see delete(_:) below): a
         // real text edit in progress resolves to the field editor's own

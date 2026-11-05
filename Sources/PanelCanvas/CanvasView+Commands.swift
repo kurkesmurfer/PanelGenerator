@@ -289,4 +289,38 @@ extension CanvasView {
         apply(elements: doc.elements, name: "Replace with \(kind.displayName)")
         setSelection(targets)
     }
+
+    // MARK: Shape operations
+
+    /// Combines the selected shapes. Throws with a message for the user when
+    /// the selection cannot be combined that way.
+    package func combineSelection(_ op: ShapeOperation) throws {
+        var doc = document
+        let id = try doc.combine(ids: selection, op)
+        apply(elements: doc.elements, name: op.displayName)
+        setSelection([id])
+    }
+
+    package func convertSelectionToPath() throws {
+        var doc = document
+        try doc.convertToPath(ids: selection)
+        apply(elements: doc.elements, name: "Convert to Freeform Shape")
+        needsDisplay = true
+    }
+
+    package func outlineSelectionStroke() throws {
+        var doc = document
+        let made = try doc.outlineStroke(ids: selection)
+        apply(elements: doc.elements, name: "Outline Stroke")
+        setSelection(Set(made))
+    }
+
+    /// Point editing for the single selected element, converting it to a
+    /// freeform shape first if it is a box, ellipse, elbow and so on.
+    package func editPointsOfSelection() throws {
+        guard selection.count == 1, let id = selection.first,
+              let el = document.elements.first(where: { $0.id == id }) else { return }
+        if el.kind != .path { try convertSelectionToPath() }
+        beginPointEdit(id)
+    }
 }

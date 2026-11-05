@@ -64,8 +64,16 @@ extension MainWindowController {
             return !canvas.selection.isEmpty
         case #selector(paste(_:)):
             return canvas.canPaste
+        case #selector(pgPen(_:)):
+            menuItem.state = canvas.isPenActive ? .on : .off
+            return true
+        case #selector(pgEditPoints(_:)):
+            menuItem.state = canvas.isEditingPoints ? .on : .off
+            return canvas.selection.count == 1 || canvas.isEditingPoints
+        case #selector(pgShapeOperation(_:)):
+            return canvas.selection.count >= 2
         case #selector(pgDuplicate(_:)), #selector(pgFront(_:)), #selector(pgBack(_:)),
-             #selector(pgReplaceWith(_:)),
+             #selector(pgReplaceWith(_:)), #selector(pgConvertToPath(_:)), #selector(pgOutlineStroke(_:)),
              #selector(pgMakeWidget(_:)), #selector(pgLabelSelection(_:)),
              #selector(pgAddStamp(_:)):
             return !canvas.selection.isEmpty

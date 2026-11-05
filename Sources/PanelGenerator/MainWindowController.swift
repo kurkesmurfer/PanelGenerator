@@ -59,6 +59,8 @@ final class MainWindowController: NSWindowController, NSMenuItemValidation {
         palette.onInsertStamp = { [weak self] name in
             self?.canvas.insertStampAtCenter(named: name)
         }
+        palette.onPen = { [weak self] in self?.pgPen(nil) }
+        palette.onEditPoints = { [weak self] in self?.pgEditPoints(nil) }
         sidebar.addSubview(palette)
 
         layerList = LayerListView()
