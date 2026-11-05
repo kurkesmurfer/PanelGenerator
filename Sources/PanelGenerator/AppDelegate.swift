@@ -113,6 +113,7 @@ enum MenuBuilder {
         codeItem.keyEquivalentModifierMask = [.command, .option]
         file.addItem(codeItem)
         file.addItem(item("Check Panel for Issues…", #selector(MainWindowController.pgCheckPanel(_:)), target: wc))
+        file.addItem(item("Show Last Report", #selector(MainWindowController.pgShowLastReport(_:)), target: wc))
         fileItem.submenu = file
 
         // Edit
