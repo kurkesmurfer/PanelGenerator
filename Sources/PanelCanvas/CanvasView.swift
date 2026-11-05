@@ -23,6 +23,13 @@ package final class CanvasView: NSView {
     package internal(set) var selection: Set<UUID> = []
     /// Elements a ⌘-drop in progress would replace; drawn as a highlight.
     var dropReplaceTargets: Set<UUID> = []
+    /// The pen tool's shape in progress; nil when the pen is not active.
+    var pen: PenSession?
+    /// Point editing of one freeform element; nil when not editing points.
+    var pointEdit: PointEditSession?
+    /// Called when the pen or point editing starts or stops, so the window
+    /// can update its menus and hint.
+    package var onToolChange: (() -> Void)?
     package var snapEnabled = true
     /// Grid step in panel pixels. 15 px is 1 HP (5.08 mm); the default is a
     /// quarter of that, fine enough not to fight hand placement but still a
@@ -76,6 +83,10 @@ package final class CanvasView: NSView {
     }
     private func commonInit() {
         registerForDraggedTypes([Paste.elementType])
+        // Pointer movement without a button down: the pen's rubber band.
+        addTrackingArea(NSTrackingArea(rect: .zero,
+                                       options: [.mouseMoved, .activeInKeyWindow, .inVisibleRect, .cursorUpdate],
+                                       owner: self, userInfo: nil))
         resizeToFitDocument()
     }
 
@@ -222,7 +233,20 @@ package final class CanvasView: NSView {
     // MARK: Keyboard
 
     package override func keyDown(with event: NSEvent) {
+        if penKey(event) || pointEditKey(event) { return }
         let chars = event.charactersIgnoringModifiers ?? ""
+        let plain = event.modifierFlags.intersection([.command, .option, .control]).isEmpty
+
+        // P: the pen. Return on a single freeform shape: edit its points.
+        if plain, chars.lowercased() == "p" {
+            togglePen()
+            return
+        }
+        if plain, event.keyCode == 36 || event.keyCode == 76, selection.count == 1,
+           let id = selection.first, document.elements.first(where: { $0.id == id })?.kind == .path {
+            beginPointEdit(id)
+            return
+        }
 
         // Escape clears the selection wherever the pointer happens to be.
         if event.keyCode == 53 {

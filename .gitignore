@@ -10,3 +10,7 @@ build/
 _to_delete/
 Panels/*.svg
 Panels/*.hpp
+
+# Cowork bridge: the runner and its queue stay local
+.agent/
+Scripts/agent-runner.sh

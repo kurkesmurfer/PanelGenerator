@@ -69,9 +69,18 @@ Or plain SPM: `swift build && .build/debug/PanelGenerator`.
    onto it (or use *Edit ▸ Replace With*). It keeps its id, centre, rotation,
    identifier, role, label binding and group; size and look come from the
    new item. Dropping on a selected control replaces the whole selection.
-4. Compose the backdrop first (big elbows + ring sectors + capsules read as
+4. **Draw your own shapes** with the pen (P): click for corners, drag for
+   curves, click the first point to close a filled shape, Return to finish an
+   open line, Esc when done. Points snap to the active grid (⌥ to place
+   freely, ⇧ for 45°). Double-click any freeform shape to edit its points:
+   drag points or handles, click the outline to add a point, ⌫ to delete,
+   double-click a point to switch corner/smooth. *Edit ▸ Shape* combines,
+   subtracts, intersects or excludes selected shapes, converts boxes,
+   ellipses, elbows, ring sectors and text into editable freeform shapes, and
+   turns a stroke into a filled outline.
+5. Compose the backdrop first (big elbows + ring sectors + capsules read as
    instant TNG), then place controls on top.
-5. **File ▸ Export SVG… / Export PNG…**.
+6. **File ▸ Export SVG… / Export PNG…**.
 
 ### Shortcuts
 
@@ -81,6 +90,8 @@ Or plain SPM: `swift build && .build/debug/PanelGenerator`.
 | Copy / Cut / Paste | ⌘C / ⌘X / ⌘V |
 | Duplicate / Delete | ⌘D / ⌫ or ⌦ |
 | Replace control in place | ⌘-drag a palette item onto it, or Edit ▸ Replace With |
+| Pen: draw lines and shapes | P (canvas), or Draw ▸ Pen in the palette |
+| Edit points of a shape | double-click it, or Return with it selected |
 | Nudge selection | Arrow keys (⇧ + arrows = grid step) |
 | Rotate selection | drag the blue ↻ badge (⇧ = 15° steps) |
 | Mirror (elbow) | click or drag across the orange ⇄ / ⇅ badges |

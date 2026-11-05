@@ -116,15 +116,20 @@ extension MainWindowController {
             alert.runModal()
             return
         }
-        let alert = NSAlert()
-        alert.messageText = afterExport
+        let title = afterExport
             ? "Exported, but \(warns.count) issue\(warns.count == 1 ? "" : "s") found"
             : "\(warns.count) issue\(warns.count == 1 ? "" : "s") found"
-        alert.informativeText = warns.map { "• \($0)" }.joined(separator: "\n\n")
-        alert.runModal()
+        ReportWindow.show(title: "Panel check — \(canvas.document.name)",
+                          text: title + "\n\n" + warns.map { "• \($0)" }.joined(separator: "\n\n") + "\n",
+                          suggestedName: canvas.document.name + " check.txt",
+                          saveNear: fileURL, over: window)
     }
 
-    @objc func pgCheckPanel(_ sender: Any?) {
+    @objc func pgShowLastReport(_ sender: Any?) {
+        ReportWindow.showLast(over: window)
+    }
+
+        @objc func pgCheckPanel(_ sender: Any?) {
         presentCodeGenWarnings(CodeGen.warnings(canvas.document), afterExport: false)
     }
 }

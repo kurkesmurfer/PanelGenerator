@@ -30,7 +30,7 @@ let package = Package(
         ),
         .testTarget(
             name: "PanelKitTests",
-            dependencies: ["PanelKit"],
+            dependencies: ["PanelKit", "PanelCanvas"],
             path: "Tests/PanelKitTests"
         ),
     ]

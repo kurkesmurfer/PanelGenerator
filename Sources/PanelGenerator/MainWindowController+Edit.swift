@@ -23,6 +23,46 @@ extension MainWindowController {
 
     @objc func pgDuplicate(_ sender: Any?) { canvas.duplicateSelection() }
 
+    // MARK: Drawing tools
+
+    @objc func pgPen(_ sender: Any?) {
+        canvas.togglePen()
+        window?.makeFirstResponder(canvas)
+    }
+
+    @objc func pgEditPoints(_ sender: Any?) {
+        perform { try self.canvas.editPointsOfSelection() }
+        window?.makeFirstResponder(canvas)
+    }
+
+    /// Shape ▸ Combine / Subtract / Intersect / Exclude: the item's
+    /// representedObject is the operation's raw value.
+    @objc func pgShapeOperation(_ sender: Any?) {
+        guard let raw = (sender as? NSMenuItem)?.representedObject as? String,
+              let op = ShapeOperation(rawValue: raw) else { return }
+        perform { try self.canvas.combineSelection(op) }
+    }
+
+    @objc func pgConvertToPath(_ sender: Any?) {
+        perform { try self.canvas.convertSelectionToPath() }
+    }
+
+    @objc func pgOutlineStroke(_ sender: Any?) {
+        perform { try self.canvas.outlineSelectionStroke() }
+    }
+
+    /// Runs a shape command; a refusal is explained, not swallowed.
+    private func perform(_ body: () throws -> Void) {
+        do {
+            try body()
+        } catch {
+            let alert = NSAlert()
+            alert.messageText = "Can't do that with this selection"
+            alert.informativeText = error.localizedDescription
+            alert.runModal()
+        }
+    }
+
     /// Edit ▸ Replace With ▸ …: the menu item carries "kind" or "kind#preset".
     @objc func pgReplaceWith(_ sender: Any?) {
         guard let raw = (sender as? NSMenuItem)?.representedObject as? String else { return }

@@ -14,9 +14,15 @@ final class PaletteView: NSView {
     var onInsert: ((ElementKind, String?) -> Void)?
     /// A saved fragment, by name. The canvas resolves it from the library.
     var onInsertStamp: ((String) -> Void)?
+    /// The drawing tools at the top of the palette.
+    var onPen: (() -> Void)?
+    var onEditPoints: (() -> Void)?
 
     private let scroll = NSScrollView()
-    private let content = NSView()
+    /// Flipped, so sections stack top-down from cursorY = 0. An unflipped
+    /// document view put every item above its own header and the whole list
+    /// in reverse order.
+    private let content = FlippedView()
     private var heightConstraint: NSLayoutConstraint!
     private var cursorY: CGFloat = 12
     private var collapsed: Set<String>
@@ -86,6 +92,28 @@ final class PaletteView: NSView {
         DispatchQueue.main.async { [weak self] in self?.rebuild() }
     }
 
+    /// Two plain buttons: the pen, and point editing for the selected shape.
+    private func drawTools() {
+        header("Draw")
+        guard isOpen("Draw") else { return }
+        let pen = NSButton(title: "✎  Pen (P)", target: self, action: #selector(penTapped))
+        pen.bezelStyle = .rounded
+        pen.toolTip = "Draw lines and shapes: click for corners, drag for curves, click the first "
+            + "point to close, Return to finish a line, Esc when done."
+        pen.frame = CGRect(x: 8, y: cursorY, width: 90, height: 26)
+        content.addSubview(pen)
+        let points = NSButton(title: "Edit Points", target: self, action: #selector(editPointsTapped))
+        points.bezelStyle = .rounded
+        points.toolTip = "Edit the points of the selected freeform shape (or double-click it). "
+            + "Other shapes are converted first."
+        points.frame = CGRect(x: 102, y: cursorY, width: 90, height: 26)
+        content.addSubview(points)
+        cursorY += 34
+    }
+
+    @objc private func penTapped() { onPen?() }
+    @objc private func editPointsTapped() { onEditPoints?() }
+
     private func items(_ key: String, _ entries: [(ElementKind, String?, String)]) {
         header(key)
         guard isOpen(key) else { return }
@@ -149,6 +177,8 @@ final class PaletteView: NSView {
     func rebuild() {
         content.subviews.forEach { $0.removeFromSuperview() }
         cursorY = 12
+
+        drawTools()
 
         // Generic primitives and shapes first, then one section per design
         // language (Styles/ in PanelKit).
@@ -390,4 +420,8 @@ extension StampItemView: NSDraggingSource {
                          sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation {
         [.copy, .generic]
     }
+}
+
+final class FlippedView: NSView {
+    override var isFlipped: Bool { true }
 }

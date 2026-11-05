@@ -156,13 +156,14 @@ extension MainWindowController {
             canvas.setSelection(Set(outcome.elements.map(\.id)))
             reloadInspector()
 
-            let done = NSAlert()
             let n = outcome.elements.count
-            done.messageText = "Imported \(n) component\(n == 1 ? "" : "s")"
-            done.informativeText = report.isEmpty
+            let body = report.isEmpty
                 ? "Everything in the file was understood."
-                : report.joined(separator: "\n\n")
-            done.runModal()
+                : report.map { "• " + $0 }.joined(separator: "\n\n")
+            ReportWindow.show(title: "Import report — \(url.lastPathComponent)",
+                              text: "Imported \(n) component\(n == 1 ? "" : "s") from \(url.path)\n\n\(body)\n",
+                              suggestedName: url.deletingPathExtension().lastPathComponent + " import report.txt",
+                              saveNear: url, over: window)
         } catch {
             showError("Could not read that source file", error)
         }
@@ -244,9 +245,7 @@ extension MainWindowController {
     /// panel is worse than one that refuses: you would find out by noticing a
     /// hole in your own drawing a week later.
     private func report(_ outcome: SVGImport.Outcome, from url: URL, resized: Bool) {
-        let alert = NSAlert()
         let count = outcome.elements.count
-        alert.messageText = "Imported \(count) element\(count == 1 ? "" : "s")"
         var lines: [String] = []
         lines.append(String(format: "%@ measures %.0f × %.0f px (%.1f × %.1f mm) — %d HP %@.",
                             url.lastPathComponent,
@@ -258,8 +257,11 @@ extension MainWindowController {
             lines.append("The panel kept its own size; the import may not line up with it.")
         }
         lines.append(contentsOf: outcome.warnings)
-        alert.informativeText = lines.joined(separator: "\n\n")
-        alert.runModal()
+        let header = "Imported \(count) element\(count == 1 ? "" : "s") from \(url.path)"
+        ReportWindow.show(title: "Import report — \(url.lastPathComponent)",
+                          text: header + "\n\n" + lines.map { "• " + $0 }.joined(separator: "\n\n") + "\n",
+                          suggestedName: url.deletingPathExtension().lastPathComponent + " import report.txt",
+                          saveNear: url, over: window)
     }
 
     func loadIntoCanvas(_ doc: PanelDocument, url: URL?) {

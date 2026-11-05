@@ -10,22 +10,29 @@ https://github.com/kurkesmurfer/PanelGenerator (public).
 Read first: `README.md` (features, layout), `PIPELINE.md` (panel ↔ code
 contract, `--emit`/`--compare`), `Docs/TOOLCHAIN.md`, `Docs/SYMBOLS.md`.
 
-## State at handoff (25 Sep 2026)
+## State (5 Nov 2026)
 
-- `main` = pre-refactor code, all work up to 11 Sep committed.
-- **PR #14** `refactor/panelkit` → main: PanelKit library target + PanelKitTests.
-- **PR #15** `refactor/styles` → `refactor/panelkit` (stacked): Model/Render/
-  Symbols/Styles split, UI split, PanelCanvas module, CI, this file.
-  Merge #14 first, then retarget #15 to `main`.
-- Peet has run the refactored app on a real document (demon.panelgen) without
-  problems. CI (`.github/workflows/ci.yml`, macos-26) is green on #15.
-- Work is tracked in GitHub issues. Milestone **M1 Library refactor**: #9
-  (tests for `--theme` variant selection and rotation-aware resize), #10
-  (comment hygiene), #11 (docs drift: PLAN.md, README roadmap). Milestone
-  **M2 Editor quirks**: #7 (snap mode defaults to the Serge grid and is not
-  saved), #8 (stringly-typed align/distribute), #12 (TODO in generated slider
-  code), #13 (triage leftovers from CODE_REVIEW.html). Peet's own UI quirks go
-  into M2 as new issues.
+A stack of PRs, each based on the one before; merge in order, retargeting
+each to `main` as the one below it lands:
+
+1. **#14** `refactor/panelkit` — PanelKit library + tests
+2. **#15** `refactor/styles` — per-concern files, design languages, UI split,
+   PanelCanvas module, CI
+3. **#17** `feat/replace-with` — Replace With / ⌘-drop
+4. **#22** `fix/import` — SVG reader rewrite (CSS, use/symbol, clips, hidden
+   layers, gradients, unit inference) and C++ reader (arrays, locals, loops);
+   `--import-check`
+5. **#23** `feat/drawing` — pen, point editing, shape operations; palette
+   orientation fix
+
+Issues by milestone: M1 (refactor leftovers #9–#11), M2 Editor quirks (#7, #8,
+#12, #13), M3 Drawing tools (#18–#21, closed by #22/#23). Peet's own UI quirks
+go into M2 as new issues.
+
+`--import-check <svg|cpp|folder> [pngdir]` is the tool for import problems:
+run it over the file (or a whole plugin folder) to see what comes in and what
+is lost. Render the original with `qlmanage -t -s 900 -o <dir> file.svg`
+(WebKit) to compare.
 
 ## Build, test, verify
 
