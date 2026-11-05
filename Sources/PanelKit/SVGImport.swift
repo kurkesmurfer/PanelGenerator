@@ -17,11 +17,9 @@ import CoreGraphics
 ///    their identifiers. Panels without that layer keep their positions in the
 ///    C++ instead, which is a different reader.
 ///
-/// Deliberately unsupported, each with a warning rather than a silent wrong
-/// drawing: gradients (the renderer has no gradient), clip paths, masks,
-/// filters, `<use>`, embedded rasters, and CSS in `<style>` blocks. `<text>`
-/// is reported too, though no Rack panel has any: nanosvg drops text, so
-/// every panel in the wild has its labels already converted to outlines.
+/// What it reads is listed in SVGReader.swift. Masks, filters, patterns and
+/// embedded rasters are reported rather than drawn; gradients come in as
+/// their average colour, because the renderer fills flat.
 package enum SVGImport {
 
     package struct Options {
@@ -54,13 +52,15 @@ package enum SVGImport {
 
     package enum Failure: LocalizedError {
         case notSVG
+        case unreadable(String)
         case noViewBox
         case empty
 
         package var errorDescription: String? {
             switch self {
             case .notSVG:    return "That file is not an SVG PanelGenerator can read."
-            case .noViewBox: return "The SVG has no viewBox, so its coordinates cannot be placed on a panel."
+            case .unreadable(let why): return "That file is not an SVG PanelGenerator can read (\(why))."
+            case .noViewBox: return "The SVG has neither a viewBox nor a width and height, so its coordinates cannot be placed on a panel."
             case .empty:     return "The SVG has no shapes PanelGenerator can import."
             }
         }
@@ -69,12 +69,10 @@ package enum SVGImport {
     // MARK: - Entry point
 
     package static func outcome(from data: Data, options: Options = Options()) throws -> Outcome {
+        guard !data.isEmpty else { throw Failure.unreadable("the file is empty") }
         let reader = Reader()
-        let parser = XMLParser(data: data)
-        parser.delegate = reader
-        parser.shouldProcessNamespaces = false
-        guard parser.parse() else { throw Failure.notSVG }
-        guard let viewBox = reader.viewBox, viewBox.width > 0, viewBox.height > 0 else {
+        guard reader.read(data) else { throw Failure.unreadable(reader.parseError ?? "not well-formed XML") }
+        guard let viewBox = effectiveViewBox(reader), viewBox.width > 0, viewBox.height > 0 else {
             throw Failure.noViewBox
         }
         return try build(reader, viewBox: viewBox, options: options)
@@ -86,13 +84,22 @@ package enum SVGImport {
     /// resolves `box.size.x` in a module's constructor.
     package static func panelSize(from data: Data) -> CGSize? {
         let reader = Reader()
-        let parser = XMLParser(data: data)
-        parser.delegate = reader
-        parser.shouldProcessNamespaces = false
-        guard parser.parse(), let viewBox = reader.viewBox,
+        guard reader.readSize(data), let viewBox = effectiveViewBox(reader),
               viewBox.width > 0, viewBox.height > 0 else { return nil }
-        let (unitScale, _) = scale(viewBox: viewBox, declaredWidth: Length.parse(reader.widthAttribute))
+        let (unitScale, _) = scale(viewBox: viewBox,
+                                   declaredWidth: Length.parse(reader.widthAttribute),
+                                   declaredHeight: Length.parse(reader.heightAttribute))
         return CGSize(width: viewBox.width * unitScale, height: viewBox.height * unitScale)
+    }
+
+    /// The viewBox, or — for a file that only says width="…" height="…" — the
+    /// one that implies: user units are CSS pixels, 96 to the inch.
+    private static func effectiveViewBox(_ reader: Reader) -> CGRect? {
+        if let vb = reader.viewBox { return vb }
+        guard let w = Length.parse(reader.widthAttribute), let h = Length.parse(reader.heightAttribute)
+        else { return nil }
+        let k: CGFloat = 96.0 / 75.0
+        return CGRect(x: 0, y: 0, width: w.pixels * k, height: h.pixels * k)
     }
 
     // MARK: - Geometry
@@ -104,17 +111,45 @@ package enum SVGImport {
     /// `width="71.12mm"`), and PanelGenerator works in 75-dpi pixels. Import
     /// such a file at 1:1 and everything lands at a third of its size, which
     /// looks like a broken importer rather than a unit mismatch.
-    private static func scale(viewBox: CGRect, declaredWidth: Length?) -> (scale: CGFloat, note: String?) {
-        guard let declared = declaredWidth else {
-            // No width attribute: assume user units are already 75-dpi pixels,
-            // which is what an SVG written without physical size means to Rack.
-            return (1, "No width attribute — assuming the viewBox is already in 75-dpi pixels.")
+    private static func scale(viewBox: CGRect, declaredWidth: Length?,
+                              declaredHeight: Length?) -> (scale: CGFloat, note: String?) {
+        // A physical width settles it: the file says how big it is.
+        if let w = declaredWidth, w.unit != "px", w.pixels > 0 {
+            return (w.pixels / viewBox.width, nil)
         }
-        let px = declared.pixels
-        guard px > 0 else { return (1, "Unreadable width attribute — assuming 75-dpi pixels.") }
-        let s = px / viewBox.width
-        // 0.99–1.01 means the file was already in pixels; ~2.95 means mm.
-        return (s, nil)
+        // Otherwise the width is pixels of unknown density, or missing. Trust
+        // it if it gives a panel of a real Eurorack height; if not, the
+        // viewBox height says which unit the file was drawn in. That catches
+        // Illustrator's point-based exports (4% small at 1:1) and 96-dpi web
+        // pixels (22% large).
+        let stated = declaredWidth.map { $0.pixels / viewBox.width } ?? 1
+        if isPanelHeight(viewBox.height * stated) {
+            return (stated, declaredWidth == nil
+                ? "No width attribute — the viewBox is already in 75-dpi pixels." : nil)
+        }
+        let guesses: [(String, CGFloat)] = [
+            ("millimetres", 75.0 / 25.4), ("points (72 dpi)", 75.0 / 72.0), ("96-dpi pixels", 75.0 / 96.0),
+        ]
+        // Both dimensions must fit, so a 12 mm knob drawn without units is
+        // not mistaken for a 1U strip.
+        for (unit, k) in guesses where isPanelHeight(viewBox.height * k) && isWholeHP(viewBox.width * k) {
+            return (k, "The file does not state a physical size; its height says it was drawn in \(unit), "
+                + "so it was imported at that scale.")
+        }
+        return (stated, declaredWidth == nil
+            ? "No width attribute, and the height is not a Eurorack panel height — assuming 75-dpi pixels."
+            : nil)
+    }
+
+    /// 3U (128.5 mm = 380 px) or a 1U strip (Pulp Logic 43.18 mm, Intellijel
+    /// 39.65 mm), give or take a pixel or two of exporter rounding.
+    private static func isPanelHeight(_ px: CGFloat) -> Bool {
+        [380.0, 127.5, 117.1].contains { abs(px - $0) < 2.5 }
+    }
+
+    private static func isWholeHP(_ px: CGFloat) -> Bool {
+        let hp = px / PanelMetrics.pixelsPerHP
+        return hp >= 1 && abs(hp - hp.rounded()) * PanelMetrics.pixelsPerHP < 1.5
     }
 
     package struct Length {
@@ -154,8 +189,9 @@ package enum SVGImport {
         out.warnings = reader.warnings
         out.suggestedName = reader.suggestedName
 
-        let width = Length.parse(reader.widthAttribute)
-        let (unitScale, note) = scale(viewBox: viewBox, declaredWidth: width)
+        let (unitScale, note) = scale(viewBox: viewBox,
+                                      declaredWidth: Length.parse(reader.widthAttribute),
+                                      declaredHeight: Length.parse(reader.heightAttribute))
         if let note { out.warnings.append(note) }
 
         let pxWidth = viewBox.width * unitScale
@@ -360,445 +396,4 @@ package enum SVGImport {
         guard let unit = path.copy(using: &t) else { return "" }
         return PathSVG.d(unit, decimals: 6)
     }
-
-    // MARK: - XML reader
-
-    package final class Reader: NSObject, XMLParserDelegate {
-
-        package struct Shape {
-            package var tag: String
-            package var path: CGPath
-            package var ctm: CGAffineTransform
-            package var fill: ColorSpec?
-            package var stroke: ColorSpec?
-            package var strokeWidth: CGFloat?
-            package var radius: CGFloat?          // rect rx, in the shape's own units
-            package var label: String?
-            package var role: ComponentRole?      // from a helper.py components layer
-            package var identifier: String?       // from data-name
-        }
-
-        /// Inherited presentation state. SVG inherits fill and stroke down the
-        /// tree, so a group's fill is every child's default.
-        package struct State {
-            package var ctm: CGAffineTransform = .identity
-            package var fill: ColorSpec? = .black          // SVG's initial fill is black
-            package var stroke: ColorSpec? = nil
-            package var strokeWidth: CGFloat? = nil
-            package var inComponents = false
-            // Text inherits down the tree like everything else: a group can
-            // carry the size and the anchor for every label inside it.
-            package var fontSize: CGFloat = 3
-            package var anchor: String = "start"
-            package var bold = false
-        }
-
-        /// A label as the file gives it: a baseline position, an anchor, and
-        /// the words. Kept separate from shapes because it is placed by its
-        /// baseline, not by a bounding box.
-        package struct TextRun {
-            package var text: String
-            package var origin: CGPoint          // the SVG's x,y — a baseline point
-            package var ctm: CGAffineTransform
-            package var fontSize: CGFloat        // user units
-            package var anchor: String
-            package var bold: Bool
-            package var fill: ColorSpec?
-        }
-
-        package var viewBox: CGRect?
-        package var widthAttribute: String?
-        package var heightAttribute: String?
-        package var shapes: [Shape] = []
-        package var texts: [TextRun] = []
-        package var warnings: [String] = []
-        package var suggestedName: String? = nil
-        private var pendingText: TextRun? = nil
-        private var textDepth = 0
-
-        private var stack: [State] = [State()]
-        private var skipDepth = 0
-        private var reported = Set<String>()
-
-        /// Tag of the skip-family root currently open (nil outside one) and
-        /// every descendant tag seen inside it so far. An empty `<defs/>` --
-        /// routine cruft Illustrator/Inkscape both leave behind even when
-        /// nothing in the visible drawing uses it -- collects no descendants
-        /// and is never reported: only a skip root that actually contained
-        /// something is worth a warning at all.
-        private var skipRootTag: String? = nil
-        private var skipRootContents: [String] = []
-        /// Aggregated across the whole document, keyed by skip-root tag, so
-        /// multiple `<defs>` blocks (say) collapse into one summary entry
-        /// instead of one warning per instance.
-        private var skippedSummary: [String: [String]] = [:]
-        private static let skipTags: Set<String> =
-            ["defs", "clippath", "mask", "marker", "pattern", "filter", "symbol"]
-
-        private var top: State { stack[stack.count - 1] }
-
-        private func warnOnce(_ tag: String, _ message: String) {
-            guard reported.insert(tag).inserted else { return }
-            warnings.append(message)
-        }
-
-        package func parser(_ parser: XMLParser, didStartElement name: String, namespaceURI: String?,
-                    qualifiedName: String?, attributes a: [String: String]) {
-            let tag = name.contains(":") ? String(name.split(separator: ":").last!) : name
-
-            if skipDepth > 0 {
-                skipDepth += 1
-                skipRootContents.append(tag)
-                return
-            }
-
-            // Definitions are drawn only where they are referenced, and we do
-            // not resolve references. Walking into them would scatter a
-            // clipPath's outline across the panel as real artwork. Nothing is
-            // reported here, at the open tag -- that would fire even for an
-            // empty, harmless <defs/>. See didEndElement, where the root
-            // closes and we know whether it actually held anything.
-            if Reader.skipTags.contains(tag.lowercased()) {
-                skipDepth = 1
-                skipRootTag = tag
-                skipRootContents = []
-                return
-            }
-
-            var state = top
-            if let t = a["transform"] {
-                if let parsed = SVGPath.transform(from: t) {
-                    state.ctm = parsed.concatenating(state.ctm)
-                } else {
-                    warnOnce("transform:" + t, "Could not read transform \"\(t)\" — that subtree is out of place.")
-                }
-            }
-            let style = presentation(a)
-            if let f = style.fill { state.fill = f.isNone ? nil : f.colour }
-            if let s = style.stroke { state.stroke = s.isNone ? nil : s.colour }
-            if let w = style.strokeWidth { state.strokeWidth = w }
-            if let size = style.fontSize { state.fontSize = size }
-            if let anchor = style.anchor { state.anchor = anchor }
-            if let weight = style.weight { state.bold = weight }
-            if isComponentsLayer(a) { state.inComponents = true }
-
-            switch tag.lowercased() {
-            case "svg":
-                if viewBox == nil, let vb = a["viewBox"] {
-                    var t = SVGPath.Tokens(vb)
-                    if let x = t.number(), let y = t.number(), let w = t.number(), let h = t.number() {
-                        viewBox = CGRect(x: x, y: y, width: w, height: h)
-                    }
-                }
-                widthAttribute = widthAttribute ?? a["width"]
-                heightAttribute = heightAttribute ?? a["height"]
-
-            case "rect":
-                let x = num(a["x"]) ?? 0, y = num(a["y"]) ?? 0
-                let w = num(a["width"]) ?? 0, h = num(a["height"]) ?? 0
-                guard w > 0, h > 0 else { break }
-                let rx = num(a["rx"]) ?? num(a["ry"]) ?? 0
-                let rect = CGRect(x: x, y: y, width: w, height: h)
-                let path = rx > 0
-                    ? CGPath(roundedRect: rect, cornerWidth: min(rx, w / 2),
-                             cornerHeight: min(num(a["ry"]) ?? rx, h / 2), transform: nil)
-                    : CGPath(rect: rect, transform: nil)
-                append(tag: "rect", path: path, state: state, attrs: a, radius: rx)
-
-            case "circle":
-                let cx = num(a["cx"]) ?? 0, cy = num(a["cy"]) ?? 0, r = num(a["r"]) ?? 0
-                guard r > 0 else { break }
-                let path = CGPath(ellipseIn: CGRect(x: cx - r, y: cy - r, width: r * 2, height: r * 2),
-                                  transform: nil)
-                append(tag: "circle", path: path, state: state, attrs: a, radius: r)
-
-            case "ellipse":
-                let cx = num(a["cx"]) ?? 0, cy = num(a["cy"]) ?? 0
-                let rx = num(a["rx"]) ?? 0, ry = num(a["ry"]) ?? 0
-                guard rx > 0, ry > 0 else { break }
-                let path = CGPath(ellipseIn: CGRect(x: cx - rx, y: cy - ry, width: rx * 2, height: ry * 2),
-                                  transform: nil)
-                append(tag: "ellipse", path: path, state: state, attrs: a, radius: nil)
-
-            case "line":
-                let p = CGMutablePath()
-                p.move(to: CGPoint(x: num(a["x1"]) ?? 0, y: num(a["y1"]) ?? 0))
-                p.addLine(to: CGPoint(x: num(a["x2"]) ?? 0, y: num(a["y2"]) ?? 0))
-                append(tag: "line", path: p, state: state, attrs: a, radius: nil)
-
-            case "polyline", "polygon":
-                guard let points = a["points"], let p = polyPath(points, close: tag.lowercased() == "polygon")
-                else { break }
-                append(tag: tag.lowercased(), path: p, state: state, attrs: a, radius: nil)
-
-            case "path":
-                guard let d = a["d"] else { break }
-                guard let p = SVGPath.path(fromD: d) else {
-                    warnings.append("Skipped a path whose data could not be read (\(d.prefix(40))…).")
-                    break
-                }
-                append(tag: "path", path: p, state: state, attrs: a, radius: nil)
-
-            case "text":
-                // The baseline, not a box. A tspan carrying its own x/y is a
-                // second line; the first one wins and the reader says so.
-                textDepth = 1
-                pendingText = TextRun(text: "",
-                                      origin: CGPoint(x: num(a["x"]) ?? 0, y: num(a["y"]) ?? 0),
-                                      ctm: state.ctm,
-                                      fontSize: state.fontSize,
-                                      anchor: state.anchor,
-                                      bold: state.bold,
-                                      fill: state.fill)
-
-            case "tspan":
-                if pendingText != nil {
-                    textDepth += 1
-                    if a["x"] != nil || a["y"] != nil {
-                        warnOnce("tspan", "A label is split across positioned tspans — multi-line text "
-                            + "came in as one line. Split it by hand if it should be two.")
-                    }
-                } else {
-                    warnOnce("tspan", "A tspan outside any <text> was skipped.")
-                }
-
-            case "use":
-                warnOnce("use", "<use> references were skipped — that artwork is missing from the import.")
-
-            case "image":
-                warnOnce("image", "An embedded image was skipped.")
-
-            case "style":
-                warnOnce("style", "A CSS <style> block was ignored; shapes styled only by class come in unfilled.")
-
-            case "lineargradient", "radialgradient":
-                warnOnce("gradient", "Gradients were flattened away — PanelGenerator fills are solid.")
-
-            default:
-                break
-            }
-
-            stack.append(state)
-        }
-
-        package func parser(_ parser: XMLParser, didEndElement name: String, namespaceURI: String?,
-                    qualifiedName: String?) {
-            if skipDepth > 0 {
-                skipDepth -= 1
-                if skipDepth == 0 {
-                    // Closing the skip root itself: file away what it held,
-                    // if anything, for one consolidated warning at the end of
-                    // the document rather than reporting per-instance.
-                    if let root = skipRootTag, !skipRootContents.isEmpty {
-                        skippedSummary[root, default: []].append(contentsOf: skipRootContents)
-                    }
-                    skipRootTag = nil
-                    skipRootContents = []
-                }
-                return
-            }
-            let tag = (name.contains(":") ? String(name.split(separator: ":").last!) : name).lowercased()
-            if tag == "text" || tag == "tspan", textDepth > 0 {
-                textDepth -= 1
-                if textDepth == 0, var run = pendingText {
-                    run.text = run.text.trimmingCharacters(in: .whitespacesAndNewlines)
-                    if !run.text.isEmpty { texts.append(run) }
-                    pendingText = nil
-                }
-            }
-            if stack.count > 1 { stack.removeLast() }
-        }
-
-        package func parser(_ parser: XMLParser, foundCharacters string: String) {
-            guard skipDepth == 0, pendingText != nil else { return }
-            pendingText?.text += string
-        }
-
-        /// One consolidated warning for everything the skip-family logic
-        /// above actually dropped, naming what was found rather than just
-        /// the fact that something was -- e.g. "<defs> (clipPath, circle)"
-        /// tells you at a glance whether it's the harmless case (only ever
-        /// gradients/symbols nothing used) or a real one (an actually-applied
-        /// clipPath/mask/pattern/filter). Nothing is emitted at all if every
-        /// skip-family element in the file turned out to be empty --
-        /// routine, harmless cruft that Illustrator/Inkscape both leave
-        /// behind, not worth a warning.
-        /// PanelGenerator's own export writes `<!-- Generated by PanelGenerator
-        /// — "NAME", 8HP 3U -->` as the file's very first line. Recovering
-        /// NAME from it is what lets re-importing one of our own panels keep
-        /// its title instead of coming back "Untitled" -- XMLParser reports
-        /// comments to the delegate by default, no extra configuration needed.
-        package func parser(_ parser: XMLParser, foundComment comment: String) {
-            guard suggestedName == nil,
-                  comment.contains("Generated by PanelGenerator"),
-                  let openQuote = comment.firstIndex(of: "\""),
-                  let closeQuote = comment[comment.index(after: openQuote)...].firstIndex(of: "\"")
-            else { return }
-            let name = String(comment[comment.index(after: openQuote)..<closeQuote])
-            if !name.isEmpty { suggestedName = name }
-        }
-
-        package func parserDidEndDocument(_ parser: XMLParser) {
-            guard !skippedSummary.isEmpty else { return }
-            let parts = skippedSummary.keys.sorted().compactMap { root -> String? in
-                guard let contents = skippedSummary[root], !contents.isEmpty else { return nil }
-                let named = Array(Set(contents)).sorted().joined(separator: ", ")
-                return "<\(root)> (\(named))"
-            }
-            guard !parts.isEmpty else { return }
-            warnings.append("Not supported and skipped: \(parts.joined(separator: "; ")) — artwork "
-                + "depending on them will differ. Scripts/flatten-svg.py resolves the common case "
-                + "(unused defs, reused <use>/<symbol> references) for free and reports whatever's "
-                + "left — a genuinely-applied clip, mask, gradient, pattern or filter — as something "
-                + "to fix by hand.")
-        }
-
-        private func append(tag: String, path: CGPath, state: State,
-                            attrs a: [String: String], radius: CGFloat?) {
-            let fill = state.fill
-            var role: ComponentRole? = nil
-            if state.inComponents, let hex = fill?.hexString.lowercased() {
-                role = ComponentRole.allCases.first { $0.helperFill?.lowercased() == hex }
-            }
-            shapes.append(Shape(tag: tag, path: path, ctm: state.ctm,
-                                fill: fill, stroke: state.stroke,
-                                strokeWidth: state.strokeWidth, radius: radius,
-                                label: a["inkscape:label"] ?? a["data-name"] ?? a["id"],
-                                role: role,
-                                identifier: a["data-name"] ?? a["id"]))
-        }
-
-        private func isComponentsLayer(_ a: [String: String]) -> Bool {
-            let names = [a["inkscape:label"], a["data-name"], a["id"]].compactMap { $0?.lowercased() }
-            return names.contains("components")
-        }
-
-        private func num(_ s: String?) -> CGFloat? {
-            guard let s else { return nil }
-            var t = SVGPath.Tokens(s)
-            return t.number()
-        }
-
-        private func polyPath(_ points: String, close: Bool) -> CGPath? {
-            var t = SVGPath.Tokens(points)
-            let p = CGMutablePath()
-            var first = true
-            while let x = t.number(), let y = t.number() {
-                let pt = CGPoint(x: x, y: y)
-                if first { p.move(to: pt); first = false } else { p.addLine(to: pt) }
-            }
-            if first { return nil }
-            if close { p.closeSubpath() }
-            return p
-        }
-
-        // MARK: Presentation attributes
-
-        package struct Paint {
-            package var colour: ColorSpec?
-            package var isNone: Bool
-        }
-
-        package struct Presentation {
-            package var fill: Paint?
-            package var stroke: Paint?
-            package var strokeWidth: CGFloat?
-            package var fontSize: CGFloat?
-            package var anchor: String?
-            package var weight: Bool?
-        }
-
-        /// Presentation attributes, with `style="…"` overriding them — which is
-        /// the order the spec gives and the order Inkscape relies on.
-        private func presentation(_ a: [String: String]) -> Presentation {
-            var out = Presentation()
-            var opacity: CGFloat = 1
-            var fillOpacity: CGFloat = 1
-
-            func take(_ key: String, _ value: String) {
-                switch key {
-                case "fill":           out.fill = paint(value)
-                case "stroke":         out.stroke = paint(value)
-                case "stroke-width":   out.strokeWidth = num(value)
-                case "font-size":      out.fontSize = num(value)
-                case "text-anchor":    out.anchor = value
-                case "font-weight":
-                    // "bold", or any numeric weight at or above semibold.
-                    out.weight = value == "bold" || (num(value).map { $0 >= 600 } ?? false)
-                case "opacity":        opacity = num(value) ?? 1
-                case "fill-opacity":   fillOpacity = num(value) ?? 1
-                default: break
-                }
-            }
-
-            for key in ["fill", "stroke", "stroke-width", "opacity", "fill-opacity",
-                        "font-size", "text-anchor", "font-weight"] {
-                if let v = a[key] { take(key, v) }
-            }
-            if let style = a["style"] {
-                for pair in style.split(separator: ";") {
-                    let parts = pair.split(separator: ":", maxSplits: 1)
-                    guard parts.count == 2 else { continue }
-                    take(parts[0].trimmingCharacters(in: .whitespaces),
-                         parts[1].trimmingCharacters(in: .whitespaces))
-                }
-            }
-
-            let alpha = max(0, min(1, opacity * fillOpacity))
-            if alpha < 1, let existing = out.fill?.colour {
-                var faded = existing
-                faded.a *= alpha
-                out.fill?.colour = faded
-            }
-            return out
-        }
-
-        private func paint(_ value: String) -> Paint {
-            let v = value.trimmingCharacters(in: .whitespaces).lowercased()
-            if v == "none" || v == "transparent" { return Paint(colour: nil, isNone: true) }
-            if v.hasPrefix("url(") {
-                warnOnce("paintref", "A gradient or pattern fill was replaced with a flat colour.")
-                return Paint(colour: .hex("#808080"), isNone: false)
-            }
-            return Paint(colour: SVGColour.parse(v), isNone: false)
-        }
-    }
-}
-
-// MARK: - Colours
-
-package enum SVGColour {
-
-    package static func parse(_ text: String) -> ColorSpec? {
-        let v = text.trimmingCharacters(in: .whitespaces).lowercased()
-        if v.hasPrefix("#") {
-            let hex = String(v.dropFirst())
-            if hex.count == 3 {
-                let expanded = hex.map { "\($0)\($0)" }.joined()
-                return .hex("#" + expanded)
-            }
-            if hex.count == 6 { return .hex(v) }
-            return nil
-        }
-        if v.hasPrefix("rgb") {
-            var t = SVGPath.Tokens(v.replacingOccurrences(of: "%", with: ""))
-            guard let r = t.number(), let g = t.number(), let b = t.number() else { return nil }
-            let a = t.number() ?? 1
-            return ColorSpec(r: Double(r) / 255, g: Double(g) / 255, b: Double(b) / 255,
-                             a: Double(min(max(a, 0), 1)))
-        }
-        return named[v]
-    }
-
-    /// The handful of named colours that actually turn up in panel art. A full
-    /// CSS colour table would be 148 entries of noise.
-    private static let named: [String: ColorSpec] = [
-        "black": .hex("#000000"), "white": .hex("#FFFFFF"),
-        "red": .hex("#FF0000"), "lime": .hex("#00FF00"), "blue": .hex("#0000FF"),
-        "green": .hex("#008000"), "yellow": .hex("#FFFF00"), "magenta": .hex("#FF00FF"),
-        "fuchsia": .hex("#FF00FF"), "cyan": .hex("#00FFFF"), "aqua": .hex("#00FFFF"),
-        "gray": .hex("#808080"), "grey": .hex("#808080"), "silver": .hex("#C0C0C0"),
-        "orange": .hex("#FFA500"), "purple": .hex("#800080"), "navy": .hex("#000080"),
-        "maroon": .hex("#800000"), "olive": .hex("#808000"), "teal": .hex("#008080"),
-    ]
 }

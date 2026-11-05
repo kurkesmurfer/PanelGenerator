@@ -76,14 +76,45 @@ package enum CppImport {
             }
         }
 
+        // Loops with constant bounds are unrolled, so `for (int i = 0; i < 4;
+        // i++) addInput(… mm2px(Vec(X0 + i * PITCH, Y)) …)` gives four jacks.
+        let (unrolled, loopWarnings) = unrollLoops(text, table: table)
+        out.warnings.append(contentsOf: loopWarnings)
+
         var labels = 0
-        let found = calls(in: text)
+        let found = calls(in: unrolled)
+        // Locals are evaluated in source order, so `float y = 30.f;` before a
+        // call and `y = 50.f;` before the next give each its own value.
+        // Only from the widget onwards: generated DSP code ahead of it (Faust
+        // output runs to megabytes) holds no panel positions.
+        let widgetStart = (unrolled as NSString).range(of: "ModuleWidget").location
+        let assignments = localAssignments(in: unrolled,
+                                           from: widgetStart == NSNotFound ? 0 : widgetStart)
+        var nextAssignment = 0
+        var scope = table
         if found.filter({ $0.name == "setPanel" }).count > 1 {
             out.warnings.append("More than one setPanel call — either the file holds several module "
                 + "widgets, or a theme switch. Everything found was imported into one panel.")
         }
 
         for call in found {
+            while nextAssignment < assignments.count, assignments[nextAssignment].offset < call.offset {
+                let a = assignments[nextAssignment]
+                nextAssignment += 1
+                let current = scope[a.name]
+                let rhs = Expression.evaluate(a.expression, constants: scope)
+                switch (a.op, rhs, current) {
+                case ("=", let v?, _):            scope[a.name] = v
+                case ("+=", let v?, let c?):      scope[a.name] = c + v
+                case ("-=", let v?, let c?):      scope[a.name] = c - v
+                case ("*=", let v?, let c?):      scope[a.name] = c * v
+                case ("/=", let v?, let c?) where abs(v) > 1e-12: scope[a.name] = c / v
+                default:
+                    // Unknown now: better unresolved than stale.
+                    if table[a.name] == nil { scope[a.name] = nil }
+                }
+            }
+            let table = scope
             switch call.name {
             case "setPanel":
                 guard out.panelResource == nil else { break }
@@ -309,6 +340,12 @@ package enum CppImport {
     /// `Muse::X_ATTEN_PARAM` → `X_ATTEN`. The suffix is re-added on export from
     /// the role, so keeping it here would generate `X_ATTEN_PARAM_PARAM`.
     private static func enumStem(_ raw: String, role: ComponentRole) -> String {
+        // `Mod::IN_INPUT + 2`, from an unrolled loop: the third of a family,
+        // named IN_3 so the generated enum reads like the original array.
+        let plus = raw.components(separatedBy: "+")
+        if plus.count == 2, let n = Int(plus[1].trimmingCharacters(in: .whitespacesAndNewlines)) {
+            return enumStem(plus[0], role: role) + "_\(n + 1)"
+        }
         var s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         if let last = s.components(separatedBy: "::").last { s = last }
         s = s.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -348,7 +385,26 @@ package enum CppImport {
     /// The distinction is not cosmetic: read a millimetre position as pixels
     /// and every component lands at a third of its proper place.
     package static func position(_ text: String, table: [String: CGFloat]) -> CGPoint? {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        var trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        for prefix in ["rack::math::", "rack::window::", "rack::", "math::", "window::"] {
+            trimmed = trimmed.replacingOccurrences(of: prefix, with: "")
+        }
+
+        // Helpers plugins define for the same thing: Sanguine's
+        // millimetersToPixelsVec(x, y), and mm2px applied per coordinate.
+        for helper in ["millimetersToPixelsVec", "mm2pxVec", "mmVec"] {
+            if let inner = call(named: helper, in: trimmed), let p = pair(inner, table: table) {
+                return CGPoint(x: p.x / PanelMetrics.mmPerPixel, y: p.y / PanelMetrics.mmPerPixel)
+            }
+        }
+        if let vec = call(named: "Vec", in: trimmed) {
+            let parts = splitTopLevel(vec)
+            if parts.count == 2,
+               let xs = call(named: "mm2px", in: parts[0]), let ys = call(named: "mm2px", in: parts[1]),
+               let x = Expression.evaluate(xs, constants: table), let y = Expression.evaluate(ys, constants: table) {
+                return CGPoint(x: x / PanelMetrics.mmPerPixel, y: y / PanelMetrics.mmPerPixel)
+            }
+        }
 
         if let inner = call(named: "mm2px", in: trimmed),
            let vec = call(named: "Vec", in: inner.trimmingCharacters(in: .whitespacesAndNewlines)),
@@ -397,14 +453,22 @@ package enum CppImport {
     /// `constexpr float PRIMARY_Y = 27.2f;` and its relatives, resolved in a
     /// few passes so a constant defined in terms of another one lands.
     package static func constants(in text: String) -> [String: CGFloat] {
+        // A declaration may hold several declarators, and arrays:
+        //   constexpr float JACK_X0 = 9.4f, JACK_PITCH = 11.f;
+        //   constexpr float laneY[5] = {27.2f, 48.2f, 69.2f, 90.2f, 111.2f};
         let patterns = [
-            #"(?:static\s+)?(?:inline\s+)?constexpr\s+(?:float|double|int|auto)\s+(\w+)\s*=\s*([^;]+);"#,
-            #"(?:static\s+)?const\s+(?:float|double|int)\s+(\w+)\s*=\s*([^;]+);"#,
-            #"#define\s+(\w+)\s+([^\n]+)"#,
+            #"(?:static\s+)?(?:inline\s+)?constexpr\s+(?:float|double|int|unsigned|size_t|auto)\s+([^;]+);"#,
+            #"(?:static\s+)?const\s+(?:float|double|int|unsigned|size_t)\s+([^;]+);"#,
         ]
         var pending: [(String, String)] = []
         for pattern in patterns {
             guard let re = try? NSRegularExpression(pattern: pattern) else { continue }
+            let ns = text as NSString
+            for m in re.matches(in: text, range: NSRange(location: 0, length: ns.length)) where m.numberOfRanges == 2 {
+                pending.append(contentsOf: declarators(ns.substring(with: m.range(at: 1))))
+            }
+        }
+        if let re = try? NSRegularExpression(pattern: #"#define\s+(\w+)\s+([^\n]+)"#) {
             let ns = text as NSString
             for m in re.matches(in: text, range: NSRange(location: 0, length: ns.length)) where m.numberOfRanges == 3 {
                 pending.append((ns.substring(with: m.range(at: 1)), ns.substring(with: m.range(at: 2))))
@@ -412,7 +476,7 @@ package enum CppImport {
         }
 
         var table: [String: CGFloat] = [:]
-        for _ in 0..<3 {
+        for _ in 0..<4 {
             var progressed = false
             for (name, expression) in pending where table[name] == nil {
                 var scope = builtinConstants
@@ -425,6 +489,143 @@ package enum CppImport {
             if !progressed { break }
         }
         return table
+    }
+
+    /// `A = 1, B = A + 2, C[3] = {1, 2, 3}` → (A, 1), (B, A + 2), (C[0], 1) …
+    static func declarators(_ list: String) -> [(String, String)] {
+        var out: [(String, String)] = []
+        for part in splitTopLevel(list) {
+            guard let eq = part.firstIndex(of: "=") else { continue }
+            var name = part[..<eq].trimmingCharacters(in: .whitespacesAndNewlines)
+            let value = part[part.index(after: eq)...].trimmingCharacters(in: .whitespacesAndNewlines)
+            if let bracket = name.firstIndex(of: "[") {
+                name = String(name[..<bracket]).trimmingCharacters(in: .whitespaces)
+                guard value.hasPrefix("{"), value.hasSuffix("}") else { continue }
+                for (i, item) in splitTopLevel(String(value.dropFirst().dropLast())).enumerated() {
+                    out.append(("\(name)[\(i)]", item))
+                }
+            } else if name.range(of: #"^\w+$"#, options: .regularExpression) != nil {
+                out.append((name, value))
+            }
+        }
+        return out
+    }
+
+    // MARK: - Locals and loops
+
+    struct Assignment {
+        var name: String
+        var op: String
+        var expression: String
+        var offset: Int
+    }
+
+    /// Assignments to plain variables, in source order: `float y = 30.f;`,
+    /// `y += 10.f;`, `float a = 1, b = 2;`. Member and pointer assignments
+    /// (`box.size = …`, `w->x = …`) and comparisons are not matched.
+    static func localAssignments(in text: String, from start: Int = 0) -> [Assignment] {
+        let pattern = #"(?<![\w.>:])((?:(?:const|constexpr|static)\s+)*(?:float|double|int|unsigned|auto|size_t)\s+)?\b([A-Za-z_]\w*(?:\s*\[\s*\d+\s*\])?)\s*(\+=|-=|\*=|/=|=)(?!=)\s*([^;{}]+);"#
+        guard let re = try? NSRegularExpression(pattern: pattern) else { return [] }
+        let ns = text as NSString
+        var out: [Assignment] = []
+        for m in re.matches(in: text, range: NSRange(location: start, length: ns.length - start)) {
+            let typed = m.range(at: 1).location != NSNotFound
+            let name = ns.substring(with: m.range(at: 2)).replacingOccurrences(of: " ", with: "")
+            let op = ns.substring(with: m.range(at: 3))
+            let rhs = ns.substring(with: m.range(at: 4))
+            let offset = m.range.location
+            if typed && op == "=" {
+                // `float a = 1, b = 2;` — the regex caught `a = 1, b = 2`.
+                for (n, e) in declarators(name + " = " + rhs) {
+                    out.append(Assignment(name: n, op: "=", expression: e, offset: offset))
+                }
+            } else {
+                out.append(Assignment(name: name, op: op, expression: rhs, offset: offset))
+            }
+        }
+        return out
+    }
+
+    /// Unrolls `for` loops whose bounds evaluate to constants and whose body
+    /// creates widgets, substituting the loop variable's value into each copy.
+    /// Inner loops first, at most 64 iterations per loop. Line numbers after
+    /// a loop are preserved: copies after the first are joined onto one line.
+    static func unrollLoops(_ source: String, table: [String: CGFloat]) -> (String, [String]) {
+        var text = source
+        var warnings: [String] = []
+        let header = try? NSRegularExpression(pattern:
+            #"\bfor\s*\(\s*(?:int|unsigned|size_t|auto|long)?\s*(\w+)\s*=\s*([^;]+);\s*(\w+)\s*(<=|<|!=)\s*([^;]+);\s*(?:(\w+)\s*\+\+|\+\+\s*(\w+)|(\w+)\s*\+=\s*([^)]+))\s*\)"#)
+        guard let header else { return (text, warnings) }
+        // One pass, last header first. Unrolling a loop only changes text at
+        // and after its own header, so the offsets of earlier headers stay
+        // valid, and an inner loop is always unrolled before its outer one.
+        let begin = (text as NSString).range(of: "ModuleWidget").location
+        let from = begin == NSNotFound ? 0 : begin
+        let starts = header.matches(in: text, range: NSRange(location: from, length: (text as NSString).length - from))
+            .map { $0.range.location }
+        for location in starts.reversed() {
+            let ns = text as NSString
+            guard let m = header.firstMatch(in: text, range: NSRange(location: location, length: ns.length - location)),
+                  m.range.location == location else { continue }
+            let variable = ns.substring(with: m.range(at: 1))
+            // Work in UTF-16 throughout, the unit NSRegularExpression ranges use.
+            let u = Array(text.utf16)
+            func isSpace(_ c: UInt16) -> Bool { c == 32 || c == 9 || c == 10 || c == 13 }
+            var bodyStart = m.range.location + m.range.length
+            while bodyStart < u.count, isSpace(u[bodyStart]) { bodyStart += 1 }
+            var bodyEnd = -1
+            if bodyStart < u.count, u[bodyStart] == 123 {          // {
+                var depth = 0, j = bodyStart, inString = false
+                while j < u.count {
+                    let c = u[j]
+                    if inString {
+                        if c == 92 { j += 2; continue }            // backslash
+                        if c == 34 { inString = false }
+                    } else if c == 34 { inString = true
+                    } else if c == 123 { depth += 1
+                    } else if c == 125 { depth -= 1; if depth == 0 { bodyEnd = j + 1; break } }
+                    j += 1
+                }
+            } else if let semi = u[bodyStart...].firstIndex(of: 59) {   // ;
+                bodyEnd = semi + 1
+            }
+            guard bodyEnd > bodyStart else { continue }
+            let body = ns.substring(with: NSRange(location: bodyStart, length: bodyEnd - bodyStart))
+            guard body.contains("create"), ns.substring(with: m.range(at: 3)) == variable,
+                  let start = Expression.evaluate(ns.substring(with: m.range(at: 2)), constants: table),
+                  let bound = Expression.evaluate(ns.substring(with: m.range(at: 5)), constants: table)
+            else { continue }
+            let op = ns.substring(with: m.range(at: 4))
+            var step: CGFloat = 1
+            if m.range(at: 9).location != NSNotFound {
+                guard let s = Expression.evaluate(ns.substring(with: m.range(at: 9)), constants: table), s > 0
+                else { continue }
+                step = s
+            }
+            var values: [Int] = []
+            var v = start
+            while (op == "<=" ? v <= bound : v < bound), values.count <= 64 {
+                values.append(Int(v.rounded()))
+                v += step
+            }
+            guard values.count <= 64 else {
+                warnings.append("A loop over \(variable) creating widgets runs more than 64 times; it was not unrolled.")
+                continue
+            }
+            let word = try? NSRegularExpression(pattern: #"(?<![\w.>])"# + NSRegularExpression.escapedPattern(for: variable) + #"(?!\w)"#)
+            var copies: [String] = []
+            for (i, value) in values.enumerated() {
+                let range = NSRange(location: 0, length: (body as NSString).length)
+                var copy = word?.stringByReplacingMatches(in: body, range: range, withTemplate: "\(value)") ?? body
+                if i > 0 { copy = copy.replacingOccurrences(of: "\n", with: " ") }
+                copies.append(copy)
+            }
+            // Braced, so an enclosing brace-less loop still sees one statement.
+            let replacement = "{ " + copies.joined(separator: " ") + " }"
+            text = ns.replacingCharacters(in: NSRange(location: m.range.location, length: bodyEnd - m.range.location),
+                                          with: replacement)
+        }
+        return (text, warnings)
     }
 
     // MARK: - Preprocessor and comments
@@ -556,6 +757,9 @@ package enum CppImport {
         package var template: String
         package var args: [String]
         package var line: Int
+        /// Character offset in the scanned text, for ordering against
+        /// assignments to locals.
+        package var offset: Int = 0
         package var isCentered: Bool { name.hasSuffix("Centered") }
     }
 
@@ -593,7 +797,7 @@ package enum CppImport {
                let close = matching(chars, from: k, open: "(", close: ")") {
                 out.append(Call(name: name, template: template,
                                 args: splitTopLevel(String(chars[(k + 1)..<close])),
-                                line: lineOf[i]))
+                                line: lineOf[i], offset: i))
             }
             i = j
         }
@@ -771,6 +975,14 @@ package enum Expression {
             if chars[i] == "+" { i += 1; return factor() }
 
             if chars[i] == "(" {
+                // A C-style cast, `(float) x` or `(int)i`: the type changes nothing here.
+                for cast in ["(float)", "(double)", "(int)", "(unsigned)"] {
+                    let c = Array(cast)
+                    if i + c.count <= chars.count, Array(chars[i..<(i + c.count)]) == c {
+                        i += c.count
+                        return factor()
+                    }
+                }
                 i += 1
                 guard let v = expression() else { return nil }
                 skip()
@@ -802,7 +1014,29 @@ package enum Expression {
                     || chars[i] == "_" || chars[i] == ":" || chars[i] == "." {
                     i += 1
                 }
-                let raw = String(chars[start..<i])
+                var raw = String(chars[start..<i])
+                if raw.hasPrefix("static_cast") || raw.hasPrefix("float") || raw.hasPrefix("double")
+                    || raw.hasPrefix("int") {
+                    // static_cast<float>(x), float(x)
+                    var j = i
+                    if raw == "static_cast", j < chars.count, chars[j] == "<",
+                       let close = chars[j...].firstIndex(of: ">") { j = close + 1 }
+                    while j < chars.count, chars[j].isWhitespace { j += 1 }
+                    if ["static_cast", "float", "double", "int"].contains(raw), j < chars.count, chars[j] == "(" {
+                        i = j
+                        return factor()
+                    }
+                }
+                // A subscript into a constant array: laneY[2].
+                skip()
+                if i < chars.count, chars[i] == "[" {
+                    i += 1
+                    guard let index = expression() else { return nil }
+                    skip()
+                    guard i < chars.count, chars[i] == "]" else { return nil }
+                    i += 1
+                    raw += "[\(Int(index.rounded()))]"
+                }
                 // A qualified name is looked up by its last component:
                 // museui::grid::PRIMARY_Y is PRIMARY_Y wherever it was declared.
                 let bare = raw.components(separatedBy: "::").last ?? raw
