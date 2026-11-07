@@ -142,14 +142,11 @@ extension MainWindowController {
                 // A module's source carries both halves too: the identifiers in
                 // its create* calls and the labels in its helper calls.
                 let text = try String(contentsOf: url, encoding: .utf8)
-                let siblings = (try? FileManager.default.contentsOfDirectory(
-                    at: url.deletingLastPathComponent(), includingPropertiesForKeys: nil))?
-                    .filter { ["h", "hpp", "hh"].contains($0.pathExtension.lowercased()) }
-                    .prefix(24) ?? []
                 var doc = PanelDocument()
                 doc.elements = CppImport.outcome(
                     from: text,
-                    headers: siblings.compactMap { try? String(contentsOf: $0, encoding: .utf8) }).elements
+                    headers: ModuleImport.headerURLs(for: url, text: text, pluginRoot: ModuleImport.pluginRoot(near: url))
+                        .compactMap { try? String(contentsOf: $0, encoding: .utf8) }).elements
                 source = doc
             }
 
