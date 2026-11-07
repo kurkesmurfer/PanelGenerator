@@ -1378,8 +1378,9 @@ package enum Selftest {
             if label.params.text != "CUTOFF" {
                 failures.append("cpp: label text wrong: \(label.params.text)")
             }
-            // The size comes from the helper's own definition, not a guess.
-            if !near(label.params.fontSize, 7.5) {
+            // The size comes from the helper's own definition, not a guess,
+            // converted from nanoVG's font size to PanelGenerator's em.
+            if !near(label.params.fontSize, 7.5 * CppImport.nanoVGToEm) {
                 failures.append("cpp: label size should come from the helper, got \(label.params.fontSize)")
             }
             if !(near(label.center.x, px(15.24)) && near(label.center.y, px(33.0))) {

@@ -90,68 +90,15 @@ extension MainWindowController {
         guard open.runModal() == .OK, let url = open.url else { return }
 
         do {
-            let source = try String(contentsOf: url, encoding: .utf8)
-            // Constants are routinely declared in a sibling header — a panel
-            // laid out on a named grid is unreadable without them.
-            let siblings = (try? FileManager.default.contentsOfDirectory(
-                at: url.deletingLastPathComponent(), includingPropertiesForKeys: [.fileSizeKey]))?
-                .filter { ["h", "hpp", "hh"].contains($0.pathExtension.lowercased()) }
-                .prefix(24) ?? []
-            let headers = siblings.compactMap { try? String(contentsOf: $0, encoding: .utf8) }
-
-            // Read once to learn which panel the widget sets, then again
-            // knowing how big that panel is. Rack's own module template
-            // positions its screws from box.size.x, and a module widget's box
-            // is whatever setPanel gave it — so the second pass is what makes
-            // the two right-hand screws of nearly every plugin readable.
-            let first = CppImport.outcome(from: source, headers: headers)
-            let panelURL = first.panelResource.flatMap { resolveResource($0, near: url) }
-            let panelSize = panelURL
-                .flatMap { try? Data(contentsOf: $0) }
-                .flatMap { SVGImport.panelSize(from: $0) }
-            let outcome = panelSize == nil
-                ? first
-                : CppImport.outcome(from: source, headers: headers, panelSize: panelSize)
-
-            // The plugin slug is not in the source — it lives in plugin.json,
-            // beside it or one level up. It names the generated widget library
-            // and its namespace, so importing without it produces a plugin
-            // called MyPlugin.
-            let plugin = pluginManifest(near: url)
-            let answer = confirmModuleImport(outcome, source: url, panel: panelURL)
+            // Headers (siblings and #includes), widget sizes and the panel
+            // artwork are found by the same code the CLI uses.
+            let read = try ModuleImport.read(url)
+            let outcome = read.outcome
+            let answer = confirmModuleImport(outcome, source: url, panel: read.panelURL)
             guard answer.proceed else { return }
-            let artworkURL = answer.includeArtwork ? panelURL : nil
 
             var doc = canvas.document
-            var report = outcome.warnings
-
-            // Artwork first, so the components land on top of it.
-            if let artworkURL {
-                do {
-                    var options = SVGImport.Options()
-                    options.bindComponents = false      // the C++ is the authority here
-                    let art = try SVGImport.outcome(from: try Data(contentsOf: artworkURL), options: options)
-                    doc.widthHP = art.widthHP
-                    doc.format = art.format
-                    if let bg = art.background { doc.background = bg }
-                    doc.elements.append(contentsOf: art.elements)
-                    report.append(contentsOf: art.warnings)
-                } catch {
-                    report.append("The panel \(artworkURL.lastPathComponent) could not be read: "
-                        + error.localizedDescription)
-                }
-            }
-            if let hp = outcome.widthHP { doc.widthHP = hp }
-            if let plugin { doc.pluginSlug = plugin }
-            if let slug = outcome.moduleSlug {
-                doc.moduleSlug = slug
-                // Name the document after the module too, when it has no name
-                // of its own. Otherwise an emitted panel reports itself as
-                // "Untitled" for the rest of its life.
-                if doc.name.isEmpty || doc.name == "Untitled" { doc.name = slug }
-            }
-            doc.elements.append(contentsOf: outcome.elements)
-
+            let report = ModuleImport.apply(read, includeArtwork: answer.includeArtwork, to: &doc)
             canvas.applyDocument(doc, name: "Import Module Code")
             canvas.setSelection(Set(outcome.elements.map(\.id)))
             reloadInspector()
@@ -219,26 +166,7 @@ extension MainWindowController {
     /// have. Looked for beside the source and one level up, the same two places
     /// the panel artwork is.
     private func pluginManifest(near source: URL) -> String? {
-        let dir = source.deletingLastPathComponent()
-        for candidate in [dir.appendingPathComponent("plugin.json"),
-                          dir.deletingLastPathComponent().appendingPathComponent("plugin.json")] {
-            guard let data = try? Data(contentsOf: candidate),
-                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let slug = json["slug"] as? String, !slug.isEmpty else { continue }
-            return slug
-        }
-        return nil
-    }
-
-    /// `res/Muse.svg` as written in the source, found on disk. Plugins put the
-    /// source in the root or in src/, so both are worth a look.
-    private func resolveResource(_ relative: String, near source: URL) -> URL? {
-        let dir = source.deletingLastPathComponent()
-        let candidates = [
-            dir.appendingPathComponent(relative),
-            dir.deletingLastPathComponent().appendingPathComponent(relative),
-        ]
-        return candidates.first { FileManager.default.fileExists(atPath: $0.path) }
+        ModuleImport.pluginRoot(near: source).flatMap(ModuleImport.slug(at:))
     }
 
     /// What came in, and what did not. An importer that silently drops half a

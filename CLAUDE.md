@@ -24,10 +24,18 @@ each to `main` as the one below it lands:
    `--import-check`
 5. **#23** `feat/drawing` — pen, point editing, shape operations; palette
    orientation fix
+6. `feat/module-import` — ModuleImport (shared GUI/CLI pipeline), `#include`
+   discovery, widget sizes from Rack/plugin SVGs, helper inlining, string-array
+   labels, `Vec.plus/.minus`, `--import-module`
 
 Issues by milestone: M1 (refactor leftovers #9–#11), M2 Editor quirks (#7, #8,
 #12, #13), M3 Drawing tools (#18–#21, closed by #22/#23). Peet's own UI quirks
 go into M2 as new issues.
+
+`--import-module <cpp> <out.panelgen> [--no-artwork]` builds a document from a
+module exactly as File ▸ Import Module Code does (both go through
+`ModuleImport`). Code labels are scaled by `CppImport.nanoVGToEm` (0.8): a
+nanoVG font size is ~1.27× PanelGenerator's em.
 
 `--import-check <svg|cpp|folder> [pngdir]` is the tool for import problems:
 run it over the file (or a whole plugin folder) to see what comes in and what

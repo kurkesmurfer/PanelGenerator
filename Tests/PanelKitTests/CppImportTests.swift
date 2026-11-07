@@ -96,4 +96,84 @@ final class CppImportTests: XCTestCase {
             """)
         XCTAssertEqual(centres(src).first?.y ?? 0, 40, accuracy: 0.001)
     }
+
+    // MARK: - Plugin helpers, string arrays, sizes (SpaceTime Head)
+
+    private let labelHeader = """
+        inline void addLabel(ModuleWidget* w, float xmm, float ymm, const std::string& text,
+                std::shared_ptr<Font> f, float size, NVGcolor c, float sp, NVGcolor l) {
+            auto* t = new PanelText; t->text = text; w->addChild(t);
+        }
+        inline void addIoLabel(ModuleWidget* w, float xmm, float ymm, const std::string& text) {
+            addLabel(w, xmm, ymm, text, fontLabelBold(), 7.5f, colorLabelIO(), 0.5f, colorLabelIOLight());
+        }
+        inline void addTitle(ModuleWidget* w, float xmm, float ymm, const std::string& text) {
+            addLabel(w, xmm, ymm, text, fontTitle(), 16.f, colorTitle(), 0.4f, colorTitleLight());
+        }
+        inline void addHeaderLockup(ModuleWidget* w, float panelWidthMm, const std::string& title,
+                float titleWidthMm, float markScale = 1.f) {
+            const float markHeightMm = 5.2f * markScale;
+            constexpr float gapMm = 1.2f;
+            float leftMm = (panelWidthMm - markHeightMm - gapMm - titleWidthMm) * 0.5f;
+            addTitle(w, leftMm + markHeightMm + gapMm + titleWidthMm * 0.5f, 5.8f, title);
+        }
+        """
+
+    private func texts(_ o: CppImport.Outcome) -> [(String, CGPoint, CGFloat)] {
+        o.elements.filter { $0.kind == .text }.map {
+            ($0.params.text, CGPoint(x: PanelMetrics.mm($0.center.x), y: PanelMetrics.mm($0.center.y)), $0.params.fontSize)
+        }
+    }
+
+    func testLabelsFromStringArrayInLoop() {
+        let src = widget("""
+            static const char* in1[3] = {"START", "STOP", "ADV"};
+            for (int i = 0; i < 3; i++)
+                spacetime::addIoLabel(this, 9.4f + 11.f * i, 96.f, in1[i]);
+            """)
+        let t = texts(CppImport.outcome(from: src, headers: [labelHeader]))
+        XCTAssertEqual(t.map(\.0), ["START", "STOP", "ADV"])
+        XCTAssertEqual(t.last?.1.x ?? 0, 31.4, accuracy: 0.01)
+        XCTAssertEqual(t.first?.2 ?? 0, 7.5 * CppImport.nanoVGToEm, accuracy: 0.001)
+    }
+
+    func testHelperInlinedWithDefaultsAndLocals() {
+        let src = widget(#"spacetime::addHeaderLockup(this, 50.8f, "Head", 14.2f);"#)
+        let t = texts(CppImport.outcome(from: src, headers: [labelHeader]))
+        XCTAssertEqual(t.map(\.0), ["Head"])
+        // (50.8 - 5.2 - 1.2 - 14.2) / 2 + 5.2 + 1.2 + 7.1
+        XCTAssertEqual(t.first?.1.x ?? 0, 28.6, accuracy: 0.01)
+        XCTAssertEqual(t.first?.1.y ?? 0, 5.8, accuracy: 0.01)
+    }
+
+    func testVecPlusMinusThroughHelper() {
+        let header = """
+            struct DualSpringButton : app::Switch { DualSpringButton() { box.size = mm2px(Vec(5.f, 6.f)); } };
+            inline void addDual(ModuleWidget* w, engine::Module* m, Vec center, int a, int b) {
+                w->addParam(createParamCentered<DualSpringButton>(center.plus(mm2px(Vec(0.f, 3.f))), m, b));
+                w->addParam(createParamCentered<DualSpringButton>(center.minus(mm2px(Vec(0.f, 3.f))), m, a));
+            }
+            """
+        let src = widget("addDual(this, module, mm2px(Vec(41.f, 45.f)), Demo::UP_PARAM, Demo::DOWN_PARAM);")
+        let sizer = ModuleImport.widgetSizer(texts: [header, src], pluginRoot: nil, rackLibrary: nil)
+        let o = CppImport.outcome(from: src, headers: [header], widgetSize: sizer)
+        let params = o.elements.filter { $0.role == .param }
+        XCTAssertEqual(params.count, 2)
+        XCTAssertEqual(params.map { PanelMetrics.mm($0.center.y) }.sorted()[0], 42, accuracy: 0.01)
+        XCTAssertEqual(params.map { PanelMetrics.mm($0.center.y) }.sorted()[1], 48, accuracy: 0.01)
+        XCTAssertTrue(params.allSatisfy { $0.widgetSource == .custom && $0.customWidgetName == "DualSpringButton" })
+        XCTAssertEqual(PanelMetrics.mm(params[0].h), 6, accuracy: 0.01)
+    }
+
+    func testSplitVecChain() {
+        XCTAssertEqual(CppImport.splitVecChain("a.plus(b).minus(c(d))").map { $0.0 + ":" + $0.1 },
+                       [":a", "plus:b", "minus:c(d)"])
+        XCTAssertEqual(CppImport.splitVecChain("a.plus(b).div(2)").count, 1)
+        XCTAssertEqual(CppImport.splitVecChain("mm2px(Vec(1, 2))").count, 1)
+    }
+
+    func testIncludesAreFound() {
+        XCTAssertEqual(ModuleImport.includes(in: "#include \"plugin.hpp\"\n  # include \"w/x.hpp\"\n#include <vector>"),
+                       ["plugin.hpp", "w/x.hpp"])
+    }
 }
