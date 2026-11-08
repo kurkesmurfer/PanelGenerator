@@ -249,6 +249,42 @@ package enum ModuleImport {
         return (body as NSString).substring(with: m.range(at: 1))
     }
 
+    // MARK: - Fonts
+
+    /// A font function's face: `fontTitle()` whose body loads
+    /// `res/fonts/Fraunces-SemiBold.ttf` → that file, registered for this
+    /// process, → its PostScript name.
+    package static func fontResolver(texts: [String], pluginRoot: URL?) -> (String) -> String? {
+        var cache: [String: String?] = [:]
+        return { fn in
+            if let hit = cache[fn] { return hit }
+            var result: String?
+            if let root = pluginRoot, let file = fontFile(of: fn, in: texts) {
+                let url = root.appendingPathComponent(file)
+                if FileManager.default.fileExists(atPath: url.path) {
+                    result = FontLibrary.register(url).first
+                }
+            }
+            cache[fn] = result
+            return result
+        }
+    }
+
+    static func fontFile(of fn: String, in texts: [String]) -> String? {
+        guard let head = try? NSRegularExpression(pattern: #"\b"# + NSRegularExpression.escapedPattern(for: fn) + #"\s*\(\s*\)\s*\{"#),
+              let file = try? NSRegularExpression(pattern: #""([^"]+\.(?:ttf|otf|ttc))""#) else { return nil }
+        for text in texts {
+            let ns = text as NSString
+            guard let m = head.firstMatch(in: text, range: NSRange(location: 0, length: ns.length)) else { continue }
+            let start = m.range.location + m.range.length
+            let close = ns.range(of: "}", range: NSRange(location: start, length: ns.length - start))
+            let end = close.location == NSNotFound ? ns.length : close.location
+            let window = NSRange(location: start, length: end - start)
+            if let f = file.firstMatch(in: text, range: window) { return ns.substring(with: f.range(at: 1)) }
+        }
+        return nil
+    }
+
     // MARK: - Reading
 
     /// Reads once to learn which panel the widget sets, then again knowing how
@@ -257,11 +293,13 @@ package enum ModuleImport {
     package static func read(_ url: URL) throws -> Result {
         let src = try sources(for: url)
         let sizer = widgetSizer(texts: src.headers + [src.text], pluginRoot: src.pluginRoot)
-        let first = CppImport.outcome(from: src.text, headers: src.headers, widgetSize: sizer)
+        let faces = fontResolver(texts: src.headers + [src.text], pluginRoot: src.pluginRoot)
+        let first = CppImport.outcome(from: src.text, headers: src.headers, widgetSize: sizer, fontName: faces)
         let panelURL = first.panelResource.flatMap { resolveResource($0, near: url, pluginRoot: src.pluginRoot) }
         let panelSize = panelURL.flatMap { try? Data(contentsOf: $0) }.flatMap { SVGImport.panelSize(from: $0) }
         let outcome = panelSize == nil ? first
-            : CppImport.outcome(from: src.text, headers: src.headers, panelSize: panelSize, widgetSize: sizer)
+            : CppImport.outcome(from: src.text, headers: src.headers, panelSize: panelSize,
+                                widgetSize: sizer, fontName: faces)
         return Result(sources: src, outcome: outcome, panelURL: panelURL)
     }
 

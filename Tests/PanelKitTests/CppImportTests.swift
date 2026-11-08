@@ -176,4 +176,21 @@ final class CppImportTests: XCTestCase {
         XCTAssertEqual(ModuleImport.includes(in: "#include \"plugin.hpp\"\n  # include \"w/x.hpp\"\n#include <vector>"),
                        ["plugin.hpp", "w/x.hpp"])
     }
+
+    func testLabelFaceAndTrackingFromHelper() {
+        XCTAssertEqual(CppImport.labelFontCalls(in: labelHeader)["addIoLabel"], "fontLabelBold")
+        XCTAssertEqual(CppImport.labelTracking(in: labelHeader)["addTitle"] ?? 0, 0.4, accuracy: 0.001)
+        let src = widget(#"addIoLabel(this, 10.f, 20.f, "IN");"#)
+        let o = CppImport.outcome(from: src, headers: [labelHeader],
+                                  fontName: { $0 == "fontLabelBold" ? "Helvetica-Bold" : nil })
+        let t = o.elements.first { $0.kind == .text }
+        XCTAssertEqual(t?.params.fontName, "Helvetica-Bold")
+        XCTAssertEqual(t?.params.tracking ?? 0, 0.5, accuracy: 0.001)
+    }
+
+    func testFontFileOfFontFunction() {
+        let h = #"inline std::shared_ptr<Font> fontTitle() { static auto f = APP->window->loadFont(asset::plugin(p, "res/fonts/Fraunces-SemiBold.ttf")); return f; }"#
+        XCTAssertEqual(ModuleImport.fontFile(of: "fontTitle", in: [h]), "res/fonts/Fraunces-SemiBold.ttf")
+        XCTAssertNil(ModuleImport.fontFile(of: "fontOther", in: [h]))
+    }
 }

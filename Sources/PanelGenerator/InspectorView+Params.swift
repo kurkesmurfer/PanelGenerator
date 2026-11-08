@@ -378,6 +378,7 @@ extension InspectorView {
                 guard let f = sender as? NSTextField else { return }
                 weakCanvas?.mutateSelection("Text") { $0.params.text = f.stringValue }
             }
+            addFontControls(el)
             plabel("Size", \.params.fontSize)
             let fs = makeField(value: Geo.fmt(el.params.fontSize))
             fs.toolTip = "\(Geo.fmt(PanelMetrics.mm(el.params.fontSize))) mm. Jack labels are "
@@ -391,14 +392,100 @@ extension InspectorView {
                     self.canvas?.mutateSelection("Font Size") { $0.params.fontSize = max(4, v) }
                 }
             }
+            plabel("Tracking", \.params.tracking)
+            let tr = makeField(value: Geo.fmt(el.params.tracking ?? 0))
+            tr.toolTip = "Extra space after each character, in panel px — nanoVG's nvgTextLetterSpacing. "
+                + "Negative tightens."
+            addControl(tr, width: 70)
+            handlers.append { [weak self] sender in
+                guard let self, let v = self.cgf(sender) else { return }
+                self.canvas?.mutateSelection("Tracking") { $0.params.tracking = v == 0 ? nil : v }
+            }
             label("")
             let bold = makeCheck("Bold", on: el.params.bold)
+            bold.toolTip = "Applies to the system font. For any other family, pick the weight under Style."
             addControl(bold, width: 100)
+            bold.isEnabled = el.params.fontName == nil
             let weakCanvas2 = canvas
             handlers.append { sender in
                 guard let b = sender as? NSButton else { return }
                 weakCanvas2?.mutateSelection("Bold") { $0.params.bold = b.state == .on }
             }
+        }
+    }
+}
+
+// MARK: - Font family and style
+
+extension InspectorView {
+
+    /// Family and style pop-ups. "System" keeps the old behaviour (system font,
+    /// Bold checkbox); any other family stores the chosen face's PostScript
+    /// name. A plugin's own res/fonts are registered when its document opens,
+    /// so they appear here without being installed.
+    func addFontControls(_ el: PanelElement) {
+        let systemTitle = "System"
+        let current = el.params.fontName
+        let currentFamily = current.flatMap { FontLibrary.familyAndStyle(of: $0)?.family }
+
+        plabel("Font", \.params.fontName)
+        let family = NSPopUpButton(frame: .zero, pullsDown: false)
+        family.font = NSFont.systemFont(ofSize: 11)
+        family.addItem(withTitle: systemTitle)
+        family.menu?.addItem(.separator())
+        for f in FontLibrary.families() {
+            family.addItem(withTitle: f)
+            family.lastItem?.attributedTitle = NSAttributedString(string: f, attributes: [
+                .font: NSFont(name: FontLibrary.preferredMember(of: f, like: nil, bold: false) ?? "", size: 12)
+                    ?? NSFont.systemFont(ofSize: 12)])
+        }
+        if let current, currentFamily == nil {
+            // Named in the document but not available here: say so, keep it.
+            family.addItem(withTitle: "\(current) (missing)")
+            family.selectItem(at: family.numberOfItems - 1)
+            family.toolTip = "This face is not installed and was not found in a res/fonts folder near "
+                + "the document. The label draws in the system font until it is available."
+        } else {
+            family.selectItem(withTitle: currentFamily ?? systemTitle)
+        }
+
+        let style = NSPopUpButton(frame: .zero, pullsDown: false)
+        style.font = NSFont.systemFont(ofSize: 11)
+        func fillStyles(_ fam: String?, selected: String?) {
+            style.removeAllItems()
+            guard let fam else { style.isEnabled = false; return }
+            let members = FontLibrary.members(of: fam)
+            for m in members {
+                style.addItem(withTitle: m.style)
+                style.lastItem?.representedObject = m.postScriptName
+            }
+            if let i = members.firstIndex(where: { $0.postScriptName == selected }) { style.selectItem(at: i) }
+            style.isEnabled = members.count > 1
+        }
+        fillStyles(currentFamily, selected: current)
+
+        addControl(family)
+        let weakCanvas = canvas
+        handlers.append { sender in
+            guard let p = sender as? NSPopUpButton, let title = p.titleOfSelectedItem else { return }
+            if title == systemTitle {
+                fillStyles(nil, selected: nil)
+                weakCanvas?.mutateSelection("Font") { $0.params.fontName = nil }
+                DispatchQueue.main.async { weakCanvas?.onSelectionChange?() }   // re-enable Bold
+            } else if !title.hasSuffix("(missing)") {
+                let ps = FontLibrary.preferredMember(of: title, like: style.selectedItem?.representedObject as? String,
+                                                     bold: el.params.bold)
+                fillStyles(title, selected: ps)
+                weakCanvas?.mutateSelection("Font") { $0.params.fontName = ps }
+                DispatchQueue.main.async { weakCanvas?.onSelectionChange?() }   // Bold no longer applies
+            }
+        }
+
+        label("Style")
+        addControl(style)
+        handlers.append { sender in
+            guard let p = sender as? NSPopUpButton, let ps = p.selectedItem?.representedObject as? String else { return }
+            weakCanvas?.mutateSelection("Font Style") { $0.params.fontName = ps }
         }
     }
 }

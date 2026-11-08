@@ -174,8 +174,13 @@ package enum SVGExporter {
                 .replacingOccurrences(of: "<", with: "&lt;")
                 .replacingOccurrences(of: ">", with: "&gt;")
             var t = "<text x=\"\(Geo.fmt(c.x))\" y=\"\(baselineY)\" text-anchor=\"middle\" "
-            t += "font-family=\"-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif\" "
+            if let name = el.params.fontName, let family = FontLibrary.familyAndStyle(of: name)?.family {
+                t += "font-family=\"'\(family)', sans-serif\" "
+            } else {
+                t += "font-family=\"-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif\" "
+            }
             t += "font-size=\"\(Geo.fmt(el.params.fontSize))\" font-weight=\"\(weight)\" "
+            if let tr = el.params.tracking, tr != 0 { t += "letter-spacing=\"\(Geo.fmt(tr))\" " }
             t += "fill=\"\(el.fill.hexString)\"\(el.rotation != 0 ? "" : "")>\(esc)</text>"
             if el.rotation != 0 {
                 return "<g transform=\"rotate(\(Geo.fmt(el.rotation)) \(Geo.fmt(c.x)) \(Geo.fmt(c.y)))\">\(t)</g>"

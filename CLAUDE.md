@@ -26,7 +26,9 @@ each to `main` as the one below it lands:
    orientation fix
 6. `feat/module-import` — ModuleImport (shared GUI/CLI pipeline), `#include`
    discovery, widget sizes from Rack/plugin SVGs, helper inlining, string-array
-   labels, `Vec.plus/.minus`, `--import-module`
+   labels, `Vec.plus/.minus`, `--import-module`; text font family/style
+   (`params.fontName`, PostScript name) and tracking, `FontLibrary` registers
+   a plugin's res/fonts near a document on load
 
 Issues by milestone: M1 (refactor leftovers #9–#11), M2 Editor quirks (#7, #8,
 #12, #13), M3 Drawing tools (#18–#21, closed by #22/#23). Peet's own UI quirks

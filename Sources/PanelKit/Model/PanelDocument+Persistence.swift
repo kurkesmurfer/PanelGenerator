@@ -21,6 +21,9 @@ extension PanelDocument {
     }
 
     package static func load(from url: URL) throws -> PanelDocument {
-        try JSONDecoder().decode(PanelDocument.self, from: Data(contentsOf: url))
+        // A plugin's bundled fonts (res/fonts) are registered first, so labels
+        // set in them render in their own face rather than the system font.
+        FontLibrary.registerFonts(near: url)
+        return try JSONDecoder().decode(PanelDocument.self, from: Data(contentsOf: url))
     }
 }

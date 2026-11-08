@@ -54,7 +54,8 @@ package enum CppImport {
     ///   knows it.
     package static func outcome(from source: String, headers: [String] = [],
                         panelSize: CGSize? = nil,
-                        widgetSize: ((_ type: String, _ custom: Bool) -> CGSize?)? = nil) -> Outcome {
+                        widgetSize: ((_ type: String, _ custom: Bool) -> CGSize?)? = nil,
+                        fontName: ((_ fontFunction: String) -> String?)? = nil) -> Outcome {
         var out = Outcome()
 
         let (rawText, preprocessorWarnings) = preprocess(source)
@@ -81,6 +82,22 @@ package enum CppImport {
             merge(&table, constants(in: preprocess(header).text))
         }
         merge(&table, constants(in: text))
+
+        // The face each label helper passes (`fontLabelBold()`), as a
+        // PostScript name when the caller can find the font it loads.
+        var labelFaces: [String: String] = [:]
+        if let fontName {
+            for t in headerTexts + [text] {
+                for (helper, fn) in labelFontCalls(in: t) where labelFaces[helper] == nil {
+                    if let ps = fontName(fn) { labelFaces[helper] = ps }
+                }
+            }
+        }
+
+        var labelSpacing: [String: CGFloat] = [:]
+        for t in headerTexts + [text] {
+            for (k, v) in labelTracking(in: t) where labelSpacing[k] == nil { labelSpacing[k] = v }
+        }
 
         var labelSizes = labelHelpers(in: text)
         for header in headers {
@@ -150,7 +167,7 @@ package enum CppImport {
                 if let role = role(for: call.name) {
                     append(call, role: role, table: table, ownTypes: ownTypes,
                            widgetSize: widgetSize, into: &out)
-                } else if let made = label(call, table: table, sizes: labelSizes, strings: strings) {
+                } else if let made = label(call, table: table, sizes: labelSizes, strings: strings, faces: labelFaces, spacing: labelSpacing) {
                     out.elements.append(made)
                     labels += 1
                 } else if isLabelShaped(call, strings: strings) {
@@ -294,7 +311,9 @@ package enum CppImport {
     package static let nanoVGToEm: CGFloat = 0.8
 
     private static func label(_ call: Call, table: [String: CGFloat],
-                              sizes: [String: CGFloat], strings: [String: String] = [:]) -> PanelElement? {
+                              sizes: [String: CGFloat], strings: [String: String] = [:],
+                              faces: [String: String] = [:],
+                              spacing: [String: CGFloat] = [:]) -> PanelElement? {
         guard isLabelShaped(call, strings: strings),
               let x = Expression.evaluate(call.args[1], constants: table),
               let y = Expression.evaluate(call.args[2], constants: table),
@@ -304,6 +323,8 @@ package enum CppImport {
         el.params.text = text
         el.params.fontSize = (sizes[call.name] ?? 7) * nanoVGToEm
         el.params.bold = true
+        el.params.fontName = faces[call.name]
+        el.params.tracking = spacing[call.name]
         el.role = .decoration
         el.name = "Label · \(text)"
 
@@ -338,6 +359,37 @@ package enum CppImport {
             if let size = Expression.evaluate(inner.args[5], constants: builtinConstants), size > 0 {
                 out[name] = size
             }
+        }
+        return out
+    }
+
+    /// Label helpers and the font function each passes as its fifth
+    /// argument: `addIoLabel` → `fontLabelBold`.
+    /// Label helpers and the letter spacing each passes (eighth argument).
+    package static func labelTracking(in text: String) -> [String: CGFloat] {
+        let pattern = #"(?:inline\s+)?(?:static\s+)?void\s+(\w+)\s*\([^)]*\)\s*\{([^}]*)\}"#
+        guard let re = try? NSRegularExpression(pattern: pattern, options: [.dotMatchesLineSeparators]) else { return [:] }
+        var out: [String: CGFloat] = [:]
+        let ns = text as NSString
+        for m in re.matches(in: text, range: NSRange(location: 0, length: ns.length)) where m.numberOfRanges == 3 {
+            guard let inner = calls(in: ns.substring(with: m.range(at: 2))).first, inner.args.count >= 8,
+                  let v = Expression.evaluate(inner.args[7], constants: builtinConstants), v != 0 else { continue }
+            out[ns.substring(with: m.range(at: 1))] = v
+        }
+        return out
+    }
+
+    package static func labelFontCalls(in text: String) -> [String: String] {
+        let pattern = #"(?:inline\s+)?(?:static\s+)?void\s+(\w+)\s*\([^)]*\)\s*\{([^}]*)\}"#
+        guard let re = try? NSRegularExpression(pattern: pattern, options: [.dotMatchesLineSeparators]) else { return [:] }
+        var out: [String: String] = [:]
+        let ns = text as NSString
+        for m in re.matches(in: text, range: NSRange(location: 0, length: ns.length)) where m.numberOfRanges == 3 {
+            guard let inner = calls(in: ns.substring(with: m.range(at: 2))).first, inner.args.count >= 6 else { continue }
+            let arg = inner.args[4].trimmingCharacters(in: .whitespaces)
+            guard arg.hasSuffix("()") else { continue }
+            let fn = String(arg.dropLast(2)).components(separatedBy: "::").last ?? ""
+            if !fn.isEmpty { out[ns.substring(with: m.range(at: 1))] = fn }
         }
         return out
     }

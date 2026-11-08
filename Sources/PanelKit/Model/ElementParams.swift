@@ -81,6 +81,11 @@ package struct ElementParams: Codable, Hashable {
     package var text: String = "LABEL"
     package var fontSize: CGFloat = 12
     package var bold: Bool = true
+    /// PostScript name of the face; nil is the system font (with `bold`).
+    /// Optional so documents without one keep their exact on-disk form.
+    package var fontName: String? = nil
+    /// Extra space after each character, panel px (nanoVG's letter spacing).
+    package var tracking: CGFloat? = nil
     // Symbols. `weight` is a fraction of the symbol's short side, so a glyph
     // keeps its proportions at any size. The four slots are generic: what each
     // means is declared by the symbol's SymbolSpec, which is what lets the
@@ -133,6 +138,8 @@ extension ElementParams {
         text         = try c.decodeOr(.text, text)
         fontSize     = try c.decodeOr(.fontSize, fontSize)
         bold         = try c.decodeOr(.bold, bold)
+        fontName     = try c.decodeIfPresent(String.self, forKey: .fontName)
+        tracking     = try c.decodeIfPresent(CGFloat.self, forKey: .tracking)
         symbol       = try c.decodeOr(.symbol, symbol)
         weight       = try c.decodeOr(.weight, weight)
         symbolA      = try c.decodeOr(.symbolA, symbolA)
