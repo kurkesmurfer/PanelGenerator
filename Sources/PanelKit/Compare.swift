@@ -75,11 +75,8 @@ package enum Compare {
             guard let source = try? String(contentsOf: url, encoding: .utf8) else {
                 throw Failure.unreadable(path)
             }
-            let siblings = (try? FileManager.default.contentsOfDirectory(
-                at: url.deletingLastPathComponent(), includingPropertiesForKeys: nil))?
-                .filter { ["h", "hpp", "hh"].contains($0.pathExtension.lowercased()) }
-                .prefix(24) ?? []
-            let headers = siblings.compactMap { try? String(contentsOf: $0, encoding: .utf8) }
+            let headers = ModuleImport.headerURLs(for: url, text: source, pluginRoot: ModuleImport.pluginRoot(near: url))
+                .compactMap { try? String(contentsOf: $0, encoding: .utf8) }
 
             let outcome = CppImport.outcome(from: source, headers: headers)
             let stamp = provenance(in: source)

@@ -121,7 +121,21 @@ PanelGenerator --import-check <file.svg|file.cpp|folder> [png-folder]
 prints what each file imports as and every warning, and optionally renders each
 import to PNG.
 
+To build a document from a module without the GUI:
+
+```
+PanelGenerator --import-module <module.cpp> <out.panelgen> [--no-artwork]
+```
+
 ## Reading positions out of a plugin
+
+The reader follows the source's quoted `#include`s (beside it, one up, and one
+level into the plugin, so `widgets/` next to `src/` is found), expands the
+plugin's own `inline` helpers that place controls or labels (a header lockup, a
+two-part switch), reads labels taken from constant string arrays inside loops,
+and handles `Vec.plus()`/`.minus()`. Widgets get their real size — Rack's from
+its installed ComponentLibrary, the plugin's own from the `box.size` their
+struct sets or the first `res/…svg` they load.
 
 `File ▸ Import Module Code…` (⌥⌘I) reads a `ModuleWidget` constructor. For
 adopting an existing module this is the file that matters — the SVG carries the

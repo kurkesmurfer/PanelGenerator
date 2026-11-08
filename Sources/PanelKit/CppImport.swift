@@ -53,11 +53,25 @@ package enum CppImport {
     ///   `setPanel` names the panel it is taken from, which is how the caller
     ///   knows it.
     package static func outcome(from source: String, headers: [String] = [],
-                        panelSize: CGSize? = nil) -> Outcome {
+                        panelSize: CGSize? = nil,
+                        widgetSize: ((_ type: String, _ custom: Bool) -> CGSize?)? = nil,
+                        fontName: ((_ fontFunction: String) -> String?)? = nil) -> Outcome {
         var out = Outcome()
 
-        let (text, preprocessorWarnings) = preprocess(source)
+        let (rawText, preprocessorWarnings) = preprocess(source)
         out.warnings.append(contentsOf: preprocessorWarnings)
+        let headerTexts = headers.map { preprocess($0).text }
+
+        // Plugin helpers that place controls or labels — a header lockup, a
+        // two-button switch — are expanded at their call sites, so what they
+        // place is read like anything written out in the constructor.
+        let helpers = inlinableHelpers(in: headerTexts + [rawText])
+        let text = inlineHelpers(rawText, helpers: helpers)
+
+        // Types the plugin defines itself are its own widgets, namespaced or
+        // not; a type from Rack's library is never defined in the plugin.
+        let ownTypes = definedTypes(in: headerTexts + [rawText])
+        let strings = stringArrays(in: headerTexts + [text])
 
         var table = builtinConstants
         if let panelSize {
@@ -68,6 +82,22 @@ package enum CppImport {
             merge(&table, constants(in: preprocess(header).text))
         }
         merge(&table, constants(in: text))
+
+        // The face each label helper passes (`fontLabelBold()`), as a
+        // PostScript name when the caller can find the font it loads.
+        var labelFaces: [String: String] = [:]
+        if let fontName {
+            for t in headerTexts + [text] {
+                for (helper, fn) in labelFontCalls(in: t) where labelFaces[helper] == nil {
+                    if let ps = fontName(fn) { labelFaces[helper] = ps }
+                }
+            }
+        }
+
+        var labelSpacing: [String: CGFloat] = [:]
+        for t in headerTexts + [text] {
+            for (k, v) in labelTracking(in: t) where labelSpacing[k] == nil { labelSpacing[k] = v }
+        }
 
         var labelSizes = labelHelpers(in: text)
         for header in headers {
@@ -135,11 +165,12 @@ package enum CppImport {
 
             default:
                 if let role = role(for: call.name) {
-                    append(call, role: role, table: table, into: &out)
-                } else if let made = label(call, table: table, sizes: labelSizes) {
+                    append(call, role: role, table: table, ownTypes: ownTypes,
+                           widgetSize: widgetSize, into: &out)
+                } else if let made = label(call, table: table, sizes: labelSizes, strings: strings, faces: labelFaces, spacing: labelSpacing) {
                     out.elements.append(made)
                     labels += 1
-                } else if isLabelShaped(call) {
+                } else if isLabelShaped(call, strings: strings) {
                     // Shaped like a label but positioned by something we cannot
                     // evaluate. Silence here would read as "this panel has no
                     // labels", which is a different and much more misleading
@@ -175,7 +206,9 @@ package enum CppImport {
     // MARK: - One component
 
     private static func append(_ call: Call, role: ComponentRole,
-                               table: [String: CGFloat], into out: inout Outcome) {
+                               table: [String: CGFloat], ownTypes: Set<String> = [],
+                               widgetSize: ((String, Bool) -> CGSize?)? = nil,
+                               into out: inout Outcome) {
         guard let positionArg = call.args.first else { return }
         guard let point = position(positionArg, table: table) else {
             out.warnings.append("Line \(call.line): could not work out the position from "
@@ -199,7 +232,8 @@ package enum CppImport {
         // A namespaced type is not from Rack's ComponentLibrary, so it is one
         // of the plugin's own widgets. Saying so is what lets the generated
         // code name it again instead of silently substituting a Rack knob.
-        if call.template.contains("::") {
+        let isOwn = call.template.contains("::") || ownTypes.contains(widget)
+        if isOwn {
             el.widgetSource = .custom
             el.customWidgetName = widget
             el.stockWidget = ""
@@ -213,9 +247,21 @@ package enum CppImport {
         }
         el.name = el.enumName.isEmpty ? el.kind.displayName : el.enumName
 
+        // The widget's real size, from its own SVG, when it can be found: the
+        // on-canvas guide then matches what Rack draws, and an uncentred
+        // call can be placed exactly.
+        let known = widget.isEmpty ? nil : widgetSize?(call.template, isOwn)
+        if let s = known, s.width > 0, s.height > 0 {
+            el.w = s.width
+            el.h = s.height
+        }
+
         if call.isCentered {
             el.x = point.x - el.w / 2
             el.y = point.y - el.h / 2
+        } else if known != nil {
+            el.x = point.x
+            el.y = point.y
         } else {
             // createParam (no Centered) takes a top-left corner, and the offset
             // to the centre is the widget's own size — which lives in Rack's
@@ -245,22 +291,40 @@ package enum CppImport {
     /// The shape is what identifies these, not the name: four arguments, the
     /// first literally `this`, two that evaluate to numbers, and a string. That
     /// is tight enough that a draw call like `nvgText(args.vg, …)` cannot match.
-    package static func isLabelShaped(_ call: Call) -> Bool {
-        call.args.count == 4 && call.args[0] == "this"
-            && call.args[3].hasPrefix("\"") && !stringLiterals(in: call.args[3]).isEmpty
+    package static func isLabelShaped(_ call: Call, strings: [String: String] = [:]) -> Bool {
+        call.args.count == 4 && call.args[0] == "this" && labelText(call.args[3], strings: strings) != nil
     }
 
+    /// A label's text: a string literal, or an element of a constant string
+    /// array (`in1[2]`, after a loop has been unrolled).
+    private static func labelText(_ arg: String, strings: [String: String]) -> String? {
+        let a = arg.trimmingCharacters(in: .whitespacesAndNewlines)
+        if a.hasPrefix("\"") { return stringLiterals(in: a).first }
+        let bare = a.components(separatedBy: "::").last ?? a
+        return strings[bare.replacingOccurrences(of: " ", with: "")]
+    }
+
+    /// NanoVG sizes a font by its line height (ascent − descent), which for
+    /// the label fonts plugins use is about 1.25 em; PanelGenerator, like every
+    /// Mac text system, sizes by the em. Measured on SpaceTime's Head panel:
+    /// size 7 draws capitals 1.33 mm tall in Rack.
+    package static let nanoVGToEm: CGFloat = 0.8
+
     private static func label(_ call: Call, table: [String: CGFloat],
-                              sizes: [String: CGFloat]) -> PanelElement? {
-        guard isLabelShaped(call),
+                              sizes: [String: CGFloat], strings: [String: String] = [:],
+                              faces: [String: String] = [:],
+                              spacing: [String: CGFloat] = [:]) -> PanelElement? {
+        guard isLabelShaped(call, strings: strings),
               let x = Expression.evaluate(call.args[1], constants: table),
               let y = Expression.evaluate(call.args[2], constants: table),
-              let text = stringLiterals(in: call.args[3]).first else { return nil }
+              let text = labelText(call.args[3], strings: strings) else { return nil }
 
         var el = ElementKind.text.defaultElement(at: .zero)
         el.params.text = text
-        el.params.fontSize = sizes[call.name] ?? 7
+        el.params.fontSize = (sizes[call.name] ?? 7) * nanoVGToEm
         el.params.bold = true
+        el.params.fontName = faces[call.name]
+        el.params.tracking = spacing[call.name]
         el.role = .decoration
         el.name = "Label · \(text)"
 
@@ -295,6 +359,37 @@ package enum CppImport {
             if let size = Expression.evaluate(inner.args[5], constants: builtinConstants), size > 0 {
                 out[name] = size
             }
+        }
+        return out
+    }
+
+    /// Label helpers and the font function each passes as its fifth
+    /// argument: `addIoLabel` → `fontLabelBold`.
+    /// Label helpers and the letter spacing each passes (eighth argument).
+    package static func labelTracking(in text: String) -> [String: CGFloat] {
+        let pattern = #"(?:inline\s+)?(?:static\s+)?void\s+(\w+)\s*\([^)]*\)\s*\{([^}]*)\}"#
+        guard let re = try? NSRegularExpression(pattern: pattern, options: [.dotMatchesLineSeparators]) else { return [:] }
+        var out: [String: CGFloat] = [:]
+        let ns = text as NSString
+        for m in re.matches(in: text, range: NSRange(location: 0, length: ns.length)) where m.numberOfRanges == 3 {
+            guard let inner = calls(in: ns.substring(with: m.range(at: 2))).first, inner.args.count >= 8,
+                  let v = Expression.evaluate(inner.args[7], constants: builtinConstants), v != 0 else { continue }
+            out[ns.substring(with: m.range(at: 1))] = v
+        }
+        return out
+    }
+
+    package static func labelFontCalls(in text: String) -> [String: String] {
+        let pattern = #"(?:inline\s+)?(?:static\s+)?void\s+(\w+)\s*\([^)]*\)\s*\{([^}]*)\}"#
+        guard let re = try? NSRegularExpression(pattern: pattern, options: [.dotMatchesLineSeparators]) else { return [:] }
+        var out: [String: String] = [:]
+        let ns = text as NSString
+        for m in re.matches(in: text, range: NSRange(location: 0, length: ns.length)) where m.numberOfRanges == 3 {
+            guard let inner = calls(in: ns.substring(with: m.range(at: 2))).first, inner.args.count >= 6 else { continue }
+            let arg = inner.args[4].trimmingCharacters(in: .whitespaces)
+            guard arg.hasSuffix("()") else { continue }
+            let fn = String(arg.dropLast(2)).components(separatedBy: "::").last ?? ""
+            if !fn.isEmpty { out[ns.substring(with: m.range(at: 1))] = fn }
         }
         return out
     }
@@ -385,7 +480,17 @@ package enum CppImport {
     /// The distinction is not cosmetic: read a millimetre position as pixels
     /// and every component lands at a third of its proper place.
     package static func position(_ text: String, table: [String: CGFloat]) -> CGPoint? {
-        var trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Vec arithmetic: `centre.plus(mm2px(Vec(0, 3)))`, `a.minus(b)`.
+        let chained = splitVecChain(stripOuterParens(text.trimmingCharacters(in: .whitespacesAndNewlines)))
+        if chained.count > 1 {
+            guard var p = position(chained[0].1, table: table) else { return nil }
+            for (op, term) in chained.dropFirst() {
+                guard let q = position(term, table: table) else { return nil }
+                p = op == "plus" ? CGPoint(x: p.x + q.x, y: p.y + q.y) : CGPoint(x: p.x - q.x, y: p.y - q.y)
+            }
+            return p
+        }
+        var trimmed = stripOuterParens(text.trimmingCharacters(in: .whitespacesAndNewlines))
         for prefix in ["rack::math::", "rack::window::", "rack::", "math::", "window::"] {
             trimmed = trimmed.replacingOccurrences(of: prefix, with: "")
         }
@@ -511,6 +616,193 @@ package enum CppImport {
         return out
     }
 
+    /// `a.plus(b).minus(c)` → [("", a), ("plus", b), ("minus", c)], split at
+    /// the top level only.
+    /// `((x))` → `x`, only when the outer pair encloses the whole text.
+    static func stripOuterParens(_ s: String) -> String {
+        var t = s
+        while t.hasPrefix("("), let close = matching(Array(t), from: 0, open: "(", close: ")"), close == t.count - 1 {
+            t = String(t.dropFirst().dropLast()).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return t
+    }
+
+    static func splitVecChain(_ s: String) -> [(String, String)] {
+        let chars = Array(s)
+        var out: [(String, String)] = []
+        var depth = 0, i = 0
+        var base: String?
+        while i < chars.count {
+            let c = chars[i]
+            if c == "(" { depth += 1 } else if c == ")" { depth -= 1 }
+            if depth == 0, c == "." {
+                var matched = false
+                for name in ["plus", "minus"] {
+                    let n = Array(name + "(")
+                    let open = i + 1 + name.count
+                    guard open < chars.count, Array(chars[(i + 1)...open]) == n,
+                          let close = matching(chars, from: open, open: "(", close: ")") else { continue }
+                    if base == nil { base = String(chars[0..<i]) }
+                    out.append((name, String(chars[(open + 1)..<close])))
+                    i = close + 1
+                    matched = true
+                    // Only another .plus/.minus may follow.
+                    if i < chars.count, chars[i] != "." {
+                        let rest = String(chars[i...]).trimmingCharacters(in: .whitespacesAndNewlines)
+                        if !rest.isEmpty { return [("", s)] }
+                    }
+                    break
+                }
+                if matched { continue }
+                if base != nil { return [("", s)] }
+            } else if base != nil, depth == 0, !c.isWhitespace {
+                return [("", s)]
+            }
+            i += 1
+        }
+        guard let b = base, !out.isEmpty else { return [("", s)] }
+        return [("", b)] + out
+    }
+
+    // MARK: - Plugin helpers, string arrays, own types
+
+    struct Helper {
+        var params: [(name: String, defaultValue: String?)]
+        var body: String
+    }
+
+    /// `inline void name(params) { body }` whose body places controls or
+    /// labels, keyed by name. Pure label forwarders (`addCvLabel` → `addLabel`)
+    /// are left alone: their call sites are read as labels directly.
+    static func inlinableHelpers(in texts: [String]) -> [String: Helper] {
+        let forwarders = Set(texts.flatMap { labelHelpers(in: $0).keys })
+        guard let re = try? NSRegularExpression(pattern: #"(?:static\s+)?inline\s+(?:void|\w+\s*\*)\s+(\w+)\s*\("#)
+        else { return [:] }
+        var out: [String: Helper] = [:]
+        for text in texts {
+            let ns = text as NSString
+            let u = Array(text.utf16)
+            for m in re.matches(in: text, range: NSRange(location: 0, length: ns.length)) {
+                let name = ns.substring(with: m.range(at: 1))
+                guard !forwarders.contains(name), out[name] == nil else { continue }
+                // Parameter list, then the body's braces, in UTF-16 units.
+                var j = m.range.location + m.range.length, depth = 1
+                let paramStart = j
+                while j < u.count, depth > 0 { if u[j] == 40 { depth += 1 } else if u[j] == 41 { depth -= 1 }; j += 1 }
+                let params = ns.substring(with: NSRange(location: paramStart, length: max(0, j - 1 - paramStart)))
+                while j < u.count, u[j] != 123, u[j] != 59 { j += 1 }
+                guard j < u.count, u[j] == 123 else { continue }
+                let bodyStart = j
+                depth = 0
+                var end = -1
+                while j < u.count {
+                    if u[j] == 123 { depth += 1 } else if u[j] == 125 { depth -= 1; if depth == 0 { end = j; break } }
+                    j += 1
+                }
+                guard end > bodyStart else { continue }
+                let body = ns.substring(with: NSRange(location: bodyStart + 1, length: end - bodyStart - 1))
+                guard body.contains("create") || body.contains("add") else { continue }
+                let names: [(String, String?)] = splitTopLevel(params).compactMap { p in
+                    let parts = p.split(separator: "=", maxSplits: 1).map { $0.trimmingCharacters(in: .whitespaces) }
+                    guard let decl = parts.first,
+                          let n = decl.range(of: #"\w+\s*$"#, options: .regularExpression).map({ String(decl[$0]).trimmingCharacters(in: .whitespaces) })
+                    else { return nil }
+                    return (n, parts.count > 1 ? parts[1] : nil)
+                }
+                out[name] = Helper(params: names, body: body)
+            }
+        }
+        return out
+    }
+
+    /// Replaces calls to `helpers` from the widget onwards with their bodies,
+    /// parameters substituted, two levels deep. Line breaks inside a call are
+    /// kept as trailing newlines so later line numbers do not move.
+    static func inlineHelpers(_ source: String, helpers: [String: Helper]) -> String {
+        guard !helpers.isEmpty else { return source }
+        var text = source
+        for _ in 0..<2 {
+            let found = calls(in: text)
+            let ns = text as NSString
+            let begin = ns.range(of: "ModuleWidget").location
+            guard begin != NSNotFound else { return text }
+            var replacements: [(NSRange, String)] = []
+            for call in found where call.offset > begin {
+                guard let h = helpers[call.name] else { continue }
+                // The call's extent: from its name to the matching parenthesis.
+                let u = Array(text.utf16)
+                var j = call.offset
+                while j < u.count, u[j] != 40 { j += 1 }
+                var depth = 0, end = -1
+                while j < u.count {
+                    if u[j] == 40 { depth += 1 } else if u[j] == 41 { depth -= 1; if depth == 0 { end = j; break } }
+                    j += 1
+                }
+                guard end > 0 else { continue }
+                // Include a qualifier written before the name (spacetime::).
+                var start = call.offset
+                while start >= 2, u[start - 1] == 58, u[start - 2] == 58 {
+                    var k = start - 2
+                    while k > 0, let s = UnicodeScalar(u[k - 1]), CharacterSet.alphanumerics.contains(s) || u[k - 1] == 95 { k -= 1 }
+                    start = k
+                }
+                var body = h.body
+                for (i, p) in h.params.enumerated() {
+                    let arg = i < call.args.count ? call.args[i] : (p.defaultValue ?? "0")
+                    let value = arg.rangeOfCharacter(from: CharacterSet(charactersIn: "+-*/ ")) != nil
+                        && !arg.hasPrefix("\"") ? "(\(arg))" : arg
+                    guard let re = try? NSRegularExpression(pattern: #"(?<![\w.>])"# + NSRegularExpression.escapedPattern(for: p.name) + #"(?!\w)"#)
+                    else { continue }
+                    body = re.stringByReplacingMatches(in: body, range: NSRange(location: 0, length: (body as NSString).length),
+                                                       withTemplate: NSRegularExpression.escapedTemplate(for: value))
+                }
+                let original = ns.substring(with: NSRange(location: start, length: end + 1 - start))
+                let newlines = original.filter { $0 == "\n" }.count
+                let flat = body.replacingOccurrences(of: "\n", with: " ")
+                replacements.append((NSRange(location: start, length: end + 1 - start),
+                                     "{ " + flat + " }" + String(repeating: "\n", count: newlines)))
+            }
+            guard !replacements.isEmpty else { break }
+            let m = NSMutableString(string: text)
+            for (r, s) in replacements.sorted(by: { $0.0.location > $1.0.location }) {
+                m.replaceCharacters(in: r, with: s)
+            }
+            text = m as String
+        }
+        return text
+    }
+
+    /// `static const char* in1[4] = {"START", "STOP"};` → in1[0] = START, …
+    static func stringArrays(in texts: [String]) -> [String: String] {
+        guard let re = try? NSRegularExpression(pattern: #"(\w+)\s*\[\s*\w*\s*\]\s*=\s*\{([^{}]*)\}"#) else { return [:] }
+        var out: [String: String] = [:]
+        for text in texts {
+            let ns = text as NSString
+            for m in re.matches(in: text, range: NSRange(location: 0, length: ns.length)) {
+                let name = ns.substring(with: m.range(at: 1))
+                let items = splitTopLevel(ns.substring(with: m.range(at: 2)))
+                guard !items.isEmpty, items.allSatisfy({ $0.hasPrefix("\"") }) else { continue }
+                for (i, item) in items.enumerated() {
+                    if let s = stringLiterals(in: item).first { out["\(name)[\(i)]"] = s }
+                }
+            }
+        }
+        return out
+    }
+
+    /// Names of the structs the plugin itself defines.
+    static func definedTypes(in texts: [String]) -> Set<String> {
+        guard let re = try? NSRegularExpression(pattern: #"\bstruct\s+(\w+)\s*(?::[^{;]*)?\{"#) else { return [] }
+        var out = Set<String>()
+        for text in texts {
+            let ns = text as NSString
+            for m in re.matches(in: text, range: NSRange(location: 0, length: ns.length)) {
+                out.insert(ns.substring(with: m.range(at: 1)))
+            }
+        }
+        return out
+    }
+
     // MARK: - Locals and loops
 
     struct Assignment {
@@ -591,7 +883,8 @@ package enum CppImport {
             }
             guard bodyEnd > bodyStart else { continue }
             let body = ns.substring(with: NSRange(location: bodyStart, length: bodyEnd - bodyStart))
-            guard body.contains("create"), ns.substring(with: m.range(at: 3)) == variable,
+            // Loops that place widgets, or labels through a helper (`addIoLabel`).
+            guard body.contains("create") || body.contains("add"), ns.substring(with: m.range(at: 3)) == variable,
                   let start = Expression.evaluate(ns.substring(with: m.range(at: 2)), constants: table),
                   let bound = Expression.evaluate(ns.substring(with: m.range(at: 5)), constants: table)
             else { continue }

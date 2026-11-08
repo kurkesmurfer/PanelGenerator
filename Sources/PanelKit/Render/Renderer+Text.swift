@@ -19,6 +19,8 @@ extension Renderer {
         let text: String
         let size: CGFloat
         let bold: Bool
+        let fontName: String?
+        let tracking: CGFloat
     }
 
     /// Glyph outlines laid out with the baseline at the origin, already
@@ -108,10 +110,12 @@ extension Renderer {
     }
 
     /// Outlines for one literal run, baseline at the origin, y-down.
-    private static func literalOutline(_ text: String, font nsFont: NSFont) -> (CGPath, CGFloat) {
+    private static func literalOutline(_ text: String, font nsFont: NSFont,
+                                       tracking: CGFloat = 0) -> (CGPath, CGFloat) {
         let ctFont = nsFont as CTFont
-        let line = CTLineCreateWithAttributedString(
-            NSAttributedString(string: text, attributes: [.font: nsFont]))
+        var attrs: [NSAttributedString.Key: Any] = [.font: nsFont]
+        if tracking != 0 { attrs[.kern] = tracking }
+        let line = CTLineCreateWithAttributedString(NSAttributedString(string: text, attributes: attrs))
         let advance = CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
 
         let out = CGMutablePath()
@@ -144,11 +148,13 @@ extension Renderer {
     private static func outline(for el: PanelElement) -> TextOutline? {
         let key = TextKey(text: el.params.text,
                           size: max(4, el.params.fontSize),
-                          bold: el.params.bold)
+                          bold: el.params.bold,
+                          fontName: el.params.fontName,
+                          tracking: el.params.tracking ?? 0)
         guard !key.text.isEmpty else { return nil }
         if let hit = outlineCache[key] { return hit }
 
-        let nsFont = NSFont.systemFont(ofSize: key.size, weight: key.bold ? .semibold : .regular)
+        let nsFont = FontLibrary.font(named: key.fontName, size: key.size, bold: key.bold)
         let capHeight = CTFontGetCapHeight(nsFont as CTFont)
 
         let out = CGMutablePath()
@@ -156,7 +162,7 @@ extension Renderer {
         for segment in segments(of: key.text) {
             switch segment {
             case .literal(let run):
-                let (path, advance) = literalOutline(run, font: nsFont)
+                let (path, advance) = literalOutline(run, font: nsFont, tracking: key.tracking)
                 var t = CGAffineTransform(translationX: x, y: 0)
                 if let placed = path.copy(using: &t) { out.addPath(placed) }
                 x += advance

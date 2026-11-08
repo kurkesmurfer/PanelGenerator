@@ -13,6 +13,10 @@ import PanelKit
 //                                                 and module .cpp,
 //                                                 report what came in and what
 //                                                 was lost; optionally render it
+//   PanelGenerator --import-module <cpp> <out.panelgen> [--no-artwork]
+//                                              → a module's C++ (and the panel
+//                                                it names) as a document, the
+//                                                way Import Module Code does
 //   PanelGenerator --grid <doc> [png] [scale]  → print the active Serge grid's
 //                                                 lines (px & mm); optionally
 //                                                 render them over the panel
@@ -49,11 +53,10 @@ if let i = arguments.firstIndex(of: "--import-check") {
         if url.pathExtension.lowercased() == "cpp" {
             guard let source = try? String(contentsOf: url, encoding: .utf8),
                   source.contains("ModuleWidget") else { continue }
-            let dir = url.deletingLastPathComponent()
-            let headers = ((try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? [])
-                .filter { ["h", "hpp"].contains($0.pathExtension.lowercased()) }
-                .compactMap { try? String(contentsOf: $0, encoding: .utf8) }
-            let o = CppImport.outcome(from: source, headers: headers)
+            let src = try? ModuleImport.sources(for: url)
+            let headers = src?.headers ?? []
+            let o = CppImport.outcome(from: source, headers: headers,
+                widgetSize: ModuleImport.widgetSizer(texts: headers + [source], pluginRoot: src?.pluginRoot))
             var roles: [String: Int] = [:]
             for e in o.elements { roles[e.role.rawValue, default: 0] += 1 }
             let summary = roles.keys.sorted().map { "\(roles[$0]!) \($0)" }.joined(separator: ", ")
@@ -130,6 +133,33 @@ if let i = arguments.firstIndex(of: "--grid") {
         exit(0)
     } catch {
         print("GRID FAILED: \(error.localizedDescription)")
+        fflush(stdout)
+        exit(1)
+    }
+}
+
+if let i = arguments.firstIndex(of: "--import-module") {
+    guard i + 2 < arguments.count else {
+        print("usage: PanelGenerator --import-module <module.cpp> <out.panelgen> [--no-artwork]")
+        fflush(stdout)
+        exit(2)
+    }
+    do {
+        let url = URL(fileURLWithPath: (arguments[i + 1] as NSString).expandingTildeInPath)
+        let out = URL(fileURLWithPath: (arguments[i + 2] as NSString).expandingTildeInPath)
+        let read = try ModuleImport.read(url)
+        var doc = PanelDocument()
+        let report = ModuleImport.apply(read, includeArtwork: !arguments.contains("--no-artwork"), to: &doc)
+        try doc.save(to: out)
+        print("IMPORT OK  \(url.lastPathComponent): \(read.outcome.elements.count) from code, "
+              + "\(doc.elements.count) in all, \(read.sources.headerURLs.count) headers"
+              + (read.panelURL.map { ", panel \($0.lastPathComponent)" } ?? "") + " → \(out.path)")
+        for h in read.sources.headerURLs { print("  header \(h.path)") }
+        for line in report { print("  - \(line)") }
+        fflush(stdout)
+        exit(0)
+    } catch {
+        print("IMPORT FAILED: \(error.localizedDescription)")
         fflush(stdout)
         exit(1)
     }
