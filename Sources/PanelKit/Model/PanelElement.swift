@@ -107,7 +107,9 @@ package struct PanelElement: Codable, Hashable, Identifiable {
     /// as the preset; everything else is owned by a design language (Styles/).
     package mutating func applyPreset(_ id: String) {
         if kind == .symbol {
-            applySymbol(id)
+            // A style's own symbol preset (Paperface's ink-coloured glyphs)
+            // first; otherwise the id is a catalogue symbol.
+            if !DesignLanguage.applyPreset(id, to: &self) { applySymbol(id) }
         } else {
             DesignLanguage.applyPreset(id, to: &self)
         }

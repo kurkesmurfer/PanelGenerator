@@ -64,6 +64,7 @@ extension DesignLanguage {
     /// Every language, in palette order.
     package static let all: [DesignLanguage] = [
         Generic.language, Kurkesmurfer.language, Serge.language, LCARS.language,
+        Paperface.language,
     ]
 
     package static func named(_ id: String) -> DesignLanguage? {
@@ -74,7 +75,7 @@ extension DesignLanguage {
     /// than derived from `all`: the light-panel paper colour leads the bank
     /// so a Serge light panel's background is one click away.
     package static let swatchBank: [SwatchGroup] = [
-        Serge.paper, LCARS.okudagram, Serge.jackRings, Generic.leds,
+        Serge.paper, LCARS.okudagram, Serge.jackRings, Generic.leds, Paperface.colours,
     ]
 
     package static let allSwatches: [Swatch] = swatchBank.flatMap(\.swatches)
