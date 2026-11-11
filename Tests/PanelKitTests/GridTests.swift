@@ -87,3 +87,46 @@ final class CustomGridTests: XCTestCase {
         }
     }
 }
+
+final class PaperfaceGridTests: XCTestCase {
+    private func doc(hp: Int, pitch: Int? = nil, outer: Bool = false) -> PanelDocument {
+        var d = PanelDocument()
+        d.widthHP = hp
+        d.format = .u3
+        d.paperfaceColumnHP = pitch
+        d.sergeGridOuterHalfSteps = outer
+        return d
+    }
+    private func mm(_ v: [CGFloat]) -> [CGFloat] { v.map { (PanelMetrics.mm($0) * 100).rounded() / 100 } }
+
+    func testSixRowsAndHalfRows() {
+        let l = PaperfaceGrid.lines(for: doc(hp: 8))
+        XCTAssertEqual(mm(l.mainRows), [15.5, 34.75, 54, 73.25, 92.5, 111.75])
+        XCTAssertEqual(l.halfRows.count, 5)
+        XCTAssertEqual(PanelMetrics.mm(l.halfRows[0]), 25.125, accuracy: 0.001)
+        let outer = PaperfaceGrid.lines(for: doc(hp: 8, outer: true))
+        XCTAssertEqual(outer.halfRows.count, 7)
+        XCTAssertEqual(PanelMetrics.mm(outer.halfRows.last!), 121.375, accuracy: 0.001)
+    }
+
+    func testColumnsSitOnTheHPRaster() {
+        // Default 4 HP: an 8 HP module holds exactly two columns.
+        let l = PaperfaceGrid.lines(for: doc(hp: 8))
+        XCTAssertEqual(mm(l.mainCols), [10.16, 30.48])
+        XCTAssertEqual(mm(l.halfCols), [20.32])
+        // 3 HP pitch on a 12 HP panel: four columns, 15.24 mm apart.
+        let t = PaperfaceGrid.lines(for: doc(hp: 12, pitch: 3))
+        XCTAssertEqual(mm(t.mainCols), [7.62, 22.86, 38.1, 53.34])
+        // Out-of-range pitch is clamped rather than producing nonsense.
+        XCTAssertEqual(PaperfaceGrid.columnHP(for: doc(hp: 8, pitch: 40)), 6)
+    }
+
+    func testSnapReachesHalfPositions() {
+        let d = doc(hp: 8)
+        // Between rows 3 and 4, halfway across: the half row and half column.
+        let p = CGPoint(x: 20.0 / PanelMetrics.mmPerPixel, y: 63.0 / PanelMetrics.mmPerPixel)
+        let s = PaperfaceGrid.snapCenter(p, in: d)
+        XCTAssertEqual(PanelMetrics.mm(s.x), 20.32, accuracy: 0.001)
+        XCTAssertEqual(PanelMetrics.mm(s.y), 63.625, accuracy: 0.001)
+    }
+}

@@ -55,11 +55,14 @@ final class PaperfaceTests: XCTestCase {
         doc.widthHP = 8
         doc.format = .u3
         doc.background = Paperface.face
-        let k: CGFloat = 128.5 / 1198                 // mm per source px
-        let left: CGFloat = 96, width: CGFloat = 342
-        let marginMM = (8 * 5.08 - width * k) / 2
+        // On the Paperface grid: a source column (171 px) becomes one 4 HP
+        // column, so the section's two columns fill 8 HP edge to edge; a
+        // source row (179.5 px from 144.6) becomes one 19.25 mm grid row.
+        let left: CGFloat = 96
+        let kx = CGFloat(PaperfaceGrid.defaultColumnHP) * 5.08 / 171
+        let ky = PaperfaceGrid.rowPitchMM / 179.5
         func mm(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
-            CGPoint(x: (x - left) * k + marginMM, y: y * k)
+            CGPoint(x: (x - left) * kx, y: PaperfaceGrid.firstRowMM + (y - 144.6) * ky)
         }
         func px(_ p: CGPoint) -> CGPoint { CGPoint(x: p.x / PanelMetrics.mmPerPixel, y: p.y / PanelMetrics.mmPerPixel) }
 

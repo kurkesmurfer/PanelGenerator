@@ -20,6 +20,19 @@ Colours: face `#E9E3D8`, line `#797B7A`, ink `#222322`; jacks white
 lamp `#EDB44F`; knob `#1D1E1C`; socket `#575756`. Type is Futura Medium,
 uppercase, slightly tracked.
 
+## Grid (View ▸ Snap Step ▸ Paperface Grid)
+
+- **Rows:** six object rows at 15.5 mm + 19.25 mm steps (measured: object
+  centres at 144.6 … 1041.7 px of 1198, 179.5 px pitch), and the five
+  half rows between them. "Serge Grid: Outer Half-Step" adds one more half
+  step above and below, as for the Serge grid.
+- **Columns:** a whole number of HP apart, per document (`paperfaceColumnHP`,
+  View ▸ Snap Step ▸ Paperface Column Pitch, 2–6 HP). The default 4 HP
+  (20.32 mm) is the nearest whole-HP match to the near-square original cell
+  (18.4 mm × 19.25 mm in 3U); an n-column module is n × 4 HP wide, with the
+  first column half a pitch in. Half columns sit between.
+- Snapping offers both tiers on every row (a half column on a main row too).
+
 ## Vocabulary
 
 A cell's outline says what its control is:

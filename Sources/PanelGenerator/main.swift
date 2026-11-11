@@ -113,6 +113,12 @@ if let i = arguments.firstIndex(of: "--grid") {
         print("  main cols (mm): \(l.mainCols.map(mm))")
         print("  half cols (px): \(l.halfCols.map { Geo.fmt($0) })")
         print("  half cols (mm): \(l.halfCols.map(mm))")
+        let pl = PaperfaceGrid.lines(for: doc)
+        print("  paperface (\(PaperfaceGrid.columnHP(for: doc)) HP columns):")
+        print("    main rows (mm): \(pl.mainRows.map(mm))")
+        print("    half rows (mm): \(pl.halfRows.map(mm))")
+        print("    main cols (mm): \(pl.mainCols.map(mm))")
+        print("    half cols (mm): \(pl.halfCols.map(mm))")
         let cl = CustomGrid.lines(for: doc)
         print("  custom grid: \(doc.customGridColumns) cols x \(doc.customGridRows) rows"
               + (doc.customGridHalfPositions ? " (+half positions)" : ""))

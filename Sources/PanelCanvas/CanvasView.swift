@@ -44,7 +44,7 @@ package final class CanvasView: NSView {
     /// `.uniform` is the older single-step grid, still used verbatim for
     /// resize handles and arrow-key nudging in all three modes, since "snap
     /// to grid lines" isn't a coherent idea for a resize.
-    package enum SnapMode { case uniform, sergeGrid, customGrid }
+    package enum SnapMode { case uniform, sergeGrid, customGrid, paperfaceGrid }
     package var snapMode: SnapMode = .sergeGrid
     /// Which theme variant the canvas currently draws -- editing preview
     /// only (View ▸ Theme); never persisted to the document itself. Defaults

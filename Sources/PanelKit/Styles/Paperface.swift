@@ -146,8 +146,12 @@ package enum Paperface {
             size(screwDia); e.fill = .hex("#595C56"); e.params.knobStyle = 1
 
         case (.path, let shape) where shapes[shape] != nil:
+            // One grid cell by default: the default column pitch by the row
+            // pitch, so a dropped cell fills its grid square.
             let s = shapeSize[shape] ?? CGSize(width: 1, height: 1)
-            e.w = cell * s.width; e.h = cell * s.height
+            let cw = CGFloat(PaperfaceGrid.defaultColumnHP) * PanelMetrics.pixelsPerHP
+            let ch = PaperfaceGrid.rowPitchMM / PanelMetrics.mmPerPixel
+            e.w = cw * s.width; e.h = ch * s.height
             e.pathData = shapes[shape]
             e.fill = ColorSpec(r: 0, g: 0, b: 0, a: 0)
             e.stroke = shape == "pfArrow" ? ink : line

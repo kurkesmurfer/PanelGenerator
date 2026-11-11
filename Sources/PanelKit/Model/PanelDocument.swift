@@ -48,6 +48,9 @@ package struct PanelDocument: Codable, Hashable {
     /// interior half-row ladder alone can't reach. Opt-in because it's not
     /// part of Serge's own documented grid.
     package var sergeGridOuterHalfSteps: Bool = false
+    /// Paperface grid column pitch in HP (see `PaperfaceGrid`); nil is the
+    /// default 4 HP. Optional so documents that never set it are unchanged.
+    package var paperfaceColumnHP: Int? = nil
     /// Panel background (dark / default variant). Defaults to the
     /// Kurkesmurfer panel colour, which Serge's dark panels share.
     package var background: ColorSpec = Kurkesmurfer.background
@@ -236,6 +239,7 @@ extension PanelDocument {
         customGridHalfPositions = try c.decodeOr(.customGridHalfPositions, customGridHalfPositions)
         customGridFinerPositions = try c.decodeOr(.customGridFinerPositions, customGridFinerPositions)
         sergeGridOuterHalfSteps  = try c.decodeOr(.sergeGridOuterHalfSteps, sergeGridOuterHalfSteps)
+        paperfaceColumnHP        = try c.decodeIfPresent(Int.self, forKey: .paperfaceColumnHP)
         background    = try c.decodeOr(.background, background)
         lightBackground = try c.decodeIfPresent(ColorSpec.self, forKey: .lightBackground)
         inkDark       = try c.decodeOr(.inkDark, inkDark)

@@ -186,6 +186,11 @@ extension CanvasView {
                     let snapped = snapEnabled ? CustomGrid.snapCenter(center, in: document) : center
                     sdx = snapped.x - anchor.midX
                     sdy = snapped.y - anchor.midY
+                case .paperfaceGrid:
+                    let center = CGPoint(x: anchor.midX + dx, y: anchor.midY + dy)
+                    let snapped = snapEnabled ? PaperfaceGrid.snapCenter(center, in: document) : center
+                    sdx = snapped.x - anchor.midX
+                    sdy = snapped.y - anchor.midY
                 }
             }
             mutateFrames(orig) { frame in
@@ -299,6 +304,8 @@ extension CanvasView {
             return snapEnabled ? SergeGrid.snapCenter(p, in: document) : p
         case .customGrid:
             return snapEnabled ? CustomGrid.snapCenter(p, in: document) : p
+        case .paperfaceGrid:
+            return snapEnabled ? PaperfaceGrid.snapCenter(p, in: document) : p
         }
     }
 

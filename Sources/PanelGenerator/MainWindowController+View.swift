@@ -39,6 +39,24 @@ extension MainWindowController {
         canvas.needsDisplay = true
     }
 
+    /// The Paperface 50 grid (see `PaperfaceGrid`).
+    @objc func pgSetPaperfaceGrid(_ sender: Any?) {
+        canvas.snapMode = .paperfaceGrid
+        canvas.snapEnabled = true
+        canvas.needsDisplay = true
+    }
+
+    /// Paperface column pitch in HP, stored in the document; selecting one
+    /// also switches to the Paperface grid so the change is visible at once.
+    @objc func pgSetPaperfacePitch(_ sender: Any?) {
+        guard let mi = sender as? NSMenuItem else { return }
+        let hp = mi.tag
+        canvas.mutateDocument(name: "Paperface Column Pitch") {
+            $0.paperfaceColumnHP = hp == PaperfaceGrid.defaultColumnHP ? nil : hp
+        }
+        pgSetPaperfaceGrid(sender)
+    }
+
     /// Toggles `PanelDocument.sergeGridOuterHalfSteps`: one further half-step
     /// row beyond the top and bottom of Serge's standard 5-row grid, for
     /// real panels that push a row of LEDs/jacks that far out (e.g. the
@@ -60,7 +78,8 @@ extension MainWindowController {
             $0.sergeGridOuterHalfSteps = on
         }
         if on {
-            canvas.snapMode = .sergeGrid
+            // Applies to the Paperface grid as well; stay on it if active.
+            if canvas.snapMode != .paperfaceGrid { canvas.snapMode = .sergeGrid }
             canvas.snapEnabled = true
         }
         canvas.needsDisplay = true

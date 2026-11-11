@@ -192,6 +192,21 @@ enum MenuBuilder {
         // follow Serge's standardised one -- always opens a dialog asking
         // for column/row counts, since that's a per-panel choice.
         stepMenu.addItem(item("Custom Grid…", #selector(MainWindowController.pgSetCustomGrid(_:)), target: wc))
+        // Paperface 50: six rows plus half rows, columns a whole number of HP
+        // apart. The pitch is per document; the outer half-step switch above
+        // applies to this grid too.
+        stepMenu.addItem(item("Paperface Grid", #selector(MainWindowController.pgSetPaperfaceGrid(_:)), target: wc))
+        let pitchItem = NSMenuItem(title: "Paperface Column Pitch", action: nil, keyEquivalent: "")
+        let pitchMenu = NSMenu(title: "Paperface Column Pitch")
+        for hp in PaperfaceGrid.columnHPRange {
+            let mi = item("\(hp) HP — \(Geo.fmt(CGFloat(hp) * 5.08)) mm"
+                          + (hp == PaperfaceGrid.defaultColumnHP ? "  (near-square)" : ""),
+                          #selector(MainWindowController.pgSetPaperfacePitch(_:)), target: wc)
+            mi.tag = hp
+            pitchMenu.addItem(mi)
+        }
+        pitchItem.submenu = pitchMenu
+        stepMenu.addItem(pitchItem)
         stepMenu.addItem(.separator())
         // 15 px is 1 HP. Tags carry the step in hundredths of a pixel.
         let steps: [(String, CGFloat)] = [

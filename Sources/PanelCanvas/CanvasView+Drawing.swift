@@ -31,6 +31,7 @@ extension CanvasView {
         Renderer.drawBackground(document, in: ctx, variant: themePreview)
         drawGrid(in: ctx)
         if snapEnabled && snapMode == .sergeGrid { drawSergeGrid(in: ctx) }
+        if snapEnabled && snapMode == .paperfaceGrid { drawSergeGrid(in: ctx, lines: PaperfaceGrid.lines(for: document)) }
         if snapEnabled && snapMode == .customGrid { drawCustomGrid(in: ctx) }
 
         for el in document.elements where el.isHidden != true {
@@ -91,8 +92,8 @@ extension CanvasView {
     /// half-lane column offers on a main row -- confirmed against the real
     /// GTS panel, where status LEDs sit at half-lane column x's but at the
     /// full height of the main row 1 jacks either side of them).
-    private func drawSergeGrid(in ctx: CGContext) {
-        let l = SergeGrid.lines(for: document)
+    private func drawSergeGrid(in ctx: CGContext, lines: SergeGrid.Lines? = nil) {
+        let l = lines ?? SergeGrid.lines(for: document)
         guard !l.mainRows.isEmpty || !l.halfRows.isEmpty else { return }
         ctx.saveGState()
         ctx.clip(to: CGRect(origin: .zero, size: document.pixelSize))
