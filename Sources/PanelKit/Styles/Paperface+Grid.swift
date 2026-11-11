@@ -67,6 +67,13 @@ package enum PaperfaceGrid {
         return l
     }
 
+    /// A document built in the Paperface language: its face colour, a
+    /// column pitch of its own, or Paperface cell shapes.
+    package static func isPaperface(_ doc: PanelDocument) -> Bool {
+        doc.paperfaceColumnHP != nil || doc.background == Paperface.face
+            || doc.elements.contains { $0.kind == .path && Paperface.shapes.values.contains($0.pathData ?? "") }
+    }
+
     private static func nearest(_ v: CGFloat, in values: [CGFloat]) -> CGFloat {
         values.min(by: { abs($0 - v) < abs($1 - v) }) ?? v
     }

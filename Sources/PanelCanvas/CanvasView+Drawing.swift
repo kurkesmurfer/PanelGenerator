@@ -31,7 +31,7 @@ extension CanvasView {
         Renderer.drawBackground(document, in: ctx, variant: themePreview)
         drawGrid(in: ctx)
         if snapEnabled && snapMode == .sergeGrid { drawSergeGrid(in: ctx) }
-        if snapEnabled && snapMode == .paperfaceGrid { drawSergeGrid(in: ctx, lines: PaperfaceGrid.lines(for: document)) }
+        if snapEnabled && snapMode == .paperfaceGrid { drawPaperfaceGrid(in: ctx) }
         if snapEnabled && snapMode == .customGrid { drawCustomGrid(in: ctx) }
 
         for el in document.elements where el.isHidden != true {
@@ -92,6 +92,38 @@ extension CanvasView {
     /// half-lane column offers on a main row -- confirmed against the real
     /// GTS panel, where status LEDs sit at half-lane column x's but at the
     /// full height of the main row 1 jacks either side of them).
+    /// Paperface: blue dots on main positions, amber on the half (phase-
+    /// shifted) positions, and faint hairlines on the column centres and
+    /// row centre-lines, so the cell raster reads at a glance and is not
+    /// mistaken for the Serge grid. Works on light and dark faces alike.
+    private func drawPaperfaceGrid(in ctx: CGContext) {
+        let l = PaperfaceGrid.lines(for: document)
+        let size = document.pixelSize
+        ctx.saveGState()
+        ctx.clip(to: CGRect(origin: .zero, size: size))
+        let main = NSColor(calibratedRed: 0.0, green: 0.62, blue: 0.86, alpha: 1)
+        let half = NSColor(calibratedRed: 0.92, green: 0.55, blue: 0.0, alpha: 1)
+
+        ctx.setLineWidth(0.6 / zoom)
+        ctx.setStrokeColor(main.withAlphaComponent(0.28).cgColor)
+        for x in l.mainCols { ctx.move(to: CGPoint(x: x, y: 0)); ctx.addLine(to: CGPoint(x: x, y: size.height)) }
+        for y in l.mainRows { ctx.move(to: CGPoint(x: 0, y: y)); ctx.addLine(to: CGPoint(x: size.width, y: y)) }
+        ctx.strokePath()
+
+        func dots(rows: [CGFloat], cols: [CGFloat], radius: CGFloat, color: NSColor) {
+            ctx.setFillColor(color.cgColor)
+            for y in rows {
+                for x in cols {
+                    ctx.fillEllipse(in: CGRect(x: x - radius, y: y - radius, width: radius * 2, height: radius * 2))
+                }
+            }
+        }
+        dots(rows: l.mainRows, cols: l.mainCols, radius: 2.6 / zoom, color: main.withAlphaComponent(0.9))
+        dots(rows: l.mainRows, cols: l.halfCols, radius: 1.8 / zoom, color: half.withAlphaComponent(0.8))
+        dots(rows: l.halfRows, cols: l.mainCols + l.halfCols, radius: 1.8 / zoom, color: half.withAlphaComponent(0.8))
+        ctx.restoreGState()
+    }
+
     private func drawSergeGrid(in ctx: CGContext, lines: SergeGrid.Lines? = nil) {
         let l = lines ?? SergeGrid.lines(for: document)
         guard !l.mainRows.isEmpty || !l.halfRows.isEmpty else { return }

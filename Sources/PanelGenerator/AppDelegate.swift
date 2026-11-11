@@ -19,6 +19,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
     }
 
+    /// Finder double-click, `open -a PanelGenerator file.panelgen`, dropping
+    /// a document on the Dock icon.
+    func application(_ application: NSApplication, open urls: [URL]) {
+        guard let url = urls.first(where: { $0.pathExtension == PanelDocument.fileExtension }) else { return }
+        // Can arrive before applicationDidFinishLaunching has built the window.
+        DispatchQueue.main.async { [weak self] in self?.windowController?.open(url) }
+    }
+
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         true
     }
