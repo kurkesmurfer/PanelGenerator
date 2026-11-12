@@ -50,6 +50,7 @@ extension CanvasView {
 
         drawSelectionOverlay(in: ctx)
         drawMarqueeOverlay(in: ctx)
+        drawGuides(in: ctx)
         drawDropReplaceOverlay(in: ctx)
         drawPointEditOverlay(in: ctx)
         drawPenOverlay(in: ctx)
@@ -264,6 +265,20 @@ extension CanvasView {
         let size = (glyph as NSString).size(withAttributes: attrs)
         (glyph as NSString).draw(at: CGPoint(x: c.x - size.width / 2, y: c.y - size.height / 2),
                                  withAttributes: attrs)
+    }
+
+    /// Smart-guide lines that caught in the current gesture: thin magenta,
+    /// across the whole panel.
+    private func drawGuides(in ctx: CGContext) {
+        guard let g = activeGuides else { return }
+        let size = document.pixelSize
+        ctx.saveGState()
+        ctx.setStrokeColor(NSColor.systemPink.withAlphaComponent(0.9).cgColor)
+        ctx.setLineWidth(1 / zoom)
+        for x in g.xs { ctx.move(to: CGPoint(x: x, y: 0)); ctx.addLine(to: CGPoint(x: x, y: size.height)) }
+        for y in g.ys { ctx.move(to: CGPoint(x: 0, y: y)); ctx.addLine(to: CGPoint(x: size.width, y: y)) }
+        ctx.strokePath()
+        ctx.restoreGState()
     }
 
     private func drawMarqueeOverlay(in ctx: CGContext) {

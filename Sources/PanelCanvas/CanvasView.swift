@@ -292,6 +292,13 @@ package final class CanvasView: NSView {
     var pickCycle: (point: CGPoint, index: Int)?
     /// The element the last mouse-down picked, so mouse-up agrees with it.
     var pickedID: UUID?
+    /// Snap to other elements' edges and centres (smart guides). Set from the
+    /// app (View ▸ Snap to Elements); works with or without grid snapping.
+    package var snapToElements = true
+    /// The guide lines that caught during the current gesture, for drawing.
+    var activeGuides: GuideSnap?
+    /// Guide reach on screen, independent of zoom.
+    var guideThreshold: CGFloat { 6 / zoom }
 
     // Stored state for CanvasView+Handles (extensions cannot hold stored properties).
     var handleSize: CGFloat { 8 / zoom }

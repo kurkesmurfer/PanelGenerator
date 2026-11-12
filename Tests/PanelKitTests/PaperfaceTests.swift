@@ -218,3 +218,29 @@ final class SelectionAndLabelTests: XCTestCase {
         XCTAssertEqual(d.labelsFollowing([jack]), [label])
     }
 }
+
+final class GuideTests: XCTestCase {
+    func testSelectionLocksToAnotherElementsEdgeAndCentre() {
+        var d = PanelDocument()
+        var a = ElementKind.box.defaultElement(at: CGPoint(x: 20, y: 40)); a.w = 30; a.h = 20
+        var b = ElementKind.box.defaultElement(at: CGPoint(x: 70, y: 41.5)); b.w = 10; b.h = 10
+        d.elements = [a, b]
+        // b's top 41.5 is 1.5 from a's top 40: caught. Its centre x (75) is
+        // nowhere near a line on x… except none, so x is free.
+        let g = d.guideSnap(rect: b.frame, excluding: [b.id], threshold: 3)
+        XCTAssertEqual(g.dy ?? 99, -1.5, accuracy: 1e-9)
+        XCTAssertEqual(g.ys, [40, 50])   // top on a's top, bottom on a's centre
+        XCTAssertNil(g.dx)
+        _ = a
+    }
+
+    func testPointPrefersTheNearestLine() {
+        var d = PanelDocument()
+        var a = ElementKind.box.defaultElement(at: CGPoint(x: 20, y: 40)); a.w = 30; a.h = 20
+        d.elements = [a]
+        let g = d.guideSnap(point: CGPoint(x: 34, y: 61), threshold: 3)
+        XCTAssertEqual(g.dx ?? 99, 1, accuracy: 1e-9)    // centre line x = 35
+        XCTAssertEqual(g.dy ?? 99, -1, accuracy: 1e-9)   // bottom y = 60
+        _ = a
+    }
+}

@@ -208,6 +208,18 @@ extension CanvasView {
                     sdy = snapped.y - anchor.midY
                 }
             }
+            // Smart guides: the selection's edges and centre against every
+            // other element's, per axis, ahead of the grid. Measured from
+            // where the raw drag would put it, so the grid cannot pull the
+            // selection out of reach of a guide.
+            activeGuides = nil
+            if snapToElements, labelSnap == nil, let bounds = orig.values.reduce(nil as CGRect?, { $0?.union($1) ?? $1 }) {
+                let raw = bounds.offsetBy(dx: dx, dy: dy)
+                let g = document.guideSnap(rect: raw, excluding: Set(orig.keys), threshold: guideThreshold)
+                if let gx = g.dx { sdx = dx + gx }
+                if let gy = g.dy { sdy = dy + gy }
+                if g.dx != nil || g.dy != nil { activeGuides = g }
+            }
             mutateFrames(orig) { frame in
                 var nf = frame
                 nf.origin.x = frame.minX + sdx
@@ -226,10 +238,26 @@ extension CanvasView {
             let rawMaxX = orig.maxX + (dir == .ne || dir == .e || dir == .se ? ldx : 0)
             let rawMinY = orig.minY + (dir == .nw || dir == .n || dir == .ne ? ldy : 0)
             let rawMaxY = orig.maxY + (dir == .sw || dir == .s || dir == .se ? ldy : 0)
-            if dir == .nw || dir == .w || dir == .sw { minX = min(snapVal(rawMinX), maxX - minSize) }
-            if dir == .ne || dir == .e || dir == .se { maxX = max(snapVal(rawMaxX), minX + minSize) }
-            if dir == .nw || dir == .n || dir == .ne { minY = min(snapVal(rawMinY), maxY - minSize) }
-            if dir == .sw || dir == .s || dir == .se { maxY = max(snapVal(rawMaxY), minY + minSize) }
+            // A dragged edge locks to another element's edge or centre when in
+            // reach (unrotated elements only: a rotated frame's edges are not
+            // the lines you see), else to the step.
+            activeGuides = nil
+            let lines = (snapToElements && rotation == 0)
+                ? document.guideLines(excluding: Set([primaryElement?.id].compactMap { $0 })) : nil
+            var caught = GuideSnap()
+            func edge(_ raw: CGFloat, vertical: Bool) -> CGFloat {
+                guard let lines else { return snapVal(raw) }
+                let g = PanelDocument.guideSnap(probesX: vertical ? [raw] : [], probesY: vertical ? [] : [raw],
+                                                lines: lines, threshold: guideThreshold)
+                if vertical, let d = g.dx { caught.xs += g.xs; return raw + d }
+                if !vertical, let d = g.dy { caught.ys += g.ys; return raw + d }
+                return snapVal(raw)
+            }
+            if dir == .nw || dir == .w || dir == .sw { minX = min(edge(rawMinX, vertical: true), maxX - minSize) }
+            if dir == .ne || dir == .e || dir == .se { maxX = max(edge(rawMaxX, vertical: true), minX + minSize) }
+            if dir == .nw || dir == .n || dir == .ne { minY = min(edge(rawMinY, vertical: false), maxY - minSize) }
+            if dir == .sw || dir == .s || dir == .se { maxY = max(edge(rawMaxY, vertical: false), minY + minSize) }
+            if !caught.xs.isEmpty || !caught.ys.isEmpty { activeGuides = caught }
             let nf = CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
             updatePrimaryFrame(nf)
 
@@ -393,6 +421,7 @@ extension CanvasView {
     }
 
     package override func mouseUp(with event: NSEvent) {
+        if activeGuides != nil { activeGuides = nil; needsDisplay = true }
         if pen != nil { penMouseUp(event); return }
         if pointEdit != nil { pointEditMouseUp(event); return }
         isGestureActive = false   // before the switch: the notifications below flush the layer list

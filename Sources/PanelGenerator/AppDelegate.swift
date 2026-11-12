@@ -217,6 +217,8 @@ enum MenuBuilder {
         let snap = item("Snap to Grid", #selector(MainWindowController.pgToggleSnap(_:)), key: "G", target: wc)
         snap.state = wc.canvas.snapEnabled ? .on : .off
         view.addItem(snap)
+        view.addItem(item("Snap to Elements (Smart Guides)", #selector(MainWindowController.pgToggleSnapToElements(_:)),
+                          target: wc))
 
         let stepItem = NSMenuItem(title: "Snap Step", action: nil, keyEquivalent: "")
         let stepMenu = NSMenu(title: "Snap Step")
@@ -300,5 +302,13 @@ enum MenuBuilder {
         helpItem.submenu = help
 
         return main
+    }
+}
+
+extension NSMenuItem {
+    /// Sets the key-equivalent modifiers inline, for menu-building chains.
+    func withModifiers(_ m: NSEvent.ModifierFlags) -> NSMenuItem {
+        keyEquivalentModifierMask = m
+        return self
     }
 }

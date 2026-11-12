@@ -56,6 +56,8 @@ extension MainWindowController {
         case #selector(pgSetThemePreview(_:)):
             let wantsLight = menuItem.tag == 1
             menuItem.state = (canvas.themePreview == .light) == wantsLight ? .on : .off
+        case #selector(pgToggleSnapToElements(_:)):
+            menuItem.state = canvas.snapToElements ? .on : .off
         case #selector(pgToggleInspectorUnits(_:)):
             menuItem.state = InspectorView.useMillimetres ? .on : .off
         case #selector(pgToggleMarqueeEnclosed(_:)):

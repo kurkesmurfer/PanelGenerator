@@ -39,6 +39,11 @@ extension MainWindowController {
         canvas.needsDisplay = true
     }
 
+    @objc func pgToggleSnapToElements(_ sender: Any?) {
+        canvas.snapToElements.toggle()
+        UserDefaults.standard.set(!canvas.snapToElements, forKey: "SnapToElementsOff")
+    }
+
     @objc func pgToggleInspectorUnits(_ sender: Any?) {
         InspectorView.useMillimetres.toggle()
         reloadInspector()
