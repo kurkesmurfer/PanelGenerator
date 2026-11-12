@@ -39,6 +39,11 @@ extension MainWindowController {
         canvas.needsDisplay = true
     }
 
+    @objc func pgToggleInspectorUnits(_ sender: Any?) {
+        InspectorView.useMillimetres.toggle()
+        reloadInspector()
+    }
+
     /// The Paperface 50 grid (see `PaperfaceGrid`).
     @objc func pgSetPaperfaceGrid(_ sender: Any?) {
         canvas.snapMode = .paperfaceGrid
@@ -52,8 +57,66 @@ extension MainWindowController {
         guard let mi = sender as? NSMenuItem else { return }
         let hp = mi.tag
         canvas.mutateDocument(name: "Paperface Column Pitch") {
-            $0.paperfaceColumnHP = hp == PaperfaceGrid.defaultColumnHP ? nil : hp
+            var spec = $0.paperfaceGrid ?? PaperfaceGridSpec()
+            spec.columnHP = hp == PaperfaceGrid.defaultColumnHP ? nil : hp
+            $0.paperfaceGrid = spec.isDefault ? nil : spec
         }
+        pgSetPaperfaceGrid(sender)
+    }
+
+    /// Rows (origin, pitch, count), column pitch and quarter positions for
+    /// this document's Paperface grid. Lengths take mm, or px with a "px"
+    /// suffix — "22px" and "57.6px" are as good as 7.45 and 19.507.
+    @objc func pgPaperfaceGridSettings(_ sender: Any?) {
+        let r = PaperfaceGrid.resolved(canvas.document)
+        let alert = NSAlert()
+        alert.messageText = "Paperface Grid"
+        alert.informativeText = "Main rows start at the origin and repeat at the pitch; half rows fall "
+            + "between them. Put the main rows on object centres (the default, measured) or on the cell "
+            + "lines (then the centres are the half rows). Lengths in mm, or add \"px\"."
+        func field(_ v: String, _ y: CGFloat) -> NSTextField {
+            let f = NSTextField(frame: CGRect(x: 120, y: y, width: 120, height: 22)); f.stringValue = v; return f
+        }
+        func caption(_ s: String, _ y: CGFloat) -> NSTextField {
+            let l = NSTextField(labelWithString: s); l.frame = CGRect(x: 0, y: y + 3, width: 116, height: 16); return l
+        }
+        let box = NSView(frame: CGRect(x: 0, y: 0, width: 320, height: 176))
+        let origin = field(String(format: "%.3f", Double(r.originMM)), 148)
+        let pitch = field(String(format: "%.3f", Double(r.pitchMM)), 120)
+        let rows = field(String(r.rows), 92)
+        let cols = field(String(r.columnHP), 64)
+        let quarters = NSButton(checkboxWithTitle: "Quarter positions", target: nil, action: nil)
+        quarters.frame = CGRect(x: 118, y: 34, width: 160, height: 20)
+        quarters.state = r.quarters ? .on : .off
+        let reset = NSButton(checkboxWithTitle: "Reset to measured defaults", target: nil, action: nil)
+        reset.frame = CGRect(x: 118, y: 8, width: 200, height: 20)
+        for (c, y) in [("First row", 148), ("Row pitch", 120), ("Rows", 92), ("Column pitch HP", 64)] as [(String, CGFloat)] {
+            box.addSubview(caption(c, y))
+        }
+        [origin, pitch, rows, cols, quarters, reset].forEach(box.addSubview)
+        alert.accessoryView = box
+        alert.addButton(withTitle: "Apply")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+
+        func mm(_ s: String) -> CGFloat? {
+            let t = s.lowercased().replacingOccurrences(of: ",", with: ".").trimmingCharacters(in: .whitespaces)
+            if t.hasSuffix("px"), let v = Double(t.dropLast(2).trimmingCharacters(in: .whitespaces)) {
+                return CGFloat(v) * PanelMetrics.mmPerPixel
+            }
+            return Double(t.replacingOccurrences(of: "mm", with: "").trimmingCharacters(in: .whitespaces)).map { CGFloat($0) }
+        }
+        var spec = PaperfaceGridSpec()
+        if reset.state != .on {
+            if let v = mm(origin.stringValue), abs(v - PaperfaceGrid.firstRowMM) > 0.0005 { spec.rowOriginMM = v }
+            if let v = mm(pitch.stringValue), v > 1, abs(v - PaperfaceGrid.rowPitchMM) > 0.0005 { spec.rowPitchMM = v }
+            if let v = Int(rows.stringValue), v != PaperfaceGrid.rowCount { spec.rowCount = min(max(v, 1), 24) }
+            if let v = Int(cols.stringValue), v != PaperfaceGrid.defaultColumnHP {
+                spec.columnHP = min(max(v, PaperfaceGrid.columnHPRange.lowerBound), PaperfaceGrid.columnHPRange.upperBound)
+            }
+            if quarters.state == .on { spec.quarters = true }
+        }
+        canvas.mutateDocument(name: "Paperface Grid") { $0.paperfaceGrid = spec.isDefault ? nil : spec }
         pgSetPaperfaceGrid(sender)
     }
 

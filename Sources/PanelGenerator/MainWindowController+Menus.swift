@@ -56,6 +56,12 @@ extension MainWindowController {
         case #selector(pgSetThemePreview(_:)):
             let wantsLight = menuItem.tag == 1
             menuItem.state = (canvas.themePreview == .light) == wantsLight ? .on : .off
+        case #selector(pgToggleInspectorUnits(_:)):
+            menuItem.state = InspectorView.useMillimetres ? .on : .off
+        case #selector(pgToggleMarqueeEnclosed(_:)):
+            menuItem.state = canvas.marqueeEnclosedOnly ? .on : .off
+        case #selector(pgSelectSame(_:)):
+            return !canvas.selection.isEmpty
         case #selector(pgDeselectAll(_:)):
             return !canvas.selection.isEmpty
         case #selector(pgUndo(_:)):

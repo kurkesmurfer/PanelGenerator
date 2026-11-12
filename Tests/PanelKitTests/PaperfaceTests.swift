@@ -165,3 +165,56 @@ final class PaperfaceTests: XCTestCase {
         }
     }
 }
+
+final class SelectionAndLabelTests: XCTestCase {
+
+    private func doc() -> (PanelDocument, jack: UUID, knob: UUID, cell: UUID, label: UUID) {
+        var d = PanelDocument()
+        var cell = ElementKind.path.defaultElement(at: CGPoint(x: 0, y: 0)); cell.applyPreset("pfCell")
+        cell.w = 60; cell.h = 60
+        var jack = ElementKind.jack.defaultElement(at: .zero); jack.applyPreset("pfJackWhite")
+        jack.x = 30 - jack.w / 2; jack.y = 30 - jack.h / 2
+        var knob = ElementKind.knobMedium.defaultElement(at: .zero); knob.applyPreset("pfKnob")
+        knob.x = 90 - knob.w / 2; knob.y = 30 - knob.h / 2
+        var label = ElementKind.text.defaultElement(at: .zero); label.applyPreset("pfLabel")
+        label.params.text = "IN"; label.x = 25; label.y = 50
+        // Cell on top of the jack: the stacking that used to swallow clicks.
+        d.elements = [jack, knob, cell, label]
+        return (d, jack.id, knob.id, cell.id, label.id)
+    }
+
+    func testClickInsideAnOutlinePicksTheControl() {
+        let (d, jack, _, cell, _) = doc()
+        XCTAssertEqual(d.hitStack(at: CGPoint(x: 30, y: 30), tolerance: 2).first?.id, jack)
+        // Empty interior of the cell is not the cell…
+        XCTAssertTrue(d.hitStack(at: CGPoint(x: 12, y: 45), tolerance: 2).isEmpty)
+        // …its line is.
+        XCTAssertEqual(d.hitStack(at: CGPoint(x: 0.5, y: 45), tolerance: 2).first?.id, cell)
+    }
+
+    func testNarrowAndSelectSame() {
+        let (d, jack, knob, cell, label) = doc()
+        let all: Set<UUID> = [jack, knob, cell, label]
+        XCTAssertEqual(d.narrow(all, to: .controls), [jack, knob])
+        XCTAssertEqual(d.narrow(all, to: .decoration), [cell])
+        XCTAssertEqual(d.narrow(all, to: .labels), [label])
+        XCTAssertEqual(d.selectSame(as: [cell], by: .name), [cell])
+        XCTAssertEqual(d.select(filter: .controls, nameContains: "knob"), [knob])
+    }
+
+    func testLabelsSnapFromTheCentre() {
+        var (d, jack, knob, _, label) = doc()
+        XCTAssertEqual(d.attachLabels([label]), 1)
+        let l = d.elements.first { $0.id == label }!
+        XCTAssertEqual(l.labelOwner, jack)
+        let j = d.elements.first { $0.id == jack }!
+        XCTAssertEqual(PanelMetrics.mm(l.center.y - j.center.y), LabelGridSpec.defaultOffsetMM, accuracy: 1e-6)
+        XCTAssertEqual(l.center.x, j.center.x, accuracy: 1e-6)
+        // A label under the (bigger) knob lands on the same line.
+        var k2 = l; k2.id = UUID(); k2.labelOwner = knob; k2.x += 60; k2.y += 2
+        d.elements.append(k2)
+        d.snapLabels([k2.id])
+        XCTAssertEqual(d.elements.last!.center.y, l.center.y, accuracy: 1e-6)
+        XCTAssertEqual(d.labelsFollowing([jack]), [label])
+    }
+}

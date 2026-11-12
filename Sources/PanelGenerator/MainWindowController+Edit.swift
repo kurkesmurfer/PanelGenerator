@@ -81,6 +81,96 @@ extension MainWindowController {
 
     @objc func pgSelectAll(_ sender: Any?) { canvas.selectAllElements() }
 
+    @objc func pgAttachLabels(_ sender: Any?) {
+        if canvas.attachLabels() == 0 { NSSound.beep() }
+    }
+    @objc func pgDetachLabels(_ sender: Any?) { canvas.detachLabels() }
+    @objc func pgSnapLabels(_ sender: Any?) { canvas.snapLabelsToSlots() }
+
+    /// Distances of the label slots, from the control's centre, in mm.
+    @objc func pgLabelSlotSettings(_ sender: Any?) {
+        let g = canvas.document.labelGrid
+        let alert = NSAlert()
+        alert.messageText = "Label Slots"
+        alert.informativeText = "Labels snap to slots measured from their control's centre, so labels under "
+            + "controls of different sizes line up. Distances in mm."
+        let box = NSView(frame: CGRect(x: 0, y: 0, width: 300, height: 92))
+        func row(_ caption: String, _ v: CGFloat, _ y: CGFloat) -> NSTextField {
+            let l = NSTextField(labelWithString: caption); l.frame = CGRect(x: 0, y: y + 3, width: 170, height: 16)
+            let f = NSTextField(frame: CGRect(x: 175, y: y, width: 90, height: 22))
+            f.stringValue = String(format: "%.2f", Double(v))
+            box.addSubview(l); box.addSubview(f); return f
+        }
+        let off = row("Above / below centre", g?.offsetMM ?? LabelGridSpec.defaultOffsetMM, 64)
+        let line = row("Each further line", g?.lineMM ?? LabelGridSpec.defaultLineMM, 34)
+        let side = row("Left / right of centre", g?.sideMM ?? LabelGridSpec.defaultSideMM, 4)
+        alert.accessoryView = box
+        alert.addButton(withTitle: "Apply")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        func v(_ f: NSTextField, _ d: CGFloat) -> CGFloat? {
+            guard let x = Double(f.stringValue.replacingOccurrences(of: ",", with: ".")), abs(CGFloat(x) - d) > 0.0005
+            else { return nil }
+            return CGFloat(x)
+        }
+        let spec = LabelGridSpec(offsetMM: v(off, LabelGridSpec.defaultOffsetMM),
+                                 lineMM: v(line, LabelGridSpec.defaultLineMM),
+                                 sideMM: v(side, LabelGridSpec.defaultSideMM))
+        canvas.mutateDocument(name: "Label Slots") {
+            $0.labelGrid = (spec.offsetMM == nil && spec.lineMM == nil && spec.sideMM == nil) ? nil : spec
+        }
+    }
+
+    @objc func pgNarrowSelection(_ sender: Any?) {
+        guard let id = (sender as? NSMenuItem)?.representedObject as? String,
+              let f = PanelDocument.SelectionFilter(rawValue: id) else { return }
+        canvas.narrowSelection(to: f)
+    }
+
+    @objc func pgSelectSame(_ sender: Any?) {
+        guard let id = (sender as? NSMenuItem)?.representedObject as? String,
+              let s = PanelDocument.Sameness(rawValue: id) else { return }
+        canvas.selectSame(s)
+    }
+
+    @objc func pgToggleMarqueeEnclosed(_ sender: Any?) {
+        canvas.marqueeEnclosedOnly.toggle()
+        UserDefaults.standard.set(canvas.marqueeEnclosedOnly, forKey: "MarqueeEnclosedOnly")
+    }
+
+    /// Select by kind, role and name — scoped to the current selection when
+    /// there is one, else the whole panel. The inspector then edits them all.
+    @objc func pgSelectDialog(_ sender: Any?) {
+        let alert = NSAlert()
+        alert.messageText = "Select"
+        alert.informativeText = canvas.selection.isEmpty
+            ? "Choose what to select on the whole panel."
+            : "Choose what to keep of the \(canvas.selection.count) selected elements."
+        let kinds = NSPopUpButton(frame: CGRect(x: 0, y: 64, width: 260, height: 24))
+        kinds.addItem(withTitle: "Any kind")
+        let present = Set(canvas.document.elements.map(\.kind))
+        for k in ElementKind.allCases where present.contains(k) {
+            kinds.addItem(withTitle: k.displayName); kinds.lastItem?.representedObject = k.rawValue
+        }
+        let roles = NSPopUpButton(frame: CGRect(x: 0, y: 34, width: 260, height: 24))
+        roles.addItems(withTitles: ["Controls, decoration and labels", "Only controls", "Only decoration", "Only labels"])
+        let name = NSTextField(frame: CGRect(x: 0, y: 2, width: 260, height: 24))
+        name.placeholderString = "Name or label text contains…"
+        let box = NSView(frame: CGRect(x: 0, y: 0, width: 260, height: 90))
+        [kinds, roles, name].forEach(box.addSubview)
+        alert.accessoryView = box
+        alert.addButton(withTitle: "Select")
+        alert.addButton(withTitle: "Cancel")
+        alert.window.initialFirstResponder = name
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        let kind = (kinds.selectedItem?.representedObject as? String).flatMap(ElementKind.init(rawValue:))
+        let filter: PanelDocument.SelectionFilter? = [nil, .controls, .decoration, .labels][roles.indexOfSelectedItem]
+        let result = canvas.document.select(kinds: kind.map { [$0] }, filter: filter, nameContains: name.stringValue,
+                                            within: canvas.selection.isEmpty ? nil : canvas.selection)
+        canvas.setSelection(result)
+        if result.isEmpty { NSSound.beep() }
+    }
+
     @objc func pgFront(_ sender: Any?) { canvas.bringToFront() }
 
     @objc func pgBack(_ sender: Any?) { canvas.sendToBack() }

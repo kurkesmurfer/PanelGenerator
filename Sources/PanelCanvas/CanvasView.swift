@@ -273,14 +273,25 @@ package final class CanvasView: NSView {
             return
         }
         guard !selection.isEmpty else { return }
-        mutateSelection("Nudge") {
-            $0.frame.origin.x += delta.dx
-            $0.frame.origin.y += delta.dy
+        // Labels belonging to a nudged control travel with it.
+        let moving = selection.union(document.labelsFollowing(selection))
+        var els = document.elements
+        for i in els.indices where moving.contains(els[i].id) {
+            els[i].frame.origin.x += delta.dx
+            els[i].frame.origin.y += delta.dy
         }
+        apply(elements: els, name: "Nudge")
     }
 
     // Stored state for CanvasView+Drawing (extensions cannot hold stored properties).
     var marqueeRect: CGRect?
+    /// Marquee takes only elements entirely inside it, rather than any it
+    /// touches. Set from the app (Edit ▸ Select ▸ Marquee Selects Enclosed Only).
+    package var marqueeEnclosedOnly = false
+    /// ⌥-click cycling through the elements under one spot.
+    var pickCycle: (point: CGPoint, index: Int)?
+    /// The element the last mouse-down picked, so mouse-up agrees with it.
+    var pickedID: UUID?
 
     // Stored state for CanvasView+Handles (extensions cannot hold stored properties).
     var handleSize: CGFloat { 8 / zoom }

@@ -39,6 +39,7 @@ extension CanvasView {
         // omit it, so a click on empty canvas after a resize or a group drag
         // inherited didDrag == true and the deselect on mouseUp never fired.
         didDrag = false
+        pickedID = nil
         let p = panelPoint(from: event)
 
         // Double-click a freeform shape to edit its points.
@@ -101,7 +102,8 @@ extension CanvasView {
         //    so the drag that follows carries every member with it. (Expanding
         //    only at mouseUp let a click-drag move a lone member out of its
         //    group, silently splitting it.)
-        if let el = element(at: p) {
+        if let el = element(at: p, cycle: event.modifierFlags.contains(.option)) {
+            pickedID = el.id
             moveAnchor = el.id
             let members = groupMembers(el.id)
             if !event.modifierFlags.isDisjoint(with: [.shift, .command]) {
@@ -109,7 +111,7 @@ extension CanvasView {
                 if sel.contains(el.id) { sel.subtract(members) } else { sel.formUnion(members) }
                 setSelection(sel)
                 if sel.contains(el.id) {
-                    dragMode = .moving(origFrames: origFrames(for: sel))
+                    dragMode = .moving(origFrames: origFrames(for: sel.union(document.labelsFollowing(sel))))
                     beginGestureUndo("Move")
                 } else {
                     dragMode = .idle
@@ -118,7 +120,7 @@ extension CanvasView {
                 if !selection.contains(el.id) {
                     setSelection(members)
                 }
-                dragMode = .moving(origFrames: origFrames(for: selection))
+                dragMode = .moving(origFrames: origFrames(for: selection.union(document.labelsFollowing(selection))))
                 beginGestureUndo("Move")
             }
             downPanelPoint = p
@@ -171,7 +173,20 @@ extension CanvasView {
             // them — which is exactly what "snap is messing up my alignment"
             // looks like from the outside.
             var sdx = dx, sdy = dy
-            if let anchor = moveAnchor.flatMap({ orig[$0] }) ?? orig.values.first {
+            // A label dragged on its own snaps to the slots round its control
+            // (measured from the control's centre) when near one, ahead of
+            // whatever grid is active.
+            let anchorEl = moveAnchor.flatMap { id in document.elements.first { $0.id == id } }
+            let labelSnap: CGPoint? = {
+                guard snapEnabled, let a = anchorEl, a.kind == .text, let ownerID = a.labelOwner,
+                      orig[ownerID] == nil, let f = orig[a.id] else { return nil }
+                return document.snappedLabelCenter(a, proposed: CGPoint(x: f.midX + dx, y: f.midY + dy),
+                                                   reach: 3 / PanelMetrics.mmPerPixel)
+                    .map { CGPoint(x: $0.x - f.midX, y: $0.y - f.midY) }
+            }()
+            if let d = labelSnap {
+                sdx = d.x; sdy = d.y
+            } else if let anchor = moveAnchor.flatMap({ orig[$0] }) ?? orig.values.first {
                 switch snapMode {
                 case .uniform:
                     sdx = snapVal(anchor.minX + dx) - anchor.minX
@@ -225,7 +240,8 @@ extension CanvasView {
             // Rubber-band hits expand to whole groups, so a marquee over part
             // of a group selects (and later moves) the group as one unit.
             let hitIDs = document.elements
-                .filter { $0.isHidden != true && $0.isTemplate != true && $0.frame.intersects(rect) }
+                .filter { $0.isHidden != true && $0.isTemplate != true
+                    && (marqueeEnclosedOnly ? rect.contains($0.frame) : $0.frame.intersects(rect)) }
                 .map(\.id)
             var hit = Set<UUID>()
             for id in hitIDs { hit.formUnion(groupMembers(id)) }
@@ -393,8 +409,8 @@ extension CanvasView {
         case .moving, .resizing:
             endGesture()
             if !didDrag, case .moving = dragMode, event.modifierFlags.isDisjoint(with: [.shift, .command]),
-               let p = element(at: panelPoint(from: event)) {
-                setSelection(groupMembers(p.id))
+               let id = pickedID ?? element(at: panelPoint(from: event))?.id {
+                setSelection(groupMembers(id))
             }
             onSelectionChange?()
         case .groupResizing, .groupRotating:
@@ -413,9 +429,18 @@ extension CanvasView {
         dragMode = .idle
     }
 
-    func element(at p: CGPoint) -> PanelElement? {
-        document.elements.reversed().first {
-            $0.isHidden != true && $0.isTemplate != true && $0.contains(globalPoint: p)
+    /// What a click at `p` means: controls before labels before filled
+    /// shapes before outlines (see `PanelElement.pickPriority`), and an
+    /// outline only near its line. With `cycle`, a repeated click on the same
+    /// spot steps to the next element under it.
+    func element(at p: CGPoint, cycle: Bool = false) -> PanelElement? {
+        let stack = document.hitStack(at: p, tolerance: 4 / zoom)
+        guard !stack.isEmpty else { pickCycle = nil; return nil }
+        var index = 0
+        if cycle, let last = pickCycle, hypot(last.point.x - p.x, last.point.y - p.y) < 3 / zoom {
+            index = (last.index + 1) % stack.count
         }
+        pickCycle = (p, index)
+        return stack[index]
     }
 }
