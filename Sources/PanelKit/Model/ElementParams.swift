@@ -98,6 +98,25 @@ package struct ElementParams: Codable, Hashable {
     package var symbolD: CGFloat = 0.5
 }
 
+// MARK: - Per-kind style aliases
+//
+// One stored slot, read under the name that fits the kind: a jack's or an
+// LED's style lives in `knobStyle`, which those kinds never otherwise use.
+// No new key, so existing documents and outputs stay byte-identical.
+
+extension ElementParams {
+    /// Jack: 0 Rack-style 3.5 mm (ring + face), 1 Paperface banana (solid disc).
+    package var jackStyle: CGFloat {
+        get { knobStyle }
+        set { knobStyle = newValue }
+    }
+    /// LED: 0 dome lens, 1 Paperface ring lamp.
+    package var ledStyle: CGFloat {
+        get { knobStyle }
+        set { knobStyle = newValue }
+    }
+}
+
 // MARK: - Tolerant decoding (see Decoding.swift)
 //
 // Kept beside the type: the synthesised CodingKeys are only visible in the

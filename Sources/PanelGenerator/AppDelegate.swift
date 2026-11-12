@@ -19,6 +19,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
     }
 
+    /// Finder double-click, `open -a PanelGenerator file.panelgen`, dropping
+    /// a document on the Dock icon.
+    func application(_ application: NSApplication, open urls: [URL]) {
+        guard let url = urls.first(where: { $0.pathExtension == PanelDocument.fileExtension }) else { return }
+        // Can arrive before applicationDidFinishLaunching has built the window.
+        DispatchQueue.main.async { [weak self] in self?.windowController?.open(url) }
+    }
+
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         true
     }
@@ -55,6 +63,34 @@ enum MenuBuilder {
     }
 
     /// Edit ▸ Shape: combining shapes and turning shapes into editable ones.
+    /// Edit ▸ Select: narrow a marquee selection, widen to look-alikes, or
+    /// pick by kind / role / name.
+    static func selectMenu(target wc: MainWindowController) -> NSMenuItem {
+        let top = NSMenuItem(title: "Select", action: nil, keyEquivalent: "")
+        let m = NSMenu(title: "Select")
+        let narrow: [(String, String, String)] = [
+            ("Only Controls", "controls", "1"), ("Only Decoration", "decoration", "2"), ("Only Labels", "labels", "3"),
+        ]
+        for (title, id, key) in narrow {
+            let mi = item(title, #selector(MainWindowController.pgNarrowSelection(_:)), key: key, target: wc)
+            mi.keyEquivalentModifierMask = [.command, .option]
+            mi.representedObject = id
+            m.addItem(mi)
+        }
+        m.addItem(.separator())
+        for (title, id) in [("Same Kind", "kind"), ("Same Name", "name"), ("Same Style (kind, fill, stroke)", "style")] {
+            let mi = item(title, #selector(MainWindowController.pgSelectSame(_:)), target: wc)
+            mi.representedObject = id
+            m.addItem(mi)
+        }
+        m.addItem(.separator())
+        m.addItem(item("Select…", #selector(MainWindowController.pgSelectDialog(_:)), key: "f", target: wc))
+        m.addItem(.separator())
+        m.addItem(item("Marquee Selects Enclosed Only", #selector(MainWindowController.pgToggleMarqueeEnclosed(_:)), target: wc))
+        top.submenu = m
+        return top
+    }
+
     static func shapeMenu(target wc: MainWindowController) -> NSMenuItem {
         let top = NSMenuItem(title: "Shape", action: nil, keyEquivalent: "")
         let menu = NSMenu(title: "Shape")
@@ -146,6 +182,7 @@ enum MenuBuilder {
         edit.addItem(.separator())
         edit.addItem(item("Select All", #selector(MainWindowController.pgSelectAll(_:)), key: "a", target: wc))
         edit.addItem(item("Deselect All", #selector(MainWindowController.pgDeselectAll(_:)), key: "A", target: wc))
+        edit.addItem(selectMenu(target: wc))
         edit.addItem(.separator())
         edit.addItem(item("Bring to Front", #selector(MainWindowController.pgFront(_:)), target: wc))
         edit.addItem(item("Send to Back", #selector(MainWindowController.pgBack(_:)), target: wc))
@@ -155,6 +192,10 @@ enum MenuBuilder {
         edit.addItem(item("Make Widget from Selection…", #selector(MainWindowController.pgMakeWidget(_:)), target: wc))
         edit.addItem(item("Label Selection…", #selector(MainWindowController.pgLabelSelection(_:)), key: "l", target: wc))
         edit.addItem(item("Name from Labels", #selector(MainWindowController.pgNameFromLabels(_:)), key: "L", target: wc))
+        edit.addItem(item("Attach Labels to Controls", #selector(MainWindowController.pgAttachLabels(_:)), target: wc))
+        edit.addItem(item("Detach Labels", #selector(MainWindowController.pgDetachLabels(_:)), target: wc))
+        edit.addItem(item("Snap Labels to Slots", #selector(MainWindowController.pgSnapLabels(_:)), target: wc))
+        edit.addItem(item("Label Slots…", #selector(MainWindowController.pgLabelSlotSettings(_:)), target: wc))
         edit.addItem(item("Adopt Identifiers…", #selector(MainWindowController.pgAdoptIdentifiers(_:)), target: wc))
         edit.addItem(item("Fit to Panel…", #selector(MainWindowController.pgFitToPanel(_:)), target: wc))
         edit.addItem(.separator())
@@ -172,9 +213,12 @@ enum MenuBuilder {
         view.addItem(item("Actual Size", #selector(MainWindowController.pgZoomActual(_:)), key: "0", target: wc))
         view.addItem(item("Fit in Window", #selector(MainWindowController.pgZoomFit(_:)), key: "9", target: wc))
         view.addItem(.separator())
+        view.addItem(item("Inspector in Millimetres", #selector(MainWindowController.pgToggleInspectorUnits(_:)), target: wc))
         let snap = item("Snap to Grid", #selector(MainWindowController.pgToggleSnap(_:)), key: "G", target: wc)
         snap.state = wc.canvas.snapEnabled ? .on : .off
         view.addItem(snap)
+        view.addItem(item("Snap to Elements (Smart Guides)", #selector(MainWindowController.pgToggleSnapToElements(_:)),
+                          target: wc))
 
         let stepItem = NSMenuItem(title: "Snap Step", action: nil, keyEquivalent: "")
         let stepMenu = NSMenu(title: "Snap Step")
@@ -192,6 +236,22 @@ enum MenuBuilder {
         // follow Serge's standardised one -- always opens a dialog asking
         // for column/row counts, since that's a per-panel choice.
         stepMenu.addItem(item("Custom Grid…", #selector(MainWindowController.pgSetCustomGrid(_:)), target: wc))
+        // Paperface 50: six rows plus half rows, columns a whole number of HP
+        // apart. The pitch is per document; the outer half-step switch above
+        // applies to this grid too.
+        stepMenu.addItem(item("Paperface Grid", #selector(MainWindowController.pgSetPaperfaceGrid(_:)), target: wc))
+        let pitchItem = NSMenuItem(title: "Paperface Column Pitch", action: nil, keyEquivalent: "")
+        let pitchMenu = NSMenu(title: "Paperface Column Pitch")
+        for hp in PaperfaceGrid.columnHPRange {
+            let mi = item("\(hp) HP — \(Geo.fmt(CGFloat(hp) * 5.08)) mm"
+                          + (hp == PaperfaceGrid.defaultColumnHP ? "  (near-square)" : ""),
+                          #selector(MainWindowController.pgSetPaperfacePitch(_:)), target: wc)
+            mi.tag = hp
+            pitchMenu.addItem(mi)
+        }
+        pitchItem.submenu = pitchMenu
+        stepMenu.addItem(pitchItem)
+        stepMenu.addItem(item("Paperface Grid Settings…", #selector(MainWindowController.pgPaperfaceGridSettings(_:)), target: wc))
         stepMenu.addItem(.separator())
         // 15 px is 1 HP. Tags carry the step in hundredths of a pixel.
         let steps: [(String, CGFloat)] = [
@@ -242,5 +302,13 @@ enum MenuBuilder {
         helpItem.submenu = help
 
         return main
+    }
+}
+
+extension NSMenuItem {
+    /// Sets the key-equivalent modifiers inline, for menu-building chains.
+    func withModifiers(_ m: NSEvent.ModifierFlags) -> NSMenuItem {
+        keyEquivalentModifierMask = m
+        return self
     }
 }

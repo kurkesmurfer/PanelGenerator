@@ -66,6 +66,8 @@ final class MainWindowController: NSWindowController, NSMenuItemValidation {
         layerList = LayerListView()
         layerList.translatesAutoresizingMaskIntoConstraints = false
         layerList.canvas = canvas
+        canvas.marqueeEnclosedOnly = UserDefaults.standard.bool(forKey: "MarqueeEnclosedOnly")
+        canvas.snapToElements = !UserDefaults.standard.bool(forKey: "SnapToElementsOff")
         sidebar.addSubview(layerList)
 
         // Canvas scroll area

@@ -61,6 +61,42 @@ extension CanvasView {
         setSelection(Set(document.elements.filter { $0.isTemplate != true }.map(\.id)))
     }
 
+    /// Keep only controls, decoration or labels of the current selection
+    /// (or of the whole panel when nothing is selected).
+    package func narrowSelection(to filter: PanelDocument.SelectionFilter) {
+        let base = selection.isEmpty ? Set(document.elements.map(\.id)) : selection
+        setSelection(document.narrow(base, to: filter))
+    }
+
+    /// Attach the selected labels to a control (the one selected, or each
+    /// label's nearest) and put them on their nearest slot.
+    @discardableResult
+    package func attachLabels() -> Int {
+        var doc = document
+        let n = doc.attachLabels(selection)
+        apply(elements: doc.elements, name: "Attach Labels")
+        return n
+    }
+
+    package func detachLabels() {
+        var doc = document
+        doc.detachLabels(selection)
+        apply(elements: doc.elements, name: "Detach Labels")
+    }
+
+    /// Owned labels in the selection (or belonging to selected controls)
+    /// onto their nearest slot.
+    package func snapLabelsToSlots() {
+        var doc = document
+        doc.snapLabels(selection.union(doc.labelsFollowing(selection)))
+        apply(elements: doc.elements, name: "Snap Labels")
+    }
+
+    package func selectSame(_ what: PanelDocument.Sameness) {
+        guard !selection.isEmpty else { return }
+        setSelection(document.selectSame(as: selection, by: what))
+    }
+
     package func bringToFront() {
         guard !selection.isEmpty else { return }
         let front = document.elements.filter { selection.contains($0.id) }

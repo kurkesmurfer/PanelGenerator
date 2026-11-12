@@ -23,13 +23,13 @@ extension InspectorView {
 
                 plabel("Indicator", \.params.knobStyle)
                 let style = NSPopUpButton(frame: .zero, pullsDown: false)
-                style.addItems(withTitles: ["Pointer", "Position ring", "Ring + pointer"])
-                style.selectItem(at: max(0, min(2, Int(el.params.knobStyle.rounded()))))
+                style.addItems(withTitles: ["Pointer", "Position ring", "Ring + pointer", "Scalloped (Paperface)"])
+                style.selectItem(at: max(0, min(3, Int(el.params.knobStyle.rounded()))))
                 style.font = NSFont.systemFont(ofSize: 11)
                 addControl(style, width: 150)
                 handlers.append { sender in
                     guard let p = sender as? NSPopUpButton else { return }
-                    let picked = CGFloat(max(0, min(2, p.indexOfSelectedItem)))
+                    let picked = CGFloat(max(0, min(3, p.indexOfSelectedItem)))
                     weakCanvas?.mutateSelection("Knob Indicator") { $0.params.knobStyle = picked }
                 }
 
@@ -116,6 +116,22 @@ extension InspectorView {
                         $0.params.layout = CGFloat(p.indexOfSelectedItem)
                     }
                     self?.scheduleRebuild()   // Count enables or disables with it
+                }
+            }
+            if el.kind == .jack || el.kind == .led {
+                section(el.kind == .jack ? "Jack" : "LED")
+                let weakCanvas = canvas
+                plabel("Style", \.params.knobStyle)
+                let style = NSPopUpButton(frame: .zero, pullsDown: false)
+                style.addItems(withTitles: el.kind == .jack ? ["3.5 mm (Rack)", "Banana (Paperface)"]
+                                                           : ["Dome lens", "Ring lamp (Paperface)"])
+                style.selectItem(at: max(0, min(1, Int(el.params.knobStyle.rounded()))))
+                style.font = NSFont.systemFont(ofSize: 11)
+                addControl(style, width: 170)
+                handlers.append { sender in
+                    guard let p = sender as? NSPopUpButton else { return }
+                    let picked = CGFloat(max(0, min(1, p.indexOfSelectedItem)))
+                    weakCanvas?.mutateSelection("Style") { $0.params.knobStyle = picked }
                 }
             }
             if el.kind == .led || el.kind == .jack || el.kind == .screw {

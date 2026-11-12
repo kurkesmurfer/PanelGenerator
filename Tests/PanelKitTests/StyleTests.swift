@@ -46,9 +46,10 @@ final class DesignLanguageTests: XCTestCase {
 
     func testEveryPlaceableKindIsInThePalette() {
         let listed = Set(DesignLanguage.paletteSections.flatMap(\.entries).map(\.kind))
-        // symbol has its own grid, text its own section, path comes from import.
+        // symbol has its own grid, text its own section, path comes from import;
+        // a style may still list them (Paperface's glyphs, labels, cell shapes).
         let expected = Set(ElementKind.allCases).subtracting([.symbol, .text, .path])
-        XCTAssertEqual(listed, expected)
+        XCTAssertTrue(expected.isSubset(of: listed), "missing: \(expected.subtracting(listed))")
     }
 
     func testSergeAndKurkesmurferDelineationsDifferOnlyInWeightAndAlpha() {

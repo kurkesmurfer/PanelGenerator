@@ -87,3 +87,63 @@ final class CustomGridTests: XCTestCase {
         }
     }
 }
+
+final class PaperfaceGridTests: XCTestCase {
+    private func doc(hp: Int, pitch: Int? = nil, outer: Bool = false) -> PanelDocument {
+        var d = PanelDocument()
+        d.widthHP = hp
+        d.format = .u3
+        if let pitch { d.paperfaceGrid = PaperfaceGridSpec(columnHP: pitch) }
+        d.sergeGridOuterHalfSteps = outer
+        return d
+    }
+    private func mm(_ v: [CGFloat]) -> [CGFloat] { v.map { (PanelMetrics.mm($0) * 100).rounded() / 100 } }
+
+    func testSixRowsAndHalfRows() {
+        let l = PaperfaceGrid.lines(for: doc(hp: 8))
+        XCTAssertEqual(mm(l.mainRows), [15.5, 34.75, 54, 73.25, 92.5, 111.75])
+        XCTAssertEqual(l.halfRows.count, 5)
+        XCTAssertEqual(PanelMetrics.mm(l.halfRows[0]), 25.125, accuracy: 0.001)
+        let outer = PaperfaceGrid.lines(for: doc(hp: 8, outer: true))
+        XCTAssertEqual(outer.halfRows.count, 7)
+        XCTAssertEqual(PanelMetrics.mm(outer.halfRows.last!), 121.375, accuracy: 0.001)
+    }
+
+    func testColumnsSitOnTheHPRaster() {
+        // Default 4 HP: an 8 HP module holds exactly two columns.
+        let l = PaperfaceGrid.lines(for: doc(hp: 8))
+        XCTAssertEqual(mm(l.mainCols), [10.16, 30.48])
+        XCTAssertEqual(mm(l.halfCols), [20.32])
+        // 3 HP pitch on a 12 HP panel: four columns, 15.24 mm apart.
+        let t = PaperfaceGrid.lines(for: doc(hp: 12, pitch: 3))
+        XCTAssertEqual(mm(t.mainCols), [7.62, 22.86, 38.1, 53.34])
+        // Out-of-range pitch is clamped rather than producing nonsense.
+        XCTAssertEqual(PaperfaceGrid.columnHP(for: doc(hp: 8, pitch: 40)), 6)
+    }
+
+    /// The co-session's cell-line grid: origin 22 px, pitch 57.6 px, seven
+    /// lines — fractional pixels, so only reachable with a real pitch.
+    func testCellLineGridWithFractionalPitch() {
+        var d = doc(hp: 12)
+        d.paperfaceGrid = PaperfaceGridSpec(rowOriginMM: 22 * PanelMetrics.mmPerPixel,
+                                            rowPitchMM: 57.6 * PanelMetrics.mmPerPixel, rowCount: 7, quarters: true)
+        let l = PaperfaceGrid.lines(for: d)
+        XCTAssertEqual(l.mainRows.count, 7)
+        XCTAssertEqual(l.mainRows[0], 22, accuracy: 1e-6)
+        XCTAssertEqual(l.mainRows[6], 22 + 6 * 57.6, accuracy: 1e-6)
+        XCTAssertTrue(l.halfRows.contains { abs($0 - 50.8) < 1e-3 })   // centre of the first cell
+        XCTAssertTrue(l.halfRows.contains { abs($0 - 36.4) < 1e-3 })   // quarter
+        let s = PaperfaceGrid.snapCenter(CGPoint(x: 31, y: 252), in: d)
+        XCTAssertEqual(s.y, 252.4, accuracy: 1e-3)                    // 22 + 4 × 57.6
+        XCTAssertEqual(s.x, 30, accuracy: 1e-6)
+    }
+
+    func testSnapReachesHalfPositions() {
+        let d = doc(hp: 8)
+        // Between rows 3 and 4, halfway across: the half row and half column.
+        let p = CGPoint(x: 20.0 / PanelMetrics.mmPerPixel, y: 63.0 / PanelMetrics.mmPerPixel)
+        let s = PaperfaceGrid.snapCenter(p, in: d)
+        XCTAssertEqual(PanelMetrics.mm(s.x), 20.32, accuracy: 0.001)
+        XCTAssertEqual(PanelMetrics.mm(s.y), 63.625, accuracy: 0.001)
+    }
+}

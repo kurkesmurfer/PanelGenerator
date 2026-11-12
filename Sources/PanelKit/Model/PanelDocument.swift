@@ -48,6 +48,11 @@ package struct PanelDocument: Codable, Hashable {
     /// interior half-row ladder alone can't reach. Opt-in because it's not
     /// part of Serge's own documented grid.
     package var sergeGridOuterHalfSteps: Bool = false
+    /// Paperface grid settings (see `PaperfaceGrid`); nil is the measured
+    /// default. Optional so documents that never set it are unchanged.
+    package var paperfaceGrid: PaperfaceGridSpec? = nil
+    /// Label slot distances (see `LabelGridSpec`); nil is the default.
+    package var labelGrid: LabelGridSpec? = nil
     /// Panel background (dark / default variant). Defaults to the
     /// Kurkesmurfer panel colour, which Serge's dark panels share.
     package var background: ColorSpec = Kurkesmurfer.background
@@ -236,6 +241,8 @@ extension PanelDocument {
         customGridHalfPositions = try c.decodeOr(.customGridHalfPositions, customGridHalfPositions)
         customGridFinerPositions = try c.decodeOr(.customGridFinerPositions, customGridFinerPositions)
         sergeGridOuterHalfSteps  = try c.decodeOr(.sergeGridOuterHalfSteps, sergeGridOuterHalfSteps)
+        paperfaceGrid            = try c.decodeIfPresent(PaperfaceGridSpec.self, forKey: .paperfaceGrid)
+        labelGrid                = try c.decodeIfPresent(LabelGridSpec.self, forKey: .labelGrid)
         background    = try c.decodeOr(.background, background)
         lightBackground = try c.decodeIfPresent(ColorSpec.self, forKey: .lightBackground)
         inkDark       = try c.decodeOr(.inkDark, inkDark)

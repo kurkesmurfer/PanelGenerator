@@ -21,6 +21,16 @@ extension MainWindowController {
         panel.allowsMultipleSelection = false
         panel.allowedContentTypes = [UTType(filenameExtension: PanelDocument.fileExtension) ?? .json]
         guard panel.runModal() == .OK, let url = panel.url else { return }
+        load(url)
+    }
+
+    /// Opening from outside the app (Finder, `open -a`).
+    func open(_ url: URL) {
+        guard confirmDiscardIfNeeded() else { return }
+        load(url)
+    }
+
+    private func load(_ url: URL) {
         do {
             loadIntoCanvas(try PanelDocument.load(from: url), url: url)
         } catch {

@@ -39,6 +39,7 @@ extension CanvasView {
         // omit it, so a click on empty canvas after a resize or a group drag
         // inherited didDrag == true and the deselect on mouseUp never fired.
         didDrag = false
+        pickedID = nil
         let p = panelPoint(from: event)
 
         // Double-click a freeform shape to edit its points.
@@ -101,7 +102,8 @@ extension CanvasView {
         //    so the drag that follows carries every member with it. (Expanding
         //    only at mouseUp let a click-drag move a lone member out of its
         //    group, silently splitting it.)
-        if let el = element(at: p) {
+        if let el = element(at: p, cycle: event.modifierFlags.contains(.option)) {
+            pickedID = el.id
             moveAnchor = el.id
             let members = groupMembers(el.id)
             if !event.modifierFlags.isDisjoint(with: [.shift, .command]) {
@@ -109,7 +111,7 @@ extension CanvasView {
                 if sel.contains(el.id) { sel.subtract(members) } else { sel.formUnion(members) }
                 setSelection(sel)
                 if sel.contains(el.id) {
-                    dragMode = .moving(origFrames: origFrames(for: sel))
+                    dragMode = .moving(origFrames: origFrames(for: sel.union(document.labelsFollowing(sel))))
                     beginGestureUndo("Move")
                 } else {
                     dragMode = .idle
@@ -118,7 +120,7 @@ extension CanvasView {
                 if !selection.contains(el.id) {
                     setSelection(members)
                 }
-                dragMode = .moving(origFrames: origFrames(for: selection))
+                dragMode = .moving(origFrames: origFrames(for: selection.union(document.labelsFollowing(selection))))
                 beginGestureUndo("Move")
             }
             downPanelPoint = p
@@ -171,7 +173,20 @@ extension CanvasView {
             // them — which is exactly what "snap is messing up my alignment"
             // looks like from the outside.
             var sdx = dx, sdy = dy
-            if let anchor = moveAnchor.flatMap({ orig[$0] }) ?? orig.values.first {
+            // A label dragged on its own snaps to the slots round its control
+            // (measured from the control's centre) when near one, ahead of
+            // whatever grid is active.
+            let anchorEl = moveAnchor.flatMap { id in document.elements.first { $0.id == id } }
+            let labelSnap: CGPoint? = {
+                guard snapEnabled, let a = anchorEl, a.kind == .text, let ownerID = a.labelOwner,
+                      orig[ownerID] == nil, let f = orig[a.id] else { return nil }
+                return document.snappedLabelCenter(a, proposed: CGPoint(x: f.midX + dx, y: f.midY + dy),
+                                                   reach: 3 / PanelMetrics.mmPerPixel)
+                    .map { CGPoint(x: $0.x - f.midX, y: $0.y - f.midY) }
+            }()
+            if let d = labelSnap {
+                sdx = d.x; sdy = d.y
+            } else if let anchor = moveAnchor.flatMap({ orig[$0] }) ?? orig.values.first {
                 switch snapMode {
                 case .uniform:
                     sdx = snapVal(anchor.minX + dx) - anchor.minX
@@ -186,7 +201,24 @@ extension CanvasView {
                     let snapped = snapEnabled ? CustomGrid.snapCenter(center, in: document) : center
                     sdx = snapped.x - anchor.midX
                     sdy = snapped.y - anchor.midY
+                case .paperfaceGrid:
+                    let center = CGPoint(x: anchor.midX + dx, y: anchor.midY + dy)
+                    let snapped = snapEnabled ? PaperfaceGrid.snapCenter(center, in: document) : center
+                    sdx = snapped.x - anchor.midX
+                    sdy = snapped.y - anchor.midY
                 }
+            }
+            // Smart guides: the selection's edges and centre against every
+            // other element's, per axis, ahead of the grid. Measured from
+            // where the raw drag would put it, so the grid cannot pull the
+            // selection out of reach of a guide.
+            activeGuides = nil
+            if snapToElements, labelSnap == nil, let bounds = orig.values.reduce(nil as CGRect?, { $0?.union($1) ?? $1 }) {
+                let raw = bounds.offsetBy(dx: dx, dy: dy)
+                let g = document.guideSnap(rect: raw, excluding: Set(orig.keys), threshold: guideThreshold)
+                if let gx = g.dx { sdx = dx + gx }
+                if let gy = g.dy { sdy = dy + gy }
+                if g.dx != nil || g.dy != nil { activeGuides = g }
             }
             mutateFrames(orig) { frame in
                 var nf = frame
@@ -206,10 +238,26 @@ extension CanvasView {
             let rawMaxX = orig.maxX + (dir == .ne || dir == .e || dir == .se ? ldx : 0)
             let rawMinY = orig.minY + (dir == .nw || dir == .n || dir == .ne ? ldy : 0)
             let rawMaxY = orig.maxY + (dir == .sw || dir == .s || dir == .se ? ldy : 0)
-            if dir == .nw || dir == .w || dir == .sw { minX = min(snapVal(rawMinX), maxX - minSize) }
-            if dir == .ne || dir == .e || dir == .se { maxX = max(snapVal(rawMaxX), minX + minSize) }
-            if dir == .nw || dir == .n || dir == .ne { minY = min(snapVal(rawMinY), maxY - minSize) }
-            if dir == .sw || dir == .s || dir == .se { maxY = max(snapVal(rawMaxY), minY + minSize) }
+            // A dragged edge locks to another element's edge or centre when in
+            // reach (unrotated elements only: a rotated frame's edges are not
+            // the lines you see), else to the step.
+            activeGuides = nil
+            let lines = (snapToElements && rotation == 0)
+                ? document.guideLines(excluding: Set([primaryElement?.id].compactMap { $0 })) : nil
+            var caught = GuideSnap()
+            func edge(_ raw: CGFloat, vertical: Bool) -> CGFloat {
+                guard let lines else { return snapVal(raw) }
+                let g = PanelDocument.guideSnap(probesX: vertical ? [raw] : [], probesY: vertical ? [] : [raw],
+                                                lines: lines, threshold: guideThreshold)
+                if vertical, let d = g.dx { caught.xs += g.xs; return raw + d }
+                if !vertical, let d = g.dy { caught.ys += g.ys; return raw + d }
+                return snapVal(raw)
+            }
+            if dir == .nw || dir == .w || dir == .sw { minX = min(edge(rawMinX, vertical: true), maxX - minSize) }
+            if dir == .ne || dir == .e || dir == .se { maxX = max(edge(rawMaxX, vertical: true), minX + minSize) }
+            if dir == .nw || dir == .n || dir == .ne { minY = min(edge(rawMinY, vertical: false), maxY - minSize) }
+            if dir == .sw || dir == .s || dir == .se { maxY = max(edge(rawMaxY, vertical: false), minY + minSize) }
+            if !caught.xs.isEmpty || !caught.ys.isEmpty { activeGuides = caught }
             let nf = CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
             updatePrimaryFrame(nf)
 
@@ -220,7 +268,8 @@ extension CanvasView {
             // Rubber-band hits expand to whole groups, so a marquee over part
             // of a group selects (and later moves) the group as one unit.
             let hitIDs = document.elements
-                .filter { $0.isHidden != true && $0.isTemplate != true && $0.frame.intersects(rect) }
+                .filter { $0.isHidden != true && $0.isTemplate != true
+                    && (marqueeEnclosedOnly ? rect.contains($0.frame) : $0.frame.intersects(rect)) }
                 .map(\.id)
             var hit = Set<UUID>()
             for id in hitIDs { hit.formUnion(groupMembers(id)) }
@@ -299,6 +348,8 @@ extension CanvasView {
             return snapEnabled ? SergeGrid.snapCenter(p, in: document) : p
         case .customGrid:
             return snapEnabled ? CustomGrid.snapCenter(p, in: document) : p
+        case .paperfaceGrid:
+            return snapEnabled ? PaperfaceGrid.snapCenter(p, in: document) : p
         }
     }
 
@@ -370,6 +421,7 @@ extension CanvasView {
     }
 
     package override func mouseUp(with event: NSEvent) {
+        if activeGuides != nil { activeGuides = nil; needsDisplay = true }
         if pen != nil { penMouseUp(event); return }
         if pointEdit != nil { pointEditMouseUp(event); return }
         isGestureActive = false   // before the switch: the notifications below flush the layer list
@@ -386,8 +438,8 @@ extension CanvasView {
         case .moving, .resizing:
             endGesture()
             if !didDrag, case .moving = dragMode, event.modifierFlags.isDisjoint(with: [.shift, .command]),
-               let p = element(at: panelPoint(from: event)) {
-                setSelection(groupMembers(p.id))
+               let id = pickedID ?? element(at: panelPoint(from: event))?.id {
+                setSelection(groupMembers(id))
             }
             onSelectionChange?()
         case .groupResizing, .groupRotating:
@@ -406,9 +458,18 @@ extension CanvasView {
         dragMode = .idle
     }
 
-    func element(at p: CGPoint) -> PanelElement? {
-        document.elements.reversed().first {
-            $0.isHidden != true && $0.isTemplate != true && $0.contains(globalPoint: p)
+    /// What a click at `p` means: controls before labels before filled
+    /// shapes before outlines (see `PanelElement.pickPriority`), and an
+    /// outline only near its line. With `cycle`, a repeated click on the same
+    /// spot steps to the next element under it.
+    func element(at p: CGPoint, cycle: Bool = false) -> PanelElement? {
+        let stack = document.hitStack(at: p, tolerance: 4 / zoom)
+        guard !stack.isEmpty else { pickCycle = nil; return nil }
+        var index = 0
+        if cycle, let last = pickCycle, hypot(last.point.x - p.x, last.point.y - p.y) < 3 / zoom {
+            index = (last.index + 1) % stack.count
         }
+        pickCycle = (p, index)
+        return stack[index]
     }
 }

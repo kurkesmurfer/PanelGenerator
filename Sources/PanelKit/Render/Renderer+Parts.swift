@@ -17,6 +17,18 @@ extension Renderer {
 
         switch el.kind {
 
+        case .jack where Int(el.params.jackStyle.rounded()) == 1:
+            // Paperface banana: a solid disc in the signal colour, a hairline
+            // edge (so a white jack still reads on ivory), a grey socket.
+            let holeR = f.width * 0.18
+            let hole = CGRect(x: f.midX - holeR, y: f.midY - holeR, width: holeR * 2, height: holeR * 2)
+            return [
+                ShapePart(path: ellipsePath(f), fill: accent,
+                          stroke: accent.darkened(0.16), lineWidth: max(0.5, f.width * 0.03)),
+                ShapePart(path: ellipsePath(hole), fill: ColorSpec.hex("#575756"),
+                          stroke: ColorSpec.hex("#6E6E6C"), lineWidth: max(0.3, f.width * 0.015)),
+            ]
+
         case .jack:
             let ringW = max(1.4, f.width * 0.08)
             let face = f.insetBy(dx: f.width * 0.17, dy: f.height * 0.17)
@@ -27,6 +39,11 @@ extension Renderer {
                 ShapePart(path: ellipsePath(face), fill: accent.darkened(0.62)),
                 ShapePart(path: ellipsePath(hole), fill: nearBlack),
             ]
+
+        case _ where el.kind.isKnob && Int(el.params.knobStyle.rounded()) == 3:
+            // Paperface scalloped knob: eight rounded lobes with sharp
+            // notches, a white line from the centre. The whole cap turns.
+            return scallopedKnob(el)
 
         case .knobLarge, .knobMedium, .knobSmall:
             var out: [ShapePart] = []
@@ -198,6 +215,17 @@ extension Renderer {
                 }
             }
             return gs
+        case .led where Int(el.params.ledStyle.rounded()) == 1:
+            // Paperface lamp: a flat amber lens with concentric moulding rings.
+            var out = [ShapePart(path: ellipsePath(f), fill: accent,
+                                 stroke: accent.darkened(0.12), lineWidth: max(0.4, f.width * 0.03))]
+            for k in [0.74, 0.5, 0.26] as [CGFloat] {
+                let r = f.insetBy(dx: f.width * (1 - k) / 2, dy: f.height * (1 - k) / 2)
+                out.append(ShapePart(path: ellipsePath(r), stroke: accent.darkened(0.2),
+                                     lineWidth: max(0.3, f.width * 0.035)))
+            }
+            return out
+
         case .led:
             // Dome-shaped lens: a dark bezel (shares the jack body's
             // "ink" tone) holds a lens that fills most of the frame,
@@ -224,6 +252,10 @@ extension Renderer {
                 ShapePart(path: ellipsePath(shadow), fill: accent.darkened(0.28)),
                 ShapePart(path: ellipsePath(highlight), fill: accent.lightened(0.55)),
             ]
+
+        case .screw where Int(el.params.knobStyle.rounded()) == 1:
+            // Paperface: a plain dark head, no slot.
+            return [ShapePart(path: ellipsePath(f), fill: accent)]
 
         case .screw:
             let slot = CGMutablePath()
@@ -314,6 +346,33 @@ extension Renderer {
         case .text:
             return textParts(for: el)
         }
+    }
+
+    // MARK: Scalloped knob
+
+    static func scallopedKnob(_ el: PanelElement) -> [ShapePart] {
+        let f = el.frame
+        let c = CGPoint(x: f.midX, y: f.midY)
+        let R = min(f.width, f.height) / 2
+        let body = CGMutablePath()
+        let steps = 192
+        for i in 0...steps {
+            let t = CGFloat(i) / CGFloat(steps) * 2 * .pi
+            // |cos 4t|: rounded lobes, a cusp at each of the eight notches.
+            let r = R * (0.86 + 0.14 * abs(cos(4 * t)))
+            let p = CGPoint(x: c.x + cos(t) * r, y: c.y + sin(t) * r)
+            if i == 0 { body.move(to: p) } else { body.addLine(to: p) }
+        }
+        body.closeSubpath()
+        let a = Geo.deg2rad(el.params.pointerAngle - 90)
+        let pointer = CGMutablePath()
+        pointer.move(to: CGPoint(x: c.x + cos(a) * R * 0.08, y: c.y + sin(a) * R * 0.08))
+        pointer.addLine(to: CGPoint(x: c.x + cos(a) * R * 0.74, y: c.y + sin(a) * R * 0.74))
+        return [
+            ShapePart(path: body, fill: el.fill, rotates: true),
+            ShapePart(path: pointer, stroke: ColorSpec.hex("#F4F2EE"),
+                      lineWidth: max(0.6, R * 0.075), rotates: true),
+        ]
     }
 
     // MARK: Imported paths

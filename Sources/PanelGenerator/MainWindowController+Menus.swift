@@ -49,9 +49,21 @@ extension MainWindowController {
             menuItem.state = canvas.document.sergeGridOuterHalfSteps ? .on : .off
         case #selector(pgSetCustomGrid(_:)):
             menuItem.state = canvas.snapMode == .customGrid ? .on : .off
+        case #selector(pgSetPaperfaceGrid(_:)):
+            menuItem.state = canvas.snapMode == .paperfaceGrid ? .on : .off
+        case #selector(pgSetPaperfacePitch(_:)):
+            menuItem.state = PaperfaceGrid.columnHP(for: canvas.document) == menuItem.tag ? .on : .off
         case #selector(pgSetThemePreview(_:)):
             let wantsLight = menuItem.tag == 1
             menuItem.state = (canvas.themePreview == .light) == wantsLight ? .on : .off
+        case #selector(pgToggleSnapToElements(_:)):
+            menuItem.state = canvas.snapToElements ? .on : .off
+        case #selector(pgToggleInspectorUnits(_:)):
+            menuItem.state = InspectorView.useMillimetres ? .on : .off
+        case #selector(pgToggleMarqueeEnclosed(_:)):
+            menuItem.state = canvas.marqueeEnclosedOnly ? .on : .off
+        case #selector(pgSelectSame(_:)):
+            return !canvas.selection.isEmpty
         case #selector(pgDeselectAll(_:)):
             return !canvas.selection.isEmpty
         case #selector(pgUndo(_:)):
