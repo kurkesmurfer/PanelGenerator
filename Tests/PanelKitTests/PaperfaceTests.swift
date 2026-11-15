@@ -319,3 +319,20 @@ final class PaperfaceGlyphTests: XCTestCase {
         try doc.save(to: URL(fileURLWithPath: out))
     }
 }
+
+final class LightMatchTests: XCTestCase {
+    func testDefaultLEDFollowsColourAndSize() {
+        var small = ElementKind.led.defaultElement(at: .zero); small.applyPreset("pfLampSmall")
+        XCTAssertEqual(small.widgetClass, "MediumLight<YellowLight>")
+        var large = ElementKind.led.defaultElement(at: .zero); large.applyPreset("pfLamp")
+        XCTAssertEqual(large.widgetClass, "LargeLight<YellowLight>")
+        var tiny = ElementKind.led.defaultElement(at: .zero)
+        tiny.w = 2.2 / PanelMetrics.mmPerPixel; tiny.h = tiny.w; tiny.fill = .hex("#ECE500")
+        XCTAssertEqual(tiny.widgetClass, "SmallLight<YellowLight>")
+        // A chosen type is kept.
+        tiny.stockWidget = "SmallLight<GreenLight>"
+        XCTAssertEqual(tiny.widgetClass, "SmallLight<GreenLight>")
+        // The untouched default red LED still comes out as before.
+        XCTAssertEqual(ElementKind.led.defaultElement(at: .zero).widgetClass, "MediumLight<RedLight>")
+    }
+}

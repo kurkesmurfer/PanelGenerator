@@ -29,7 +29,10 @@ package enum Paperface {
     // Fractions of a cell, from the renders.
     static let jackDia: CGFloat = 0.43
     static let knobDia: CGFloat = 0.47
-    static let lampDia: CGFloat = 0.29
+    /// Lamps measured on the renders: Paris Flash 3.2 mm, Helios 5.0 mm —
+    /// Rack's MediumLight and LargeLight, so they are drawn at those sizes.
+    static let lampSmallMM: CGFloat = 3.176
+    static let lampLargeMM: CGFloat = 5.179
     static let screwDia: CGFloat = 0.17
 
     // MARK: - Colours
@@ -153,7 +156,8 @@ package enum Paperface {
             PaletteEntry(.jack, "pfJackPurple", "Banana · Purple (sync)"),
             PaletteEntry(.jack, "pfJackGrey", "Banana · Grey (special)"),
             PaletteEntry(.knobMedium, "pfKnob", "Scalloped Knob"),
-            PaletteEntry(.led, "pfLamp", "Lamp"),
+            PaletteEntry(.led, "pfLampSmall", "Lamp · Small (Paris, Medium yellow)"),
+            PaletteEntry(.led, "pfLamp", "Lamp · Large (Helios, Large yellow)"),
             PaletteEntry(.screw, "pfScrew", "Screw"),
         ]),
         PaletteSection(title: "Paperface · Cells", entries: [
@@ -197,8 +201,11 @@ package enum Paperface {
         case (.jack, "pfJackGrey"):   jack("#A3A39F")
         case (_, "pfKnob") where e.kind.isKnob:
             size(knobDia); e.fill = .hex("#1D1E1C"); e.params.knobStyle = 3
-        case (.led, "pfLamp"):
-            size(lampDia); e.fill = .hex("#EDB44F"); e.params.ledStyle = 1
+        case (.led, "pfLamp"), (.led, "pfLampSmall"):
+            let d = (id == "pfLamp" ? lampLargeMM : lampSmallMM) / PanelMetrics.mmPerPixel
+            e.w = d; e.h = d
+            e.fill = .hex("#EDB44F"); e.params.ledStyle = 1
+            e.stockWidget = ElementKind.led.defaultStockWidget   // matched to colour and size on export
         case (.screw, "pfScrew"):
             size(screwDia); e.fill = .hex("#595C56"); e.params.knobStyle = 1
 

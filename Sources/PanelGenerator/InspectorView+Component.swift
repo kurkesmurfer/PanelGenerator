@@ -68,12 +68,26 @@ extension InspectorView {
         label("Rack type")
         let combo = NSComboBox(frame: .zero)
         combo.font = NSFont.systemFont(ofSize: 11)
+        // An LED on the default type follows its colour and size; say which
+        // Rack light that is, and offer to go back to it after choosing one.
+        let autoPrefix = "Auto — "
+        let isAutoLED = el.kind == .led
+            && (el.stockWidget.isEmpty || el.stockWidget == ElementKind.led.defaultStockWidget)
+        if el.kind == .led { combo.addItem(withObjectValue: autoPrefix + el.matchingRackLight) }
         combo.addItems(withObjectValues: el.kind.stockWidgetChoices)
-        combo.stringValue = el.stockWidget
+        combo.stringValue = isAutoLED ? autoPrefix + el.matchingRackLight : el.stockWidget
+        if el.kind == .led {
+            combo.toolTip = "Auto picks Rack's light nearest the drawn size and fill colour. "
+                + "Choose or type a type to fix it."
+        }
         combo.completes = true
         addControl(combo)
         handlers.append { sender in
             guard let cb = sender as? NSComboBox else { return }
+            if cb.stringValue.hasPrefix(autoPrefix) {
+                weakCanvas?.mutateSelection("Rack Widget") { $0.stockWidget = ElementKind.led.defaultStockWidget }
+                return
+            }
             weakCanvas?.mutateSelection("Rack Widget") { $0.stockWidget = cb.stringValue }
         }
 
