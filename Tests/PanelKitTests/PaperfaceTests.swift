@@ -244,3 +244,26 @@ final class GuideTests: XCTestCase {
         _ = a
     }
 }
+
+final class PaperfaceRowTests: XCTestCase {
+    /// Three rows of row units make one section, ending on the half row.
+    func testRowUnitsEndOnTheHalfRow() {
+        for (name, build) in Paperface.units {
+            let els = build()
+            let c = els.first { $0.role.isComponent }!
+            let bottom = els.map(\.frame.maxY).max()!
+            XCTAssertLessThanOrEqual(PanelMetrics.mm(bottom - c.center.y), 9.626, name)
+            XCTAssertEqual(PanelMetrics.mm(c.center.y - els.map(\.frame.minY).min()!), name.hasPrefix("Attenuator") ? 7.0 : 9.625,
+                           accuracy: 0.01, name)
+        }
+    }
+
+    /// Writes the row units as seed stamps when PG_PAPERFACE_STAMPS names a
+    /// directory (the repo's Stamps/Paperface).
+    func testWriteRowUnitStamps() throws {
+        guard let dir = ProcessInfo.processInfo.environment["PG_PAPERFACE_STAMPS"] else { return }
+        StampLibrary.directoryOverride = URL(fileURLWithPath: dir)
+        defer { StampLibrary.directoryOverride = nil }
+        for (name, build) in Paperface.units { try StampLibrary.save(build(), as: name) }
+    }
+}

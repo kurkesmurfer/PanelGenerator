@@ -57,14 +57,16 @@ package enum Paperface {
     private static func arcRadius(_ s: CGFloat) -> CGFloat { (0.25 + s * s) / (2 * s) }
 
     package static let shapes: [String: String] = {
-        let s: CGFloat = 0.28
+        // Side height of the dome's arc: 30.19 − 27.5 mm of an 11.6 mm dome
+        // on the Paris Flash Negative Slew.
+        let s: CGFloat = 0.23
         let r = String(format: "%.4f", arcRadius(s))
         return [
             "pfCell":       "M0 0H1V1H0Z",
             // Attenuator: arched top with a centre tick for the knob's zero.
             "pfDome":       "M0 1V\(s)A\(r) \(r) 0 0 1 1 \(s)V1Z M0.5 0V0.11",
             // Plain (unipolar) pot: a gable.
-            "pfRoof":       "M0 1V0.3L0.5 0L1 0.3V1Z",
+            "pfRoof":       "M0 1V0.38L0.5 0L1 0.38V1Z",
             // An input fed from above: two lines from the top corners to the jack.
             "pfFunnel":     "M0 0L0.5 1M1 0L0.5 1",
             // Output: half-diamonds either side of a two-line spine.
@@ -78,17 +80,37 @@ package enum Paperface {
         ]
     }()
 
-    /// Default frame of each cell shape, in cells.
-    static let shapeSize: [String: CGSize] = [
-        "pfCell": CGSize(width: 1, height: 1),
-        "pfDome": CGSize(width: 1, height: 0.63),
-        "pfRoof": CGSize(width: 1, height: 0.96),
-        "pfFunnel": CGSize(width: 1, height: 0.42),
-        "pfDiamond": CGSize(width: 0.96, height: 1.05),
-        "pfScale": CGSize(width: 1, height: 0.17),
-        "pfLabelStrip": CGSize(width: 1, height: 0.2),
-        "pfArrow": CGSize(width: 0.16, height: 0.09),
+    // MARK: - Row geometry
+    //
+    // Measured on the Paris Flash panel (Negative Slew, Positive Slew) as
+    // offsets from the control's centre, mm in 3U. A row's decoration ends on
+    // the half row below its control (+9.625 mm), so three rows make exactly
+    // one section and sections stack without drifting.
+
+    /// Vertical extent of each cell shape relative to its control's centre.
+    package static let rowExtent: [String: (top: CGFloat, bottom: CGFloat)] = [
+        "pfCell":       (-9.625, 9.625),
+        "pfDome":       (-7.0, 4.6),
+        "pfScale":      (6.2, 9.625),
+        "pfRoof":       (-9.625, 4.6),
+        "pfLabelStrip": (6.0, 9.625),
+        "pfDiamond":    (-9.625, 9.625),
+        "pfFunnel":     (-9.625, 0),
     ]
+    /// A section's first row starts closer to its control: the title strip,
+    /// or the double line between sections, takes the rest.
+    package static let firstRowTopMM: CGFloat = -6.9
+    /// Label inside a label strip.
+    package static let stripLabelMM: CGFloat = 7.8
+
+    /// Default frame of each cell shape: full column width, row-measured
+    /// height (in mm, see `rowExtent`).
+    static func shapeSize(_ id: String) -> CGSize {
+        let colW = CGFloat(PaperfaceGrid.defaultColumnHP) * PanelMetrics.pixelsPerHP
+        if id == "pfArrow" { return CGSize(width: colW * 0.16, height: colW * 0.09) }
+        let e = rowExtent[id] ?? (-9.625, 9.625)
+        return CGSize(width: colW, height: (e.bottom - e.top) / PanelMetrics.mmPerPixel)
+    }
 
     // MARK: - Palette
 
@@ -146,12 +168,9 @@ package enum Paperface {
             size(screwDia); e.fill = .hex("#595C56"); e.params.knobStyle = 1
 
         case (.path, let shape) where shapes[shape] != nil:
-            // One grid cell by default: the default column pitch by the row
-            // pitch, so a dropped cell fills its grid square.
-            let s = shapeSize[shape] ?? CGSize(width: 1, height: 1)
-            let cw = CGFloat(PaperfaceGrid.defaultColumnHP) * PanelMetrics.pixelsPerHP
-            let ch = PaperfaceGrid.rowPitchMM / PanelMetrics.mmPerPixel
-            e.w = cw * s.width; e.h = ch * s.height
+            // Column width by the height the shape takes in one row.
+            let s = shapeSize(shape)
+            e.w = s.width; e.h = s.height
             e.pathData = shapes[shape]
             e.fill = ColorSpec(r: 0, g: 0, b: 0, a: 0)
             e.stroke = shape == "pfArrow" ? ink : line
@@ -185,6 +204,49 @@ package enum Paperface {
             return false
         }
         return true
+    }
+
+    // MARK: - Row units
+    //
+    // A control with its row's decoration, measured as above: dropped as a
+    // stamp, dragged by the control, it lands with everything on the grid.
+
+    package static let units: [(name: String, build: () -> [PanelElement])] = [
+        ("Pot", { unit(shapes: ["pfRoof", "pfLabelStrip"], control: (.knobMedium, "pfKnob"),
+                                                 label: stripLabelMM) }),
+        ("Attenuator", { unit(shapes: ["pfDome", "pfScale"], control: (.knobMedium, "pfKnob")) }),
+        ("Output", { unit(shapes: ["pfDiamond"], control: (.jack, "pfJackBlack")) }),
+        ("Input", { unit(shapes: ["pfCell"], control: (.jack, "pfJackWhite"),
+                                                   label: LabelGridSpec.defaultOffsetMM) }),
+        ("Trigger", { unit(shapes: ["pfCell"], control: (.jack, "pfJackRed"),
+                                                   label: LabelGridSpec.defaultOffsetMM) }),
+    ]
+
+    /// Shapes at their row extents round a control centred at (colW/2, 0);
+    /// the stamp library normalises the origin.
+    static func unit(shapes: [String], control: (ElementKind, String), label: CGFloat? = nil) -> [PanelElement] {
+        let colW = CGFloat(PaperfaceGrid.defaultColumnHP) * PanelMetrics.pixelsPerHP
+        let px: (CGFloat) -> CGFloat = { $0 / PanelMetrics.mmPerPixel }
+        var out: [PanelElement] = []
+        for id in shapes {
+            var e = ElementKind.path.defaultElement(at: .zero)
+            e.applyPreset(id)
+            let ext = rowExtent[id]!
+            e.x = 0; e.w = colW
+            e.y = px(ext.top); e.h = px(ext.bottom - ext.top)
+            out.append(e)
+        }
+        var c = control.0.defaultElement(at: .zero)
+        c.applyPreset(control.1)
+        c.x = colW / 2 - c.w / 2; c.y = -c.h / 2
+        out.append(c)
+        if let label {
+            var t = ElementKind.text.defaultElement(at: .zero)
+            t.applyPreset("pfLabel")
+            t.x = colW / 2 - t.w / 2; t.y = px(label) - t.h / 2
+            out.append(t)
+        }
+        return out
     }
 
     package static let language = DesignLanguage(
