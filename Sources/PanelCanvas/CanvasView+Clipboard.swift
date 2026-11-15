@@ -39,11 +39,20 @@ extension CanvasView {
         let els = clipboardElements
         guard !els.isEmpty else { return }
         var pasted: [PanelElement] = []
+        var newID: [UUID: UUID] = [:]
         for var e in els {
-            e.id = UUID()
+            let fresh = UUID()
+            newID[e.id] = fresh
+            e.id = fresh
             e.x += PanelMetrics.pixelsPerHP
             e.y += PanelMetrics.pixelsPerHP
             pasted.append(e)
+        }
+        // A pasted label whose control was pasted with it belongs to the
+        // copy, not the original: otherwise moving the original control drags
+        // the pasted labels along with it.
+        for i in pasted.indices {
+            if let owner = pasted[i].labelOwner, let copy = newID[owner] { pasted[i].labelOwner = copy }
         }
         // Fresh group IDs here too, or pasting a group would select/move the
         // originals along with the paste.
