@@ -62,7 +62,8 @@ extension MainWindowController {
             menuItem.state = InspectorView.useMillimetres ? .on : .off
         case #selector(pgToggleMarqueeEnclosed(_:)):
             menuItem.state = canvas.marqueeEnclosedOnly ? .on : .off
-        case #selector(pgSelectSame(_:)):
+        case #selector(pgSelectSame(_:)), #selector(pgFlipHorizontal(_:)), #selector(pgFlipVertical(_:)),
+             #selector(pgDuplicateDown(_:)), #selector(pgDuplicateRight(_:)):
             return !canvas.selection.isEmpty
         case #selector(pgDeselectAll(_:)):
             return !canvas.selection.isEmpty

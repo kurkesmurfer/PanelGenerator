@@ -139,6 +139,7 @@ package enum Paperface {
         PaletteSection(title: "Paperface · Glyphs & Text", entries: [
             PaletteEntry(.symbol, "pfSine", "Sine"),
             PaletteEntry(.symbol, "pfSaw", "Saw"),
+            PaletteEntry(.symbol, "pfSawDown", "Saw (falling)"),
             PaletteEntry(.symbol, "pfSquare", "Square"),
             PaletteEntry(.symbol, "pfPulse", "Pulse"),
             PaletteEntry(.text, "pfLabel", "Label"),
@@ -182,8 +183,8 @@ package enum Paperface {
             e.stroke = line; e.strokeWidth = stroke
             e.params.lineBow = 0
 
-        case (.symbol, "pfSine"), (.symbol, "pfSaw"), (.symbol, "pfSquare"), (.symbol, "pfPulse"):
-            let map = ["pfSine": "sine", "pfSaw": "sawUp", "pfSquare": "square", "pfPulse": "pulse"]
+        case (.symbol, "pfSine"), (.symbol, "pfSaw"), (.symbol, "pfSawDown"), (.symbol, "pfSquare"), (.symbol, "pfPulse"):
+            let map = ["pfSine": "sine", "pfSaw": "sawUp", "pfSawDown": "sawDown", "pfSquare": "square", "pfPulse": "pulse"]
             e.applySymbol(map[id]!)
             e.w = cell * 0.26; e.h = cell * 0.17
             e.fill = ink

@@ -81,6 +81,35 @@ extension MainWindowController {
 
     @objc func pgSelectAll(_ sender: Any?) { canvas.selectAllElements() }
 
+    @objc func pgFlipHorizontal(_ sender: Any?) { canvas.flipSelection(.horizontal) }
+    @objc func pgFlipVertical(_ sender: Any?) { canvas.flipSelection(.vertical) }
+
+    @objc func pgDuplicateDown(_ sender: Any?) { duplicate(down: true) }
+    @objc func pgDuplicateRight(_ sender: Any?) { duplicate(down: false) }
+
+    /// Asks how many rows (or columns) of the active grid away, remembering
+    /// the answer: three rows is one Paperface section.
+    private func duplicate(down: Bool) {
+        guard !canvas.selection.isEmpty else { NSSound.beep(); return }
+        let key = down ? "DuplicateRows" : "DuplicateColumns"
+        let last = UserDefaults.standard.object(forKey: key) as? Int ?? (down ? 3 : 1)
+        let pitch = down ? canvas.gridPitch.row : canvas.gridPitch.column
+        let alert = NSAlert()
+        alert.messageText = down ? "Duplicate Down" : "Duplicate Right"
+        alert.informativeText = String(format: "How many %@ of the active grid (%.2f mm each)?",
+                                       down ? "rows" : "columns", Double(PanelMetrics.mm(pitch)))
+        let f = NSTextField(frame: CGRect(x: 0, y: 0, width: 80, height: 22))
+        f.stringValue = String(last)
+        alert.accessoryView = f
+        alert.addButton(withTitle: "Duplicate")
+        alert.addButton(withTitle: "Cancel")
+        alert.window.initialFirstResponder = f
+        guard alert.runModal() == .alertFirstButtonReturn, let n = Int(f.stringValue), n != 0 else { return }
+        UserDefaults.standard.set(n, forKey: key)
+        let d = CGFloat(n) * pitch
+        canvas.duplicateSelection(dx: down ? 0 : d, dy: down ? d : 0)
+    }
+
     @objc func pgAttachLabels(_ sender: Any?) {
         if canvas.attachLabels() == 0 { NSSound.beep() }
     }

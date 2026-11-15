@@ -267,3 +267,25 @@ final class PaperfaceRowTests: XCTestCase {
         for (name, build) in Paperface.units { try StampLibrary.save(build(), as: name) }
     }
 }
+
+final class FlipTests: XCTestCase {
+    func testFlipMirrorsPositionsAndDecorationOnly() {
+        var d = PanelDocument()
+        var saw = ElementKind.symbol.defaultElement(at: CGPoint(x: 10, y: 10)); saw.applyPreset("pfSaw")
+        var jack = ElementKind.jack.defaultElement(at: CGPoint(x: 50, y: 10)); jack.applyPreset("pfJackWhite")
+        var label = ElementKind.text.defaultElement(at: CGPoint(x: 50, y: 40)); label.applyPreset("pfLabel")
+        d.elements = [saw, jack, label]
+        let box = d.elements.dropFirst().reduce(d.elements[0].frame) { $0.union($1.frame) }
+        d.flip(Set(d.elements.map(\.id)), .horizontal)
+        let s = d.elements[0], j = d.elements[1], t = d.elements[2]
+        XCTAssertTrue(s.params.flipX)                    // the saw's drawing mirrors
+        XCTAssertEqual(j.params.jackStyle, 1)            // the jack's does not
+        XCTAssertFalse(t.params.flipX)                   // text stays readable
+        XCTAssertEqual(s.frame.maxX, box.maxX, accuracy: 1e-9)   // positions mirror
+        XCTAssertEqual(j.frame.minX, box.minX, accuracy: 1e-9)
+        // The mirrored saw's outline is the original's reflected.
+        let a = Renderer.parts(for: saw)[0].path.boundingBox
+        let b = Renderer.parts(for: s)[0].path.boundingBox
+        XCTAssertEqual(a.width, b.width, accuracy: 1e-6)
+    }
+}

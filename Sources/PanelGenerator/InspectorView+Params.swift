@@ -384,6 +384,30 @@ extension InspectorView {
                 break
             }
 
+            if el.flipsContent && el.kind != .elbow && el.kind != .swirl {
+                label("Mirror")
+                let halfW = (contentW - labelW) / 2 - 4
+                let fx = makeCheck("Mirror ↔", on: el.params.flipX)
+                let fy = makeCheck("Flip ↕", on: el.params.flipY)
+                fx.frame = CGRect(x: pad + labelW, y: cursorY, width: halfW, height: rowH)
+                fy.frame = CGRect(x: pad + labelW + halfW + 8, y: cursorY, width: halfW, height: rowH)
+                addSubview(fx); addSubview(fy)
+                let weakCanvas = canvas
+                fx.tag = handlers.count
+                fx.target = self; fx.action = #selector(controlAction(_:))
+                handlers.append { sender in
+                    guard let b = sender as? NSButton else { return }
+                    weakCanvas?.mutateSelection("Mirror") { $0.params.flipX = b.state == .on }
+                }
+                fy.tag = handlers.count
+                fy.target = self; fy.action = #selector(controlAction(_:))
+                handlers.append { sender in
+                    guard let b = sender as? NSButton else { return }
+                    weakCanvas?.mutateSelection("Flip") { $0.params.flipY = b.state == .on }
+                }
+                cursorY += rowH + gap
+            }
+
         case .text:
             section("Text")
             plabel("Content", \.params.text)

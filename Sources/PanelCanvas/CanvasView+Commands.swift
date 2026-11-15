@@ -92,6 +92,52 @@ extension CanvasView {
         apply(elements: doc.elements, name: "Snap Labels")
     }
 
+    package func flipSelection(_ axis: PanelDocument.FlipAxis) {
+        guard !selection.isEmpty else { return }
+        var doc = document
+        doc.flip(selection, axis)
+        apply(elements: doc.elements, name: axis == .horizontal ? "Flip Horizontal" : "Flip Vertical")
+    }
+
+    /// Copies the selection `dx`, `dy` away — groups and label ownership
+    /// remapped to the copy — and selects the copy.
+    package func duplicateSelection(dx: CGFloat, dy: CGFloat) {
+        let originals = document.elements.filter { selection.contains($0.id) }
+        guard !originals.isEmpty else { return }
+        var newID: [UUID: UUID] = [:]
+        var copies = originals.map { el -> PanelElement in
+            var e = el
+            let fresh = UUID(); newID[el.id] = fresh; e.id = fresh
+            e.x += dx; e.y += dy
+            e.enumName = ""      // identifiers are the author's to give; two the same would clash
+            return e
+        }
+        for i in copies.indices {
+            if let o = copies[i].labelOwner, let c = newID[o] { copies[i].labelOwner = c }
+        }
+        copies = withRemappedGroups(copies)
+        insert(copies, name: "Duplicate")
+        setSelection(Set(copies.map(\.id)))
+    }
+
+    /// The active grid's row and column pitch, for Duplicate Down / Right.
+    package var gridPitch: (row: CGFloat, column: CGFloat) {
+        switch snapMode {
+        case .paperfaceGrid:
+            return (PaperfaceGrid.resolved(document).pitchMM / PanelMetrics.mmPerPixel,
+                    PaperfaceGrid.columnPitchPx(for: document))
+        case .sergeGrid:
+            let r = SergeGrid.mainRowsPx
+            return (r.count > 1 ? r[1] - r[0] : snapStep, SergeGrid.columnPitchPx)
+        case .customGrid:
+            let l = CustomGrid.lines(for: document)
+            return (l.mainRows.count > 1 ? l.mainRows[1] - l.mainRows[0] : snapStep,
+                    l.mainCols.count > 1 ? l.mainCols[1] - l.mainCols[0] : snapStep)
+        case .uniform:
+            return (snapStep, snapStep)
+        }
+    }
+
     package func selectSame(_ what: PanelDocument.Sameness) {
         guard !selection.isEmpty else { return }
         setSelection(document.selectSame(as: selection, by: what))

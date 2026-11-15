@@ -9,7 +9,24 @@ extension Renderer {
 
     // MARK: Element → parts
 
+    /// Every element's parts, mirrored for a decoration whose flipX / flipY
+    /// is set (elbow and swirl mirror inside their own geometry).
     package static func parts(for el: PanelElement) -> [ShapePart] {
+        let raw = kindParts(for: el)
+        guard el.flipsContent, el.kind != .elbow, el.kind != .swirl,
+              el.params.flipX || el.params.flipY else { return raw }
+        let f = el.frame
+        var t = CGAffineTransform(translationX: f.midX, y: f.midY)
+            .scaledBy(x: el.params.flipX ? -1 : 1, y: el.params.flipY ? -1 : 1)
+            .translatedBy(x: -f.midX, y: -f.midY)
+        return raw.map { part in
+            var p = part
+            if let m = part.path.copy(using: &t) { p.path = m }
+            return p
+        }
+    }
+
+    private static func kindParts(for el: PanelElement) -> [ShapePart] {
         let f = el.frame
         let accent = el.fill
         let ink = ColorSpec.hex("#101216")

@@ -32,6 +32,13 @@ extension PanelElement {
         return false
     }
 
+    /// Decoration whose drawing can be mirrored: shapes, paths and symbols.
+    /// Controls keep their (Rack) artwork and text stays readable; flipping
+    /// a selection only mirrors where those sit.
+    package var flipsContent: Bool {
+        !role.isComponent && (kind.category == .shape)
+    }
+
     /// Pick priority: controls first, then text and glyphs, then filled
     /// shapes, then outlines — so a jack inside a cell is clicked as the
     /// jack whatever their stacking order.
@@ -55,6 +62,31 @@ extension PanelDocument {
                 ? $0.element.pickPriority < $1.element.pickPriority
                 : $0.offset > $1.offset
         }.map(\.element)
+    }
+
+    // MARK: - Flip
+
+    package enum FlipAxis { case horizontal, vertical }
+
+    /// Mirrors `ids` as one piece about their joint bounds: positions mirror,
+    /// rotation reverses, and decorations mirror their own drawing.
+    package mutating func flip(_ ids: Set<UUID>, _ axis: FlipAxis) {
+        let sel = elements.filter { ids.contains($0.id) }
+        guard let first = sel.first else { return }
+        let box = sel.dropFirst().reduce(first.frame) { $0.union($1.frame) }
+        for i in elements.indices where ids.contains(elements[i].id) {
+            var e = elements[i]
+            switch axis {
+            case .horizontal:
+                e.x = box.minX + box.maxX - e.x - e.w
+                if e.flipsContent { e.params.flipX.toggle() }
+            case .vertical:
+                e.y = box.minY + box.maxY - e.y - e.h
+                if e.flipsContent { e.params.flipY.toggle() }
+            }
+            if e.rotation != 0 { e.rotation = -e.rotation }
+            elements[i] = e
+        }
     }
 
     // MARK: - Filters
