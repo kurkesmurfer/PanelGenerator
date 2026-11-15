@@ -289,3 +289,33 @@ final class FlipTests: XCTestCase {
         XCTAssertEqual(a.width, b.width, accuracy: 1e-6)
     }
 }
+
+final class PaperfaceGlyphTests: XCTestCase {
+    func testGlyphsParseAndApply() {
+        for (id, g) in Paperface.glyphs {
+            var e = ElementKind.path.defaultElement(at: .zero)
+            e.applyPreset(id)
+            XCTAssertEqual(e.pathData, g.d, id)
+            XCTAssertFalse(Renderer.parts(for: e).isEmpty, id)
+            XCTAssertEqual(e.stroke, g.helios ? Paperface.line : Paperface.ink, id)
+        }
+    }
+
+    /// A sheet of every glyph, large, for comparing with the renders.
+    /// PG_PAPERFACE_GLYPHS=<path> saves it.
+    func testGlyphSheet() throws {
+        guard let out = ProcessInfo.processInfo.environment["PG_PAPERFACE_GLYPHS"] else { return }
+        var doc = PanelDocument()
+        doc.widthHP = 8; doc.format = .u3; doc.background = Paperface.face; doc.name = "Glyphs"
+        let ids = ["pfgSine", "pfgSaw", "pfgSquare", "pfgRise", "pfgFall", "pfgPulse", "pfgNotch", "pfgAD"]
+        for (i, id) in ids.enumerated() {
+            var e = ElementKind.path.defaultElement(at: .zero)
+            e.applyPreset(id)
+            let cx = (i % 2 == 0 ? 10.16 : 30.48) / PanelMetrics.mmPerPixel
+            let cy = (15.5 + 19.25 * CGFloat(i / 2)) / PanelMetrics.mmPerPixel
+            e.x = cx - e.w / 2; e.y = cy - e.h / 2
+            doc.elements.append(e)
+        }
+        try doc.save(to: URL(fileURLWithPath: out))
+    }
+}

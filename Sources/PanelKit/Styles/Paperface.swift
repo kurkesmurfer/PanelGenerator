@@ -80,6 +80,37 @@ package enum Paperface {
         ]
     }()
 
+    // MARK: - Glyphs
+    //
+    // Traced from the reference renders. Two families: Helios draws its
+    // waveforms in the line grey at the line weight, built from half circles
+    // and straight legs; Paris Flash draws slopes in ink, thinner, square
+    // cornered, each on a baseline. Stroked paths, so the weight stays put
+    // whatever the size. Sizes are the centreline box, mm in 3U.
+
+    package struct Glyph {
+        package let name: String
+        package let d: String
+        package let widthMM: CGFloat
+        package let heightMM: CGFloat
+        package let helios: Bool
+    }
+
+    package static let glyphs: [String: Glyph] = [
+        "pfgSine":    Glyph(name: "Sine", d: "M0 0.38V0.72A0.25 0.28 0 0 0 0.5 0.72V0.28A0.25 0.28 0 0 1 1 0.28V0.62",
+                            widthMM: 3.64, heightMM: 2.78, helios: true),
+        "pfgSaw":     Glyph(name: "Saw", d: "M0 1L0.46 0V1L1 0", widthMM: 3.64, heightMM: 1.8, helios: true),
+        "pfgSquare":  Glyph(name: "Square", d: "M0 1V0H0.4V1H1V0", widthMM: 3.64, heightMM: 1.9, helios: true),
+        "pfgRise":    Glyph(name: "Rise (positive slew)", d: "M0 1H0.31L0.66 0V1H1", widthMM: 3.5, heightMM: 1.55, helios: false),
+        "pfgFall":    Glyph(name: "Fall (negative slew)", d: "M0 1H0.32V0L0.67 1H1", widthMM: 3.5, heightMM: 1.55, helios: false),
+        "pfgPulse":   Glyph(name: "Pulse", d: "M0 1H0.32V0H0.68V1H1", widthMM: 3.5, heightMM: 1.55, helios: false),
+        "pfgNotch":   Glyph(name: "Inverted pulse", d: "M0 0H0.3V1H0.7V0H1", widthMM: 3.5, heightMM: 1.55, helios: false),
+        "pfgAD":      Glyph(name: "Attack / decay", d: "M0 1H0.31L0.38 0L0.67 1H1", widthMM: 3.5, heightMM: 1.55, helios: false),
+    ]
+    /// Paris Flash glyph stroke, mm (the renders draw about 0.16; a little
+    /// heavier so it survives Rack's zoomed-out view).
+    package static let inkGlyphWidthMM: CGFloat = 0.22
+
     // MARK: - Row geometry
     //
     // Measured on the Paris Flash panel (Negative Slew, Positive Slew) as
@@ -137,11 +168,14 @@ package enum Paperface {
             PaletteEntry(.line, "pfConnector", "Connector"),
         ]),
         PaletteSection(title: "Paperface · Glyphs & Text", entries: [
-            PaletteEntry(.symbol, "pfSine", "Sine"),
-            PaletteEntry(.symbol, "pfSaw", "Saw"),
-            PaletteEntry(.symbol, "pfSawDown", "Saw (falling)"),
-            PaletteEntry(.symbol, "pfSquare", "Square"),
-            PaletteEntry(.symbol, "pfPulse", "Pulse"),
+            PaletteEntry(.path, "pfgSine", "Sine (Helios)"),
+            PaletteEntry(.path, "pfgSaw", "Saw (Helios)"),
+            PaletteEntry(.path, "pfgSquare", "Square (Helios)"),
+            PaletteEntry(.path, "pfgRise", "Rise (Paris)"),
+            PaletteEntry(.path, "pfgFall", "Fall (Paris)"),
+            PaletteEntry(.path, "pfgPulse", "Pulse (Paris)"),
+            PaletteEntry(.path, "pfgNotch", "Inverted Pulse (Paris)"),
+            PaletteEntry(.path, "pfgAD", "Attack / Decay (Paris)"),
             PaletteEntry(.text, "pfLabel", "Label"),
             PaletteEntry(.text, "pfTitle", "Section Title"),
         ]),
@@ -177,6 +211,16 @@ package enum Paperface {
             e.stroke = shape == "pfArrow" ? ink : line
             e.strokeWidth = stroke
             e.name = "Paperface · " + shape.dropFirst(2)
+
+        case (.path, let g) where glyphs[g] != nil:
+            let glyph = glyphs[g]!
+            e.w = glyph.widthMM / PanelMetrics.mmPerPixel
+            e.h = glyph.heightMM / PanelMetrics.mmPerPixel
+            e.pathData = glyph.d
+            e.fill = ColorSpec(r: 0, g: 0, b: 0, a: 0)
+            e.stroke = glyph.helios ? line : ink
+            e.strokeWidth = (glyph.helios ? lineWidthMM : inkGlyphWidthMM) / PanelMetrics.mmPerPixel
+            e.name = "Paperface · " + glyph.name
 
         case (.line, "pfConnector"):
             e.w = 4; e.h = cell * 0.5

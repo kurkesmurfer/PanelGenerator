@@ -44,6 +44,8 @@ extension PanelElement {
     /// jack whatever their stacking order.
     package var pickPriority: Int {
         if role.isComponent { return 0 }
+        // Paperface glyphs are drawn as outlines but read as symbols.
+        if kind == .path, let d = pathData, Paperface.glyphs.values.contains(where: { $0.d == d }) { return 1 }
         switch kind {
         case .text, .symbol: return 1
         default: return isOutlineOnly ? 3 : 2
