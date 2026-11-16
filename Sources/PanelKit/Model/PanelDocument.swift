@@ -53,6 +53,12 @@ package struct PanelDocument: Codable, Hashable {
     package var paperfaceGrid: PaperfaceGridSpec? = nil
     /// Label slot distances (see `LabelGridSpec`); nil is the default.
     package var labelGrid: LabelGridSpec? = nil
+    /// The module title, drawn by the design language's rules (see
+    /// `ModuleTitle.swift`); nil or empty draws none.
+    package var title: String? = nil
+    /// Design language id ("paperface", "kurkesmurfer", "serge", "lcars",
+    /// "generic"); nil means recognised from the panel itself.
+    package var designLanguage: String? = nil
     /// Panel background (dark / default variant). Defaults to the
     /// Kurkesmurfer panel colour, which Serge's dark panels share.
     package var background: ColorSpec = Kurkesmurfer.background
@@ -250,6 +256,8 @@ extension PanelDocument {
         sergeGridOuterHalfSteps  = try c.decodeOr(.sergeGridOuterHalfSteps, sergeGridOuterHalfSteps)
         paperfaceGrid            = try c.decodeIfPresent(PaperfaceGridSpec.self, forKey: .paperfaceGrid)
         labelGrid                = try c.decodeIfPresent(LabelGridSpec.self, forKey: .labelGrid)
+        title                    = try c.decodeIfPresent(String.self, forKey: .title)
+        designLanguage           = try c.decodeIfPresent(String.self, forKey: .designLanguage)
         background    = try c.decodeOr(.background, background)
         lightBackground = try c.decodeIfPresent(ColorSpec.self, forKey: .lightBackground)
         inkDark       = try c.decodeOr(.inkDark, inkDark)

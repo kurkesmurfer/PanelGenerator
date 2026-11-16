@@ -60,8 +60,8 @@ package enum IconExporter {
         NSGraphicsContext.saveGraphicsState()
         NSGraphicsContext.current = NSGraphicsContext(cgContext: cg, flipped: true)
         Renderer.drawBackground(doc, in: cg)
-        for el in doc.elements where el.isHidden != true && el.isTemplate != true {
-            Renderer.draw(el, in: cg)
+        for el in doc.artwork where el.isHidden != true && el.isTemplate != true {
+            Renderer.draw(el, in: cg, doc: doc)
         }
         NSGraphicsContext.restoreGraphicsState()
         cg.restoreGState()
@@ -98,7 +98,7 @@ package enum SVGExporter {
         // Widget artwork belongs to its widget's own SVG, not to the panel —
         // Rack composites the widget on top, so drawing it here too would show
         // it through from underneath.
-        for el in doc.elements
+        for el in doc.artwork
         where el.isHidden != true && el.isTemplate != true
             && !el.role.isComponent && !doc.isWidgetArtwork(el) {
             s += elementSVG(doc.resolved(el, for: variant), textAsPaths: doc.textAsPaths)
@@ -421,7 +421,7 @@ package enum PNGExporter {
         // The PNG is what the panel looks like, so the template a panel was
         // traced from has no business in it. Elements resolve against the
         // theme like on the canvas: labels following ink read on either face.
-        for el in doc.elements where el.isHidden != true && el.isTemplate != true {
+        for el in doc.artwork where el.isHidden != true && el.isTemplate != true {
             Renderer.draw(el, in: cg, doc: doc, variant: variant)
         }
         NSGraphicsContext.restoreGraphicsState()
@@ -466,8 +466,8 @@ package enum PNGExporter {
         NSGraphicsContext.saveGraphicsState()
         NSGraphicsContext.current = NSGraphicsContext(cgContext: cg, flipped: true)
         Renderer.drawBackground(doc, in: cg)
-        for el in doc.elements where el.isHidden != true && el.isTemplate != true {
-            Renderer.draw(el, in: cg)
+        for el in doc.artwork where el.isHidden != true && el.isTemplate != true {
+            Renderer.draw(el, in: cg, doc: doc)
         }
         let l = SergeGrid.lines(for: doc)
         func dots(rows: [CGFloat], cols: [CGFloat], radius: CGFloat, color: CGColor) {

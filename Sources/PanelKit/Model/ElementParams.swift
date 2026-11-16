@@ -110,6 +110,11 @@ extension ElementParams {
         get { knobStyle }
         set { knobStyle = newValue }
     }
+    /// Button group: 0 a row/column of caps, 1 Paperface bat toggle.
+    package var switchStyle: CGFloat {
+        get { knobStyle }
+        set { knobStyle = newValue }
+    }
     /// LED: 0 dome lens, 1 Paperface ring lamp.
     package var ledStyle: CGFloat {
         get { knobStyle }

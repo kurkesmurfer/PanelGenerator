@@ -34,7 +34,7 @@ extension CanvasView {
         if snapEnabled && snapMode == .paperfaceGrid { drawPaperfaceGrid(in: ctx) }
         if snapEnabled && snapMode == .customGrid { drawCustomGrid(in: ctx) }
 
-        for el in document.elements where el.isHidden != true {
+        for el in document.artwork where el.isHidden != true {
             // A tracing template is drawn faintly and behind your own work in
             // spirit — it is reference, not artwork. It is still visible enough
             // to trace, and the layer list is where you select or delete it.
@@ -118,6 +118,19 @@ extension CanvasView {
                     ctx.fillEllipse(in: CGRect(x: x - radius, y: y - radius, width: radius * 2, height: radius * 2))
                 }
             }
+        }
+        // Frame: where the artwork starts and ends (and the double line
+        // between two sections), in green so it is not taken for a row.
+        if let fr = PaperfaceGrid.frame(for: document) {
+            ctx.setStrokeColor(NSColor.systemGreen.withAlphaComponent(0.75).cgColor)
+            ctx.setLineWidth(1 / zoom)
+            for (i, y) in fr.all.map({ $0 / PanelMetrics.mmPerPixel }).enumerated() {
+                let dashed = i > 0 && i < fr.all.count - 1 && !fr.sectionMM.isEmpty
+                ctx.setLineDash(phase: 0, lengths: dashed ? [4 / zoom, 3 / zoom] : [])
+                ctx.move(to: CGPoint(x: 0, y: y)); ctx.addLine(to: CGPoint(x: size.width, y: y))
+                ctx.strokePath()
+            }
+            ctx.setLineDash(phase: 0, lengths: [])
         }
         dots(rows: l.mainRows, cols: l.mainCols, radius: 2.6 / zoom, color: main.withAlphaComponent(0.9))
         dots(rows: l.mainRows, cols: l.halfCols, radius: 1.8 / zoom, color: half.withAlphaComponent(0.8))

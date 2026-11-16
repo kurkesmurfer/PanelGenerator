@@ -159,6 +159,8 @@ package enum Paperface {
             PaletteEntry(.led, "pfLampSmall", "Lamp · Small (Paris, Medium yellow)"),
             PaletteEntry(.led, "pfLamp", "Lamp · Large (Helios, Large yellow)"),
             PaletteEntry(.screw, "pfScrew", "Screw"),
+            PaletteEntry(.buttonGroup, "pfToggle3", "Toggle · 3-way (DC / AC / MOD)"),
+            PaletteEntry(.buttonGroup, "pfToggle2", "Toggle · 2-way"),
         ]),
         PaletteSection(title: "Paperface · Cells", entries: [
             PaletteEntry(.path, "pfCell", "Cell"),
@@ -206,6 +208,20 @@ package enum Paperface {
             e.w = d; e.h = d
             e.fill = .hex("#EDB44F"); e.params.ledStyle = 1
             e.stockWidget = ElementKind.led.defaultStockWidget   // matched to colour and size on export
+        case (.buttonGroup, "pfToggle3"), (.buttonGroup, "pfToggle2"):
+            let n = id == "pfToggle3" ? 3 : 2
+            e.w = Renderer.toggleSizeMM.width / PanelMetrics.mmPerPixel
+            e.h = Renderer.toggleSizeMM.height / PanelMetrics.mmPerPixel
+            e.params.segments = CGFloat(n)
+            e.params.switchStyle = 1
+            e.params.value = 0
+            e.role = .param
+            // One class for every module that places it: its frames are drawn
+            // here and land in the plugin's widget library.
+            e.widgetSource = .custom
+            e.customWidgetName = "PaperfaceToggle\(n)"
+            e.stockWidget = ""
+            e.name = "Toggle \(n)-way"
         case (.screw, "pfScrew"):
             size(screwDia); e.fill = .hex("#595C56"); e.params.knobStyle = 1
 

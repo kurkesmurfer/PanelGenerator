@@ -62,3 +62,18 @@ scalloped knob 3, ring lamp 1, plain screw 1.
 `PaperfaceTests.oscillator()` builds Helios's OSCILLATOR section as an 8 HP
 panel from source-pixel measurements; `PG_PAPERFACE_DEMO=<path> swift test
 --filter PaperfaceTests` saves it.
+
+## Module title, frame, toggle
+
+- **Title:** a panel property (Panel inspector ▸ Title), drawn by the design
+  language: Paperface Futura Medium caps, cap height 2.0 mm, centred 4.9 mm
+  down; Kurkesmurfer and Serge the SpaceTime lockup (logo 5.2 mm, gap 1.2 mm,
+  Fraunces SemiBold, centred 5.8 mm down). Edit ▸ Make Module Title converts
+  a hand-placed title label (and a logo beside it).
+- **Frame:** top line 8.6 mm (first row − 6.9), bottom 121.375 mm (last row +
+  half a row), and on six-row panels the double line 63.625 / 66.35 mm. Drawn
+  green with the grid, snapped to by edges, Edit ▸ Fit Artwork to Frame, and
+  a warning on export for cells outside it.
+- **Toggle:** bat toggle on a hex nut (nut 6.58 × 5.79 mm, ball 2.45 mm),
+  2- or 3-way; a custom switch (`PaperfaceToggle2/3`) with one SVG per
+  position, emitted into the plugin's widget library.

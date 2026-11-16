@@ -336,3 +336,82 @@ final class LightMatchTests: XCTestCase {
         XCTAssertEqual(ElementKind.led.defaultElement(at: .zero).widgetClass, "MediumLight<RedLight>")
     }
 }
+
+final class TitleFrameToggleTests: XCTestCase {
+    func testPaperfaceTitleSitsOnItsLine() {
+        var d = PanelDocument(); d.widthHP = 8; d.background = Paperface.face; d.title = "Dual Gates"
+        let t = d.titleElements()
+        XCTAssertEqual(t.count, 1)
+        XCTAssertEqual(t[0].params.text, "DUAL GATES")
+        XCTAssertEqual(PanelMetrics.mm(t[0].center.y), 4.9, accuracy: 0.01)
+        XCTAssertEqual(t[0].center.x, d.pixelSize.width / 2, accuracy: 0.01)
+        // Same height whatever the width.
+        d.widthHP = 16
+        XCTAssertEqual(PanelMetrics.mm(d.titleElements()[0].center.y), 4.9, accuracy: 0.01)
+    }
+
+    func testMakeModuleTitleTakesTheLabel() {
+        var d = PanelDocument(); d.background = Paperface.face
+        var l = ElementKind.text.defaultElement(at: CGPoint(x: 30, y: 8)); l.params.text = "SSG"
+        var j = ElementKind.jack.defaultElement(at: CGPoint(x: 30, y: 60))
+        d.elements = [l, j]
+        XCTAssertEqual(d.makeModuleTitle(from: [l.id, j.id]), "SSG")
+        XCTAssertEqual(d.elements.map(\.id), [j.id])   // the label goes, the jack stays
+        _ = j
+    }
+
+    func testFrameAndFit() {
+        var d = PanelDocument(); d.background = Paperface.face
+        let f = PaperfaceGrid.frame(for: d)!
+        XCTAssertEqual(f.topMM, 8.6, accuracy: 0.001)
+        XCTAssertEqual(f.bottomMM, 121.375, accuracy: 0.001)
+        XCTAssertEqual(f.sectionMM[0].bottom, 63.625, accuracy: 0.001)
+        XCTAssertEqual(f.sectionMM[0].top, 66.35, accuracy: 0.001)
+        var cell = ElementKind.path.defaultElement(at: .zero); cell.applyPreset("pfCell")
+        cell.y = 7.0 / PanelMetrics.mmPerPixel; cell.h = (65.0 - 7.0) / PanelMetrics.mmPerPixel
+        d.elements = [cell]
+        XCTAssertFalse(PaperfaceGrid.frameWarnings(d).isEmpty)
+        XCTAssertEqual(PaperfaceGrid.fitToFrame(&d), 2)
+        XCTAssertEqual(PanelMetrics.mm(d.elements[0].y), 8.6, accuracy: 0.001)
+        XCTAssertEqual(PanelMetrics.mm(d.elements[0].y + d.elements[0].h), 63.625, accuracy: 0.001)
+        XCTAssertTrue(PaperfaceGrid.frameWarnings(d).isEmpty)
+    }
+
+    func testToggleIsACustomSwitchWithAFramePerPosition() {
+        var t = ElementKind.buttonGroup.defaultElement(at: .zero); t.applyPreset("pfToggle3")
+        XCTAssertEqual(t.widgetClass, "PaperfaceToggle3")
+        let files = CodeGen.componentFiles(for: t)
+        XCTAssertEqual(files.count, 3)
+        // Up, end-on, down: three different drawings.
+        var drawings: [CGRect] = []
+        for v in [0, 0.5, 1] as [CGFloat] {
+            t.params.value = v
+            drawings.append(Renderer.parts(for: t).last!.path.boundingBox)
+        }
+        XCTAssertLessThan(drawings[0].midY, drawings[1].midY)
+        XCTAssertLessThan(drawings[1].midY, drawings[2].midY)
+    }
+}
+
+final class TitleToggleSheet: XCTestCase {
+    /// PG_TITLE_SHEET=<dir> writes two demo documents: a Paperface panel
+    /// with a title, the frame-fitted cells and the toggle in its three
+    /// positions, and a Kurkesmurfer panel with the logo lockup.
+    func testSheets() throws {
+        guard let dir = ProcessInfo.processInfo.environment["PG_TITLE_SHEET"] else { return }
+        var pf = PanelDocument(); pf.widthHP = 8; pf.background = Paperface.face; pf.title = "Dual Gates"
+        let px: (CGFloat) -> CGFloat = { $0 / PanelMetrics.mmPerPixel }
+        for (i, v) in ([0, 0.5, 1] as [CGFloat]).enumerated() {
+            var t = ElementKind.buttonGroup.defaultElement(at: .zero); t.applyPreset("pfToggle3")
+            t.params.value = v
+            t.x = px(20.32) - t.w / 2; t.y = px(15.5 + 19.25 * CGFloat(i)) - t.h / 2
+            pf.elements.append(t)
+        }
+        var cell = ElementKind.path.defaultElement(at: .zero); cell.applyPreset("pfCell")
+        cell.x = 0; cell.w = px(40.64); cell.y = px(8.6); cell.h = px(63.625 - 8.6)
+        pf.elements.insert(cell, at: 0)
+        try pf.save(to: URL(fileURLWithPath: dir + "/pf-title.panelgen"))
+        var km = PanelDocument(); km.widthHP = 10; km.designLanguage = "kurkesmurfer"; km.title = "Head"
+        try km.save(to: URL(fileURLWithPath: dir + "/km-title.panelgen"))
+    }
+}

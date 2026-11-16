@@ -92,6 +92,23 @@ extension CanvasView {
         apply(elements: doc.elements, name: "Snap Labels")
     }
 
+    @discardableResult
+    package func fitArtworkToFrame() -> Int {
+        var doc = document
+        let n = PaperfaceGrid.fitToFrame(&doc, ids: selection.isEmpty ? nil : selection)
+        if n > 0 { apply(elements: doc.elements, name: "Fit Artwork to Frame") }
+        return n
+    }
+
+    @discardableResult
+    package func makeModuleTitle() -> String? {
+        var doc = document
+        guard let t = doc.makeModuleTitle(from: selection) else { return nil }
+        applyDocument(doc, name: "Make Module Title")
+        setSelection([])
+        return t
+    }
+
     package func flipSelection(_ axis: PanelDocument.FlipAxis) {
         guard !selection.isEmpty else { return }
         var doc = document

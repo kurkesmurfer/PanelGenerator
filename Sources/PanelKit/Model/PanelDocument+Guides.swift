@@ -25,6 +25,11 @@ extension PanelDocument {
         let size = pixelSize
         var xs: [CGFloat] = [0, size.width / 2, size.width]
         var ys: [CGFloat] = [0, size.height / 2, size.height]
+        // On a Paperface panel the frame's lines are guides too, so a cell's
+        // edge locks onto the top line, the section lines or the bottom line.
+        if PaperfaceGrid.isPaperface(self), let f = PaperfaceGrid.frame(for: self) {
+            ys += f.all.map { $0 / PanelMetrics.mmPerPixel }
+        }
         for e in elements where !excluding.contains(e.id) && e.isHidden != true && e.isTemplate != true {
             let f = rotation(of: e)
             xs += [f.minX, f.midX, f.maxX]

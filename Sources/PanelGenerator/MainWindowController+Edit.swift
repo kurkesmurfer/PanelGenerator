@@ -81,6 +81,14 @@ extension MainWindowController {
 
     @objc func pgSelectAll(_ sender: Any?) { canvas.selectAllElements() }
 
+    @objc func pgFitToFrame(_ sender: Any?) {
+        if canvas.fitArtworkToFrame() == 0 { NSSound.beep() }
+    }
+
+    @objc func pgMakeModuleTitle(_ sender: Any?) {
+        if canvas.makeModuleTitle() == nil { NSSound.beep() } else { reloadInspector() }
+    }
+
     @objc func pgFlipHorizontal(_ sender: Any?) { canvas.flipSelection(.horizontal) }
     @objc func pgFlipVertical(_ sender: Any?) { canvas.flipSelection(.vertical) }
 

@@ -117,6 +117,77 @@ package enum PaperfaceGrid {
         return l
     }
 
+    // MARK: - Frame
+
+    /// The artwork's bounds, mm: the top line (first row's centre − 6.9, the
+    /// title strip above it), the bottom line (last row + half a row), and
+    /// for a six-row panel the double line between two three-row sections.
+    /// Measured on Paris Flash: 8.61, 63.6 / 66.19, 121.07 mm.
+    package struct Frame {
+        package var topMM: CGFloat
+        package var bottomMM: CGFloat
+        package var sectionMM: [(bottom: CGFloat, top: CGFloat)]
+        /// Lines a cell's top may sit on, and lines its bottom may sit on.
+        package var tops: [CGFloat] { [topMM] + sectionMM.map(\.top) }
+        package var bottoms: [CGFloat] { sectionMM.map(\.bottom) + [bottomMM] }
+        package var all: [CGFloat] { tops + bottoms }
+    }
+
+    package static func frame(for doc: PanelDocument) -> Frame? {
+        guard doc.format == .u3 else { return nil }
+        let r = resolved(doc)
+        let rows = (0..<r.rows).map { r.originMM + r.pitchMM * CGFloat($0) }
+        guard let first = rows.first, let last = rows.last else { return nil }
+        var sections: [(CGFloat, CGFloat)] = []
+        if rows.count == 6 {
+            sections = [(rows[2] + r.pitchMM / 2, rows[3] + Paperface.firstRowTopMM)]
+        }
+        return Frame(topMM: first + Paperface.firstRowTopMM, bottomMM: last + r.pitchMM / 2,
+                     sectionMM: sections)
+    }
+
+    /// Paperface cell shapes (not glyphs) on the panel.
+    static func isCellShape(_ e: PanelElement) -> Bool {
+        e.kind == .path && Paperface.shapes.values.contains(e.pathData ?? "") && !e.role.isComponent
+    }
+
+    /// Snaps the cell shapes in `ids` (or all) onto the frame: a top within
+    /// `reachMM` of a top line moves onto it, likewise a bottom. Returns how
+    /// many edges moved.
+    @discardableResult
+    package static func fitToFrame(_ doc: inout PanelDocument, ids: Set<UUID>? = nil, reachMM: CGFloat = 3) -> Int {
+        guard let f = frame(for: doc) else { return 0 }
+        let px: (CGFloat) -> CGFloat = { $0 / PanelMetrics.mmPerPixel }
+        var moved = 0
+        for i in doc.elements.indices where isCellShape(doc.elements[i]) && (ids?.contains(doc.elements[i].id) ?? true) {
+            var e = doc.elements[i]
+            let top = PanelMetrics.mm(e.y), bottom = PanelMetrics.mm(e.y + e.h)
+            if let t = f.tops.min(by: { abs($0 - top) < abs($1 - top) }), abs(t - top) <= reachMM, abs(t - top) > 0.001 {
+                let b = e.y + e.h; e.y = px(t); e.h = b - e.y; moved += 1
+            }
+            if let b = f.bottoms.min(by: { abs($0 - bottom) < abs($1 - bottom) }), abs(b - bottom) <= reachMM,
+               abs(b - bottom) > 0.001 {
+                e.h = px(b) - e.y; moved += 1
+            }
+            doc.elements[i] = e
+        }
+        return moved
+    }
+
+    /// Cell shapes reaching outside the frame, for the export report.
+    package static func frameWarnings(_ doc: PanelDocument) -> [String] {
+        guard isPaperface(doc), let f = frame(for: doc) else { return [] }
+        let out = doc.elements.filter { e in
+            isCellShape(e) && e.isHidden != true
+                && (PanelMetrics.mm(e.y) < f.topMM - 0.05 || PanelMetrics.mm(e.y + e.h) > f.bottomMM + 0.05)
+        }
+        guard !out.isEmpty else { return [] }
+        return ["\(out.count) Paperface cell shape\(out.count == 1 ? "" : "s") reach outside the frame "
+            + String(format: "(%.2f–%.2f mm): ", Double(f.topMM), Double(f.bottomMM))
+            + out.prefix(4).map(\.name).joined(separator: ", ")
+            + ". Edit ▸ Fit Artwork to Frame snaps edges within 3 mm onto it."]
+    }
+
     /// A document built in the Paperface language: its face colour, grid
     /// settings of its own, or Paperface cell shapes.
     package static func isPaperface(_ doc: PanelDocument) -> Bool {

@@ -176,6 +176,9 @@ extension Renderer {
                     tl: 1, tr: 1, br: 1, bl: 1), fill: el.fill.lightened(0.35)))
             }
             return ps
+        case .buttonGroup where Int(el.params.switchStyle.rounded()) == 1:
+            return toggleParts(el)
+
         case .buttonGroup:
             let n = max(2, min(12, Int(el.params.segments.rounded())))
             // Radius and end-cap insets hug the frame, so the art stays inside
@@ -369,6 +372,56 @@ extension Renderer {
         case .text:
             return textParts(for: el)
         }
+    }
+
+    // MARK: Paperface toggle
+
+    /// A bat toggle on a hex nut, as on the Paperface 50 Dual Gates (DC / AC /
+    /// MOD) and Filter. Measured at 3U: nut 6.58 × 5.79 mm, bushing 4.4 mm,
+    /// bat 2.26 mm wide ending in a 2.45 mm ball 3.14 mm off centre. Position
+    /// 0 is up, the last down, a middle one end-on — one SVG per position,
+    /// which is how Rack's SvgSwitch shows it.
+    package static let toggleSizeMM = CGSize(width: 6.58, height: 8.72)
+
+    static func toggleParts(_ el: PanelElement) -> [ShapePart] {
+        let f = el.frame
+        let mmPx = 1 / PanelMetrics.mmPerPixel
+        let s = min(f.width / (toggleSizeMM.width * mmPx), f.height / (toggleSizeMM.height * mmPx)) * mmPx
+        let c = CGPoint(x: f.midX, y: f.midY)
+        func p(_ x: CGFloat, _ y: CGFloat) -> CGPoint { CGPoint(x: c.x + x * s, y: c.y + y * s) }
+
+        let nut = CGMutablePath()
+        nut.addLines(between: [p(-3.29, 0), p(-1.82, -2.9), p(1.82, -2.9), p(3.29, 0), p(1.82, 2.9), p(-1.82, 2.9)])
+        nut.closeSubpath()
+        let bushR = 2.2 * s
+        var out = [
+            ShapePart(path: nut, fill: .hex("#999898")),
+            ShapePart(path: ellipsePath(CGRect(x: c.x - bushR, y: c.y - bushR, width: bushR * 2, height: bushR * 2)),
+                      fill: .hex("#575756"), stroke: .hex("#D6D6D4"), lineWidth: max(0.3, 0.14 * s)),
+        ]
+
+        let n = max(2, min(12, Int(el.params.segments.rounded())))
+        let index = Int((el.params.value * CGFloat(n - 1)).rounded())
+        // −1 up … +1 down; a middle position looks straight at you.
+        let dir = n > 1 ? CGFloat(index) / CGFloat(n - 1) * 2 - 1 : -1
+        let ballR = 1.22 * s
+        let ballLine = ColorSpec.hex("#636361")
+        if abs(dir) < 0.01 {
+            let r = ballR * 1.12
+            out.append(ShapePart(path: ellipsePath(CGRect(x: c.x - r, y: c.y - r, width: r * 2, height: r * 2)),
+                                 fill: .hex("#C6C6C5"), stroke: ballLine, lineWidth: max(0.3, 0.1 * s)))
+            return out
+        }
+        let reach = 3.14 * dir, tail = -1.27 * dir
+        let half = 1.13 * s
+        let top = min(c.y + reach * s, c.y + tail * s), bottom = max(c.y + reach * s, c.y + tail * s)
+        let stem = CGPath(roundedRect: CGRect(x: c.x - half, y: top - half, width: half * 2, height: bottom - top + half * 2),
+                          cornerWidth: half, cornerHeight: half, transform: nil)
+        out.append(ShapePart(path: stem, fill: .hex("#9C9B9B")))
+        let b = p(0, reach)
+        out.append(ShapePart(path: ellipsePath(CGRect(x: b.x - ballR, y: b.y - ballR, width: ballR * 2, height: ballR * 2)),
+                             fill: .hex("#C6C6C5"), stroke: ballLine, lineWidth: max(0.3, 0.1 * s)))
+        return out
     }
 
     // MARK: Scalloped knob

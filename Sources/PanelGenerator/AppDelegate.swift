@@ -195,6 +195,8 @@ enum MenuBuilder {
         edit.addItem(item("Insert Corner Screws", #selector(MainWindowController.pgScrews(_:)), target: wc))
         edit.addItem(item("Bind Primitives as Components", #selector(MainWindowController.pgBindPrimitives(_:)), target: wc))
         edit.addItem(item("Make Widget from Selection…", #selector(MainWindowController.pgMakeWidget(_:)), target: wc))
+        edit.addItem(item("Make Module Title", #selector(MainWindowController.pgMakeModuleTitle(_:)), target: wc))
+        edit.addItem(item("Fit Artwork to Frame", #selector(MainWindowController.pgFitToFrame(_:)), target: wc))
         edit.addItem(item("Label Selection…", #selector(MainWindowController.pgLabelSelection(_:)), key: "l", target: wc))
         edit.addItem(item("Name from Labels", #selector(MainWindowController.pgNameFromLabels(_:)), key: "L", target: wc))
         edit.addItem(item("Attach Labels to Controls", #selector(MainWindowController.pgAttachLabels(_:)), target: wc))

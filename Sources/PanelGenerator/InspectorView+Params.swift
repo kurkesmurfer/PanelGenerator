@@ -104,6 +104,17 @@ extension InspectorView {
                     weakCanvas?.mutateSelection("Switch Position") { $0.params.value = fraction }
                 }
 
+                plabel("Style", \.params.knobStyle)
+                let st = NSPopUpButton(frame: .zero, pullsDown: false)
+                st.addItems(withTitles: ["Buttons", "Toggle (Paperface)"])
+                st.selectItem(at: max(0, min(1, Int(el.params.switchStyle.rounded()))))
+                st.font = NSFont.systemFont(ofSize: 11)
+                addControl(st, width: 150)
+                handlers.append { sender in
+                    guard let p = sender as? NSPopUpButton else { return }
+                    weakCanvas?.mutateSelection("Switch Style") { $0.params.switchStyle = CGFloat(p.indexOfSelectedItem) }
+                }
+
                 plabel("Layout", \.params.layout)
                 let lo = NSPopUpButton(frame: .zero, pullsDown: false)
                 lo.addItems(withTitles: ["Column", "Row", "Cross (4)", "Circular"])
