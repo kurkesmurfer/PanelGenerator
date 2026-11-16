@@ -227,6 +227,8 @@ package enum Paperface {
             e.fill = ColorSpec(r: 0, g: 0, b: 0, a: 0)
             e.stroke = glyph.helios ? line : ink
             e.strokeWidth = (glyph.helios ? lineWidthMM : inkGlyphWidthMM) / PanelMetrics.mmPerPixel
+            // Paris glyphs are ink: dark on the light face, light on the dark.
+            e.followsInk = !glyph.helios
             e.name = "Paperface · " + glyph.name
 
         case (.line, "pfConnector"):
@@ -249,6 +251,7 @@ package enum Paperface {
             e.params.fontSize = title ? 8.4 : 7
             e.params.tracking = title ? 0.6 : 0.3
             e.fill = ink
+            e.followsInk = true
             let s = Renderer.textSize(for: e)
             e.w = s.width; e.h = s.height
 

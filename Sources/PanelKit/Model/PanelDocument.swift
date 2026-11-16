@@ -101,6 +101,13 @@ package struct PanelDocument: Codable, Hashable {
     package func resolved(_ element: PanelElement, for variant: ThemeVariant) -> PanelElement {
         guard element.followsPaper || element.followsInk else { return element }
         var e = element
+        // A stroke-only element (a line, a Paperface glyph) that follows the
+        // ink draws its stroke in it. Following the paper keeps the stroke and
+        // fills with the paper, as before (cells that mask what lies behind).
+        if element.followsInk && !element.followsPaper && element.isOutlineOnly {
+            e.stroke = resolvedFill(element, for: variant)
+            return e
+        }
         e.fill = resolvedFill(element, for: variant)
         return e
     }

@@ -372,7 +372,7 @@ package enum PNGExporter {
     }
 
     /// Rasterises the panel at `scale`× panel pixels (4× ≈ print quality).
-    package static func pngData(_ doc: PanelDocument, scale: CGFloat = 4) throws -> Data {
+    package static func pngData(_ doc: PanelDocument, scale: CGFloat = 4, variant: ThemeVariant = .dark) throws -> Data {
         let size = doc.pixelSize
         let pw = Int((size.width * scale).rounded())
         let ph = Int((size.height * scale).rounded())
@@ -417,11 +417,12 @@ package enum PNGExporter {
 
         NSGraphicsContext.saveGraphicsState()
         NSGraphicsContext.current = NSGraphicsContext(cgContext: cg, flipped: true)
-        Renderer.drawBackground(doc, in: cg)
+        Renderer.drawBackground(doc, in: cg, variant: variant)
         // The PNG is what the panel looks like, so the template a panel was
-        // traced from has no business in it.
+        // traced from has no business in it. Elements resolve against the
+        // theme like on the canvas: labels following ink read on either face.
         for el in doc.elements where el.isHidden != true && el.isTemplate != true {
-            Renderer.draw(el, in: cg)
+            Renderer.draw(el, in: cg, doc: doc, variant: variant)
         }
         NSGraphicsContext.restoreGraphicsState()
 
