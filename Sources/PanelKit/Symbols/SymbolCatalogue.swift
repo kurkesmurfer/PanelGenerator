@@ -81,6 +81,15 @@ package enum SymbolCatalogue {
 
     /// The finished, fillable outline for an element, in panel coordinates.
     package static func path(for el: PanelElement) -> CGPath {
+        let (line, width) = centreline(for: el)
+        return line.copy(strokingWithWidth: width, lineCap: .round, lineJoin: .round, miterLimit: 4)
+    }
+
+    /// The symbol's centreline in panel coordinates and the stroke width it
+    /// is drawn with. Emitted as a real stroke: an outlined stroke overlaps
+    /// itself at every inner corner, and NanoVG (Rack) fills and fringes
+    /// those overlaps.
+    package static func centreline(for el: PanelElement) -> (CGPath, CGFloat) {
         let spec = spec(el.params.symbol)
         let f = el.frame
 
@@ -91,7 +100,7 @@ package enum SymbolCatalogue {
             target = CGRect(x: (f.width - side) / 2, y: (f.height - side) / 2,
                             width: side, height: side)
         }
-        guard target.width > 0, target.height > 0 else { return CGMutablePath() }
+        guard target.width > 0, target.height > 0 else { return (CGMutablePath(), 0) }
 
         let weight = min(max(el.params.weight, minWeight), maxWeight)
         // Inset by half the weight so the stroked outline, round caps and all,
@@ -107,9 +116,8 @@ package enum SymbolCatalogue {
         var transform = CGAffineTransform(translationX: f.minX + target.minX,
                                           y: f.minY + target.minY)
             .scaledBy(x: target.width, y: target.height)
-        guard let placed = unit.copy(using: &transform) else { return unit }
-
         let px = max(minWeightPixels, weight * min(target.width, target.height))
-        return placed.copy(strokingWithWidth: px, lineCap: .round, lineJoin: .round, miterLimit: 4)
+        guard let placed = unit.copy(using: &transform) else { return (unit, px) }
+        return (placed, px)
     }
 }

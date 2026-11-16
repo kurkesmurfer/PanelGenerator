@@ -138,14 +138,16 @@ package enum SVGExporter {
         for part in parts {
             let d = PathSVG.d(part.path)
             guard !d.isEmpty else { continue }
-            body += "<path d=\"\(d)\"\(paintAttrs(fill: part.fill, stroke: part.stroke, width: part.lineWidth))/>"
+            body += "<path d=\"\(d)\"\(paintAttrs(fill: part.fill, stroke: part.stroke, width: part.lineWidth, round: part.round))/>"
         }
         return body
     }
 
-    package static func paintAttrs(fill: ColorSpec?, stroke: ColorSpec?, width: CGFloat) -> String {
+    package static func paintAttrs(fill: ColorSpec?, stroke: ColorSpec?, width: CGFloat, round: Bool = false) -> String {
         var a = ""
-        if let f = fill {
+        // A fully transparent fill is no fill: NanoVG would otherwise still
+        // tessellate an open stroke-only path as a filled shape.
+        if let f = fill, f.a > 0.001 {
             a += " fill=\"\(f.hexString)\""
             if f.a < 1 { a += String(format: " fill-opacity=\"%.2f\"", f.a) }
         } else {
@@ -154,6 +156,7 @@ package enum SVGExporter {
         if let st = stroke {
             a += " stroke=\"\(st.hexString)\" stroke-width=\"\(Geo.fmt(max(width, 0.1)))\""
             if st.a < 1 { a += String(format: " stroke-opacity=\"%.2f\"", st.a) }
+            if round { a += " stroke-linecap=\"round\" stroke-linejoin=\"round\"" }
         }
         return a
     }
@@ -192,7 +195,7 @@ package enum SVGExporter {
         for part in Renderer.parts(for: el) {
             let dstr = PathSVG.d(part.path)
             guard !dstr.isEmpty else { continue }
-            body += "<path d=\"\(dstr)\"\(paintAttrs(fill: part.fill, stroke: part.stroke, width: part.lineWidth))/>"
+            body += "<path d=\"\(dstr)\"\(paintAttrs(fill: part.fill, stroke: part.stroke, width: part.lineWidth, round: part.round))/>"
         }
         guard !body.isEmpty else { return "" }
 

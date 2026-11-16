@@ -354,8 +354,14 @@ extension Renderer {
                 fill: accent, stroke: el.stroke, lineWidth: el.strokeWidth)]
 
         case .symbol:
-            return [ShapePart(path: SymbolCatalogue.path(for: el), fill: accent,
-                              stroke: el.stroke, lineWidth: el.strokeWidth)]
+            // A real stroke in the symbol's colour. Only a symbol given an
+            // outline of its own keeps the filled-outline form it needs.
+            if let outline = el.stroke {
+                return [ShapePart(path: SymbolCatalogue.path(for: el), fill: accent,
+                                  stroke: outline, lineWidth: el.strokeWidth)]
+            }
+            let (line, width) = SymbolCatalogue.centreline(for: el)
+            return [ShapePart(path: line, stroke: accent, lineWidth: width, round: true)]
 
         case .path:
             return importedParts(for: el)
