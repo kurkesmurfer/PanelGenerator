@@ -77,3 +77,11 @@ panel from source-pixel measurements; `PG_PAPERFACE_DEMO=<path> swift test
 - **Toggle:** bat toggle on a hex nut (nut 6.58 × 5.79 mm, ball 2.45 mm),
   2- or 3-way; a custom switch (`PaperfaceToggle2/3`) with one SVG per
   position, emitted into the plugin's widget library.
+
+## Push button
+
+Measured on Tempo di Roma: grey bezel 9.2 mm (#BBBBBA, rim #8C8C8C), collar
+#C6C6C5 at 0.74 of the diameter, red cap #CF2E26 at 0.62 (pressed: 0.58,
+darker). Palette entry `pfButton`: a `pushButton` with `switchStyle` 1,
+custom class `PaperfacePushButton`, `momentary = true`, frames
+`paperface-push-button-0/1.svg`.

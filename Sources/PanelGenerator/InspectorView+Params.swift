@@ -61,6 +61,28 @@ extension InspectorView {
                     self.canvas?.mutateSelection("Fader Value") { $0.params.value = CGFloat(sl.doubleValue) }
                 }
             }
+            if el.kind == .pushButton {
+                section("Push Button")
+                let weakCanvas = canvas
+                plabel("Style", \.params.switchStyle)
+                let st = NSPopUpButton(frame: .zero, pullsDown: false)
+                st.addItems(withTitles: ["Square cap", "Round (Paperface)"])
+                st.selectItem(at: max(0, min(1, Int(el.params.switchStyle.rounded()))))
+                st.font = NSFont.systemFont(ofSize: 11)
+                addControl(st, width: 150)
+                handlers.append { sender in
+                    guard let p = sender as? NSPopUpButton else { return }
+                    weakCanvas?.mutateSelection("Button Style") { $0.params.switchStyle = CGFloat(p.indexOfSelectedItem) }
+                }
+                plabel("Pressed", \.params.value)
+                let pr = NSButton(checkboxWithTitle: "Show pressed frame", target: nil, action: nil)
+                pr.state = el.params.value >= 0.5 ? .on : .off
+                addControl(pr)
+                handlers.append { sender in
+                    guard let b = sender as? NSButton else { return }
+                    weakCanvas?.mutateSelection("Button Pressed") { $0.params.value = b.state == .on ? 1 : 0 }
+                }
+            }
             if el.kind == .buttonGroup {
                 // Lives here, not under .shape: ElementKind.category sends
                 // .buttonGroup to .primitive, so the .shape branch never ran

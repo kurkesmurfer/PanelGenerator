@@ -159,6 +159,7 @@ package enum Paperface {
             PaletteEntry(.led, "pfLampSmall", "Lamp · Small (Paris, Medium yellow)"),
             PaletteEntry(.led, "pfLamp", "Lamp · Large (Helios, Large yellow)"),
             PaletteEntry(.screw, "pfScrew", "Screw"),
+            PaletteEntry(.pushButton, "pfButton", "Push Button (red cap)"),
             PaletteEntry(.buttonGroup, "pfToggle3", "Toggle · 3-way (DC / AC / MOD)"),
             PaletteEntry(.buttonGroup, "pfToggle2", "Toggle · 2-way"),
         ]),
@@ -222,6 +223,17 @@ package enum Paperface {
             e.customWidgetName = "PaperfaceToggle\(n)"
             e.stockWidget = ""
             e.name = "Toggle \(n)-way"
+        case (.pushButton, "pfButton"):
+            let d = Renderer.paperfaceButtonMM / PanelMetrics.mmPerPixel
+            e.w = d; e.h = d
+            e.fill = .hex("#CF2E26")
+            e.params.switchStyle = 1
+            e.params.value = 0
+            e.role = .param
+            e.widgetSource = .custom
+            e.customWidgetName = "PaperfacePushButton"
+            e.stockWidget = ""
+            e.name = "Push Button"
         case (.screw, "pfScrew"):
             size(screwDia); e.fill = .hex("#595C56"); e.params.knobStyle = 1
 

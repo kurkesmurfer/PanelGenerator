@@ -154,6 +154,8 @@ extension Renderer {
                           fill: ColorSpec.hex("#111318")),
             ]
 
+        case .pushButton where Int(el.params.switchStyle.rounded()) == 1:
+            return paperfaceButtonParts(el)
         case .pushButton:
             // Value drives the pressed state, the same way it selects a button
             // group's position: a button exports as two frames and Rack swaps
@@ -382,6 +384,33 @@ extension Renderer {
     /// 0 is up, the last down, a middle one end-on — one SVG per position,
     /// which is how Rack's SvgSwitch shows it.
     package static let toggleSizeMM = CGSize(width: 6.58, height: 8.72)
+
+    /// Paperface push button, measured on the Tempo di Roma panel: a grey
+    /// bezel 9.2 mm across with a dark rim and a lighter collar, round a red
+    /// cap 5.7 mm across. Pressed, the cap sinks and darkens — two frames,
+    /// as Rack's momentary buttons want.
+    package static let paperfaceButtonMM: CGFloat = 9.2
+
+    static func paperfaceButtonParts(_ el: PanelElement) -> [ShapePart] {
+        let f = el.frame
+        let d = min(f.width, f.height)
+        let c = CGPoint(x: f.midX, y: f.midY)
+        func disc(_ ratio: CGFloat) -> CGRect {
+            let r = d * ratio / 2
+            return CGRect(x: c.x - r, y: c.y - r, width: r * 2, height: r * 2)
+        }
+        let down = el.params.value >= 0.5
+        let rim = 0.12 / PanelMetrics.mmPerPixel
+        let cap = el.fill
+        return [
+            ShapePart(path: ellipsePath(disc(1).insetBy(dx: rim / 2, dy: rim / 2)),
+                      fill: .hex("#BBBBBA"), stroke: .hex("#8C8C8C"), lineWidth: rim),
+            ShapePart(path: ellipsePath(disc(0.74)), fill: .hex("#C6C6C5")),
+            ShapePart(path: ellipsePath(disc(down ? 0.58 : 0.62)),
+                      fill: down ? cap.darkened(0.25) : cap,
+                      stroke: cap.darkened(0.2), lineWidth: rim),
+        ]
+    }
 
     static func toggleParts(_ el: PanelElement) -> [ShapePart] {
         let f = el.frame

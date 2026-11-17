@@ -393,6 +393,31 @@ final class TitleFrameToggleTests: XCTestCase {
     }
 }
 
+final class PaperfaceButtonTests: XCTestCase {
+    func testButtonIsACustomMomentaryWithTwoFrames() throws {
+        var b = ElementKind.pushButton.defaultElement(at: .zero); b.applyPreset("pfButton")
+        XCTAssertEqual(b.widgetClass, "PaperfacePushButton")
+        XCTAssertEqual(b.w * PanelMetrics.mmPerPixel, 9.2, accuracy: 0.01)
+        XCTAssertEqual(CodeGen.componentFiles(for: b).count, 2)
+        let up = Renderer.parts(for: b)
+        b.params.value = 1
+        let down = Renderer.parts(for: b)
+        XCTAssertEqual(up.count, 3)
+        XCTAssertLessThan(down.last!.path.boundingBox.width, up.last!.path.boundingBox.width)
+        if let dir = ProcessInfo.processInfo.environment["PG_TITLE_SHEET"] {
+            var doc = PanelDocument(); doc.widthHP = 4; doc.background = Paperface.face
+            for (i, v) in ([0, 1] as [CGFloat]).enumerated() {
+                var e = ElementKind.pushButton.defaultElement(at: .zero); e.applyPreset("pfButton")
+                e.params.value = v
+                e.x = 10.16 / PanelMetrics.mmPerPixel - e.w / 2
+                e.y = (20 + 20 * CGFloat(i)) / PanelMetrics.mmPerPixel - e.h / 2
+                doc.elements.append(e)
+            }
+            try doc.save(to: URL(fileURLWithPath: dir + "/pf-button.panelgen"))
+        }
+    }
+}
+
 final class TitleToggleSheet: XCTestCase {
     /// PG_TITLE_SHEET=<dir> writes two demo documents: a Paperface panel
     /// with a title, the frame-fitted cells and the toggle in its three
