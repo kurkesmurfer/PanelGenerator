@@ -19,12 +19,14 @@ extension MainWindowController {
             : "Nothing is bound as a component yet, so everything exports as artwork."
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
+            FileCase.prepare(url)
             try SVGExporter.documentSVG(canvas.document).write(to: url, atomically: true, encoding: .utf8)
             // Positions go in their own file: everything inside the panel SVG is
             // artwork to Rack, so the marker layer must not ship with it.
             if componentCount > 0 {
                 let name = url.deletingPathExtension().lastPathComponent + "-components.svg"
                 let sidecar = url.deletingLastPathComponent().appendingPathComponent(name)
+                FileCase.prepare(sidecar)
                 try SVGExporter.componentsSVG(canvas.document).write(to: sidecar, atomically: true, encoding: .utf8)
             }
         } catch {
@@ -73,6 +75,7 @@ extension MainWindowController {
         guard panel.runModal() == .OK, let url = panel.url else { return }
 
         do {
+            FileCase.prepare(url)
             try CodeGen.panelHeader(doc).write(to: url, atomically: true, encoding: .utf8)
             guard !customNames.isEmpty else { return }
 

@@ -460,3 +460,20 @@ final class CompareAliasTests: XCTestCase {
                           Compare.canonicalWidget("MediumLight<YellowLight>"))
     }
 }
+
+final class FileCaseTests: XCTestCase {
+    /// On the default macOS volume a save under a recapitalised name must
+    /// take the new spelling, not keep the old directory entry.
+    func testSaveTakesTheNewCapitalisation() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("pg-case-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        var doc = PanelDocument(); doc.moduleSlug = "Oscplus"
+        try doc.save(to: dir.appendingPathComponent("Oscplus.panelgen"))
+        doc.moduleSlug = "OscPlus"
+        try doc.save(to: dir.appendingPathComponent("OscPlus.panelgen"))
+        let names = try FileManager.default.contentsOfDirectory(atPath: dir.path)
+        XCTAssertEqual(names, ["OscPlus.panelgen"])
+        XCTAssertEqual(try PanelDocument.load(from: dir.appendingPathComponent("OscPlus.panelgen")).moduleSlug, "OscPlus")
+    }
+}
