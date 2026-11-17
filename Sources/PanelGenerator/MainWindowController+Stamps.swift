@@ -86,7 +86,7 @@ extension MainWindowController {
         palette.rebuild()
     }
 
-    /// Open the workflow manual in the default browser.
+    /// Open the manual (Docs/Manual.html) in the default browser.
     ///
     /// A separate window rather than a sheet: the manual is something you keep
     /// beside the app while you work, and the browser already does windows,
@@ -94,9 +94,9 @@ extension MainWindowController {
     @objc func pgWorkflowManual(_ sender: Any?) {
         guard let url = Self.manualURL() else {
             let alert = NSAlert()
-            alert.messageText = "The workflow manual is not installed."
+            alert.messageText = "The manual is not installed."
             alert.informativeText = """
-            Docs/Workflow.html is missing beside the app. It lives in the \
+            Docs/Manual.html is missing beside the app. It lives in the \
             PanelGenerator source tree; running “make app” copies it into the \
             bundle.
             """
@@ -109,16 +109,16 @@ extension MainWindowController {
     /// Bundle first — that is the copy an installed app has — then the source
     /// tree relative to the executable, which is where it is during development.
     static func manualURL() -> URL? {
-        if let inBundle = Bundle.main.url(forResource: "Workflow", withExtension: "html") {
+        if let inBundle = Bundle.main.url(forResource: "Manual", withExtension: "html") {
             return inBundle
         }
         let exe = Bundle.main.executableURL?.resolvingSymlinksInPath()
             ?? URL(fileURLWithPath: CommandLine.arguments[0]).resolvingSymlinksInPath()
         var dir = exe.deletingLastPathComponent()
         for _ in 0..<6 {
-            let candidate = dir.appendingPathComponent("Docs/Workflow.html")
+            let candidate = dir.appendingPathComponent("Docs/Manual.html")
             if FileManager.default.fileExists(atPath: candidate.path) { return candidate }
-            let resources = dir.appendingPathComponent("Resources/Workflow.html")
+            let resources = dir.appendingPathComponent("Resources/Manual.html")
             if FileManager.default.fileExists(atPath: resources.path) { return resources }
             dir = dir.deletingLastPathComponent()
         }
@@ -132,12 +132,16 @@ extension MainWindowController {
         Drag primitives and shapes from the left repo onto the panel.
         Double-click a repo item to drop it in the centre.
 
-        • Click to select · Shift-click to multi-select · drag empty space to marquee
+        • Click to select (controls win over the cells round them) · ⌥-click
+          steps through what is underneath · Shift-click to multi-select ·
+          drag empty space to marquee · ⌥⌘1/2/3 keep only controls /
+          decoration / labels · ⌘F Select… by kind and name
         • Drag handles to resize — small elements show corner handles only
         • Blue ↻ badge above the selection: drag to rotate (⇧ snaps 15°)
         • Orange ⇄ / ⇅ badges: click, or drag across the shape, to mirror (elbows)
         • ⌫ or ⌦ deletes the selection · arrow keys nudge (⇧ = grid step)
-        • ⌘D duplicate
+        • ⌘D duplicate · ⇧⌘D duplicate whole grid rows down · ⇧⌘H / ⇧⌘V flip
+        • Show (top of the palette) lists one design language's parts
         • Snap-to-grid aligns to the HP grid (⇧⌘G toggles)
         • The Fill control uses the native macOS colour picker; the swatch
           bank below it is a curated LCARS / TNG palette.
@@ -151,12 +155,12 @@ extension MainWindowController {
           as a Stamp — a brand mark, a wordmark, a jack pair with its labels.
           Stamps drop with fresh identity, so no identifier travels with them.
 
-        Help ▸ Workflow Manual opens the full workflow in your browser.
+        Help ▸ PanelGenerator Manual (⌘?) has everything, including grids, labels, emit and compare.
 
         File ▸ Import SVG (⌘I) reads an existing panel — as a faint tracing
         template you draw over, or as editable artwork.
         File ▸ Import Module Code (⌥⌘I) reads a ModuleWidget constructor and
-        rebuilds its components, artwork included. See Docs/IMPORT.md.
+        rebuilds its components, artwork included. See the manual, §11.
 
         File ▸ Export SVG / PNG writes Rack-compatible artwork
         (1 HP = 15 px · 3U = 380 px · 1U = 127 px).

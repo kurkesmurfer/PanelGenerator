@@ -8,7 +8,10 @@ and **LCARS**. Owner: Peet (kurkesmurfer). Repo:
 https://github.com/kurkesmurfer/PanelGenerator (public).
 
 Read first: `README.md` (features, layout), `PIPELINE.md` (panel ↔ code
-contract, `--emit`/`--compare`), `Docs/TOOLCHAIN.md`, `Docs/SYMBOLS.md`.
+contract, `--emit`/`--compare`), `Docs/SYMBOLS.md`, `Docs/PAPERFACE.md`.
+User documentation is one file: `Docs/Manual.html` (bundled by make-app.sh,
+Help ▸ PanelGenerator Manual). New user-facing features get a paragraph there;
+`Docs/IMPORT.md`, `Docs/TOOLCHAIN.md` and `Docs/Workflow.html` are stubs.
 
 ## State (5 Nov 2026)
 

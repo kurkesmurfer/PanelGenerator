@@ -304,7 +304,7 @@ enum MenuBuilder {
         let helpItem = NSMenuItem()
         main.addItem(helpItem)
         let help = NSMenu(title: "Help")
-        help.addItem(item("Workflow Manual", #selector(MainWindowController.pgWorkflowManual(_:)), key: "?", target: wc))
+        help.addItem(item("PanelGenerator Manual", #selector(MainWindowController.pgWorkflowManual(_:)), key: "?", target: wc))
         help.addItem(item("Keyboard Shortcuts & Tips", #selector(MainWindowController.pgHelp(_:)), target: wc))
         helpItem.submenu = help
 

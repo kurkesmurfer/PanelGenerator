@@ -39,8 +39,8 @@ repository. Colours are edited with the **native macOS colour picker**
   panels can never end up claiming the same enum name. They live in
   `~/Library/Application Support/PanelGenerator/Stamps` as plain JSON; the
   ones in `Stamps/` here are installed on first launch.
-- **Workflow manual** — *Help ▸ Workflow Manual* opens `Docs/Workflow.html`
-  in the browser: the whole loop from a blank panel to a compiling module.
+- **Manual** — *Help ▸ PanelGenerator Manual* (⌘?) opens `Docs/Manual.html`:
+  the whole loop from a blank panel to a compiling module.
 - **Headless smoke test** — `PanelGenerator --selftest [dir]` renders a
   showcase panel to SVG+PNG without a window server.
 
@@ -57,83 +57,18 @@ make selftest   # headless render test → Docs/pg_demo.{svg,png}
 
 Or plain SPM: `swift build && .build/debug/PanelGenerator`.
 
-## Using the editor
+## Documentation
 
-1. **Drag** a primitive or shape from the left repo onto the panel
-   (double-click drops it centred).
-2. Select and edit in the right inspector: position, size, rotation, fill
-   (native colour picker + LCARS swatches), stroke, and per-kind parameters
-   (knob pointer angle, fader value, corner radii, elbow geometry, ring
-   angles, text content).
-3. To swap a control for another kind, hold ⌘ while dropping a palette item
-   onto it (or use *Edit ▸ Replace With*). It keeps its id, centre, rotation,
-   identifier, role, label binding and group; size and look come from the
-   new item. Dropping on a selected control replaces the whole selection.
-4. **Draw your own shapes** with the pen (P): click for corners, drag for
-   curves, click the first point to close a filled shape, Return to finish an
-   open line, Esc when done. Points snap to the active grid (⌥ to place
-   freely, ⇧ for 45°). Double-click any freeform shape to edit its points:
-   drag points or handles, click the outline to add a point, ⌫ to delete,
-   double-click a point to switch corner/smooth. *Edit ▸ Shape* combines,
-   subtracts, intersects or excludes selected shapes, converts boxes,
-   ellipses, elbows, ring sectors and text into editable freeform shapes, and
-   turns a stroke into a filled outline.
-5. Compose the backdrop first (big elbows + ring sectors + capsules read as
-   instant TNG), then place controls on top.
-6. **File ▸ Export SVG… / Export PNG…**.
+**[Docs/Manual.html](Docs/Manual.html)** is the manual — also *Help ▸
+PanelGenerator Manual* (⌘?) in the app. It covers the window, grids and guides,
+labels and module titles, components, the design languages (Paperface
+included), stamps, importing, emitting and wiring the C++, `--compare`, the
+command line and the keyboard shortcuts.
 
-### Shortcuts
-
-| Action | Keys |
-|---|---|
-| Undo / Redo | ⌘Z / ⇧⌘Z |
-| Copy / Cut / Paste | ⌘C / ⌘X / ⌘V |
-| Duplicate / Delete | ⌘D / ⌫ or ⌦ |
-| Replace control in place | ⌘-drag a palette item onto it, or Edit ▸ Replace With |
-| Pen: draw lines and shapes | P (canvas), or Draw ▸ Pen in the palette |
-| Edit points of a shape | double-click it, or Return with it selected |
-| Nudge selection | Arrow keys (⇧ + arrows = grid step) |
-| Rotate selection | drag the blue ↻ badge (⇧ = 15° steps) |
-| Mirror (elbow) | click or drag across the orange ⇄ / ⇅ badges |
-| Select all | ⌘A |
-| Zoom in / out / actual / fit | ⌘= / ⌘− / ⌘0 / ⌘9 |
-| Toggle snap-to-grid | ⇧⌘G |
-| New / Open / Save | ⌘N / ⌘O / ⌘S |
-| Export SVG / PNG | ⌘E / ⇧⌘E |
-
-## From panel to plugin
-
-Every element carries a **component binding**: a role (decoration / param /
-input / output / light / custom widget), an identifier, and a widget source —
-either a stock Rack type or your own artwork.
-
-- **Decoration** is artwork and stays in the exported panel.
-- **Components** are drawn by Rack and MetaModule themselves, so they are left
-  out of the panel artwork (painting them there would show through underneath
-  the real widget) and exported as positions instead.
-- **Rack default** components take their size from Rack's own SVG, so the
-  on-canvas element is a placement guide — resizing it changes nothing in Rack.
-- **Custom** components export their artwork to `components/<Name>.svg`, and
-  `setSvg()` takes the widget's size from that file — so resizing here *is*
-  how you resize the control.
-
-SVGs export with their `width`/`height` in **millimetres** and the viewBox left
-in panel pixels — nothing is rescaled, but the physical size is declared. That
-matters downstream: `helper.py` skips its 75-dpi guess, and MetaModule
-rasterisers read the physical size from that attribute (at least one raises
-outright on a unitless value). Switch it to pixels in the Panel section if you
-need the old form.
-
-`File ▸ Export SVG…` writes the panel plus `<name>-components.svg`, a positions
-file in the shape `helper.py createmodule` expects (circles, classified by
-fill, named through `data-name` with an optional `#WidgetClass` suffix).
-
-`File ▸ Export Widget Code…` (⌥⌘E) writes the C++ directly: `ParamId` /
-`InputId` / `OutputId` / `LightId` enums, `app::SvgKnob` / `SvgPort` /
-`SvgSlider` / `SvgSwitch` structs for each custom widget, the `ModuleWidget`
-constructor body with `createParamCentered<…>(mm2px(Vec(x, y)), …)`, and the
-matching millimetre table for MetaModule — whose elements use the same mm
-coordinates, with knob angles in degrees rather than Rack's radians.
+Developer references, for working on PanelGenerator itself:
+[PIPELINE.md](PIPELINE.md) (the panel ↔ code contract),
+[Docs/SYMBOLS.md](Docs/SYMBOLS.md) (symbol catalogue),
+[Docs/PAPERFACE.md](Docs/PAPERFACE.md) (Paperface grid, glyphs, lamps, toggle).
 
 ## Architecture
 

@@ -72,12 +72,12 @@ else
 fi
 
 # --- Documentation ----------------------------------------------------------
-# Help > Workflow Manual opens this in the browser. Copied in rather than
-# fetched at runtime, so an installed app is not tied to the source tree.
-if [ -f "Docs/Workflow.html" ]; then
-    cp "Docs/Workflow.html" "$APP/Contents/Resources/Workflow.html"
+# Help > PanelGenerator Manual opens this in the browser. Copied in rather
+# than fetched at runtime, so an installed app is not tied to the source tree.
+if [ -f "Docs/Manual.html" ]; then
+    cp "Docs/Manual.html" "$APP/Contents/Resources/Manual.html"
 else
-    echo "No Docs/Workflow.html — Help > Workflow Manual will report it missing"
+    echo "No Docs/Manual.html — Help > PanelGenerator Manual will report it missing"
 fi
 
 # --- Shipped stamps ---------------------------------------------------------
