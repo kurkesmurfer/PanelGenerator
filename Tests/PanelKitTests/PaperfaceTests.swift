@@ -415,3 +415,23 @@ final class TitleToggleSheet: XCTestCase {
         try km.save(to: URL(fileURLWithPath: dir + "/km-title.panelgen"))
     }
 }
+
+final class CompareAliasTests: XCTestCase {
+    func testWidgetLibraryAliasesResolve() {
+        let lib = """
+        using namespace rack;
+        using LargeLightYellowLight = rack::componentlibrary::LargeLight<YellowLight>;   // LargeLight<YellowLight>
+        using PJ301MPort = rack::componentlibrary::PJ301MPort;
+        """
+        let aliases = Compare.widgetAliases(in: [lib])
+        XCTAssertNil(aliases["namespace"])
+        XCTAssertEqual(Compare.canonicalWidget(Compare.resolve("LargeLightYellowLight", aliases)),
+                       Compare.canonicalWidget("LargeLight<YellowLight>"))
+        XCTAssertEqual(Compare.canonicalWidget(Compare.resolve("PJ301MPort", aliases)), "PJ301MPort")
+        // Without the library, the canonical shape still meets.
+        XCTAssertEqual(Compare.canonicalWidget("MediumLightYellowLight"),
+                       Compare.canonicalWidget("rack::componentlibrary::MediumLight<YellowLight>"))
+        XCTAssertNotEqual(Compare.canonicalWidget("MediumLight<RedLight>"),
+                          Compare.canonicalWidget("MediumLight<YellowLight>"))
+    }
+}

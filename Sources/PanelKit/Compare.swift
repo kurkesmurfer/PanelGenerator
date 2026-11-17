@@ -82,10 +82,13 @@ package enum Compare {
             let stamp = provenance(in: source)
             var side = Side(label: name, source: stamp?.source, digest: stamp?.digest,
                             notes: outcome.warnings)
+            // The generated widget library names `MediumLight<YellowLight>` as
+            // `MediumLightYellowLight`; read the aliases so both forms meet.
+            let aliases = widgetAliases(in: [source] + headers + siblingWidgetLibraries(near: url))
             for el in outcome.elements where el.role.isComponent {
                 side.items.append(Item(identifier: el.identifierStem + el.role.enumSuffix,
                                        role: el.role,
-                                       widget: el.widgetClass,
+                                       widget: resolve(el.widgetClass, aliases),
                                        mm: el.centerMM))
             }
             for el in outcome.elements where el.kind == .text {
@@ -108,6 +111,54 @@ package enum Compare {
         default:
             throw Failure.unknownKind(name)
         }
+    }
+
+    // MARK: - Widget names
+
+    /// `using Alias = Target;` declarations — the shape the generated
+    /// `<Plugin>Widgets.hpp` writes for every Rack type it re-exports.
+    package static func widgetAliases(in texts: [String]) -> [String: String] {
+        guard let re = try? NSRegularExpression(pattern: #"using\s+([A-Za-z_]\w*)\s*=\s*([^;]+);"#) else { return [:] }
+        var map: [String: String] = [:]
+        for text in texts {
+            let ns = text as NSString
+            for m in re.matches(in: text, range: NSRange(location: 0, length: ns.length)) {
+                let alias = ns.substring(with: m.range(at: 1))
+                let target = ns.substring(with: m.range(at: 2)).trimmingCharacters(in: .whitespaces)
+                if map[alias] == nil { map[alias] = target }
+            }
+        }
+        return map
+    }
+
+    /// Follows aliases to the type they name, stopping at a cycle.
+    package static func resolve(_ widget: String, _ aliases: [String: String]) -> String {
+        var name = widget, seen: Set<String> = []
+        while let next = aliases[canonicalWidget(name)] ?? aliases[name], seen.insert(name).inserted {
+            if canonicalWidget(next) == canonicalWidget(name) { break }
+            name = next
+        }
+        return name
+    }
+
+    /// One spelling per type: namespace prefixes, angle brackets and spaces go,
+    /// so `rack::componentlibrary::MediumLight<YellowLight>` and
+    /// `MediumLightYellowLight` compare equal.
+    package static func canonicalWidget(_ widget: String) -> String {
+        var s = widget
+        for prefix in ["rack::componentlibrary::", "componentlibrary::", "rack::"] {
+            s = s.replacingOccurrences(of: prefix, with: "")
+        }
+        return s.filter { !"<> \t".contains($0) }
+    }
+
+    /// `*Widgets.hpp` beside the file, for modules that reach the library
+    /// through `plugin.hpp` rather than including it directly.
+    static func siblingWidgetLibraries(near url: URL) -> [String] {
+        let dir = url.deletingLastPathComponent()
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []
+        return names.filter { $0.hasSuffix("Widgets.hpp") }
+            .compactMap { try? String(contentsOf: dir.appendingPathComponent($0), encoding: .utf8) }
     }
 
     // MARK: - The comparison
@@ -158,7 +209,7 @@ package enum Compare {
                 out.append(Difference(kind: .role, identifier: item.identifier,
                                       detail: "\(item.role.rawValue) → \(other.role.rawValue)"))
             }
-            if item.widget != other.widget {
+            if canonicalWidget(item.widget) != canonicalWidget(other.widget) {
                 out.append(Difference(kind: .widget, identifier: item.identifier,
                                       detail: "\(item.widget) → \(other.widget)"))
             }

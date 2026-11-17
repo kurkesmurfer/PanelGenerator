@@ -579,7 +579,7 @@ compare again.</p>
 <tr><th>Difference</th><th>Means</th></tr>
 <tr><td>moved</td><td>same identifier, more than the tolerance apart (default 0.01 mm; the three forms round differently, so zero would report everything)</td></tr>
 <tr><td>role</td><td>e.g. input on one side, output on the other: the cable that will not connect</td></tr>
-<tr><td>widget</td><td>a different Rack type or custom class (e.g. a header from before a lamp's colour changed)</td></tr>
+<tr><td>widget</td><td>a different Rack type or custom class (e.g. a header from before a lamp's colour changed). Aliases from the generated <code>&lt;Plugin&gt;Widgets.hpp</code> are resolved and namespaces and angle brackets ignored, so <code>MediumLightYellowLight</code> equals <code>MediumLight&lt;YellowLight&gt;</code></td></tr>
 <tr><td>renamed</td><td>same position, different identifier</td></tr>
 <tr><td>missing / added</td><td>on one side only</td></tr>
 </table>
