@@ -50,8 +50,13 @@ package enum ModuleImport {
             seen.insert(key)
             found.append(u.standardizedFileURL)
         }
-        for u in ((try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? [])
-            .filter(isHeader).sorted(by: { $0.path < $1.path }).prefix(24) { add(u) }
+        // Another module's generated header defines the same `addComponents`
+        // in its own namespace; read only the ones this file includes (found
+        // by the include walk below).
+        let siblings = ((try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? [])
+            .filter { isHeader($0) && !$0.lastPathComponent.hasSuffix("_panel.hpp") }
+            .sorted(by: { $0.path < $1.path })
+        for u in siblings.prefix(24) { add(u) }
 
         // Where an include may live: beside the file, one up, and one level
         // into the parent (src/../widgets) and into the plugin root.

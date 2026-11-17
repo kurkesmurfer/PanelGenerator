@@ -60,8 +60,11 @@ package enum Compare {
             // A document stamps itself, so a header can be checked against the
             // panel it claims to come from and not merely against another file.
             var side = Side(label: name, source: doc.name, digest: CodeGen.digest(doc))
+            // The names the generated enum uses: unnamed components that share
+            // a stem are numbered there (JACK, JACK_2, …), so number them here.
+            let ids = CodeGen.identifiers(doc)
             for el in doc.components {
-                side.items.append(Item(identifier: el.identifierStem + el.role.enumSuffix,
+                side.items.append(Item(identifier: (ids[el.id] ?? el.identifierStem) + el.role.enumSuffix,
                                        role: el.role,
                                        widget: el.widgetClass,
                                        mm: doc.componentCentreMM(el)))
