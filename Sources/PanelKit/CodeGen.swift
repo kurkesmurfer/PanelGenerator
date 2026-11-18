@@ -510,6 +510,7 @@ package enum CodeGen {
         if doc.svgUnits == .pixels {
             out.append("SVG export is in pixels. Rasterisers that read width=\"…mm\" will reject the artwork; Panel ▸ SVG units ▸ Millimetres fixes it.")
         }
+        out += PaperfaceGrid.frameWarnings(doc)
         return out
     }
 

@@ -28,6 +28,10 @@ final class PaletteView: NSView {
     private var collapsed: Set<String>
 
     private static let defaultsKey = "PaletteCollapsedSections"
+    private static let filterKey = "PaletteStyleFilter"
+    /// A design language id, or nil for all of them. Generic is always shown:
+    /// every style is built on its primitives.
+    private var styleFilter: String? = UserDefaults.standard.string(forKey: PaletteView.filterKey)
 
     override var isFlipped: Bool { true }
 
@@ -111,6 +115,40 @@ final class PaletteView: NSView {
         cursorY += 34
     }
 
+    /// "Show: Paperface" — the list holds every style's sections and runs to
+    /// several screens; working in one style, the others are noise.
+    private func filterPopup() {
+        let label = NSTextField(labelWithString: "Show")
+        label.font = NSFont.systemFont(ofSize: 10, weight: .bold)
+        label.textColor = ColorSpec.hex("#9A9AB0").nsColor
+        label.frame = CGRect(x: 10, y: cursorY + 4, width: 36, height: 14)
+        content.addSubview(label)
+        let popup = NSPopUpButton(frame: CGRect(x: 46, y: cursorY, width: 146, height: 22), pullsDown: false)
+        popup.font = NSFont.systemFont(ofSize: 11)
+        popup.controlSize = .small
+        popup.addItem(withTitle: "All styles")
+        popup.lastItem?.representedObject = nil
+        for language in DesignLanguage.all where language.id != Generic.language.id {
+            popup.addItem(withTitle: language.name)
+            popup.lastItem?.representedObject = language.id
+        }
+        if let f = styleFilter, let i = popup.itemArray.firstIndex(where: { ($0.representedObject as? String) == f }) {
+            popup.selectItem(at: i)
+        }
+        popup.toolTip = "Which design language's sections to list. Generic primitives, symbols, text "
+            + "and stamps are always shown."
+        popup.target = self
+        popup.action = #selector(filterChanged(_:))
+        content.addSubview(popup)
+        cursorY += 30
+    }
+
+    @objc private func filterChanged(_ sender: NSPopUpButton) {
+        styleFilter = sender.selectedItem?.representedObject as? String
+        UserDefaults.standard.set(styleFilter, forKey: Self.filterKey)
+        DispatchQueue.main.async { [weak self] in self?.rebuild() }
+    }
+
     @objc private func penTapped() { onPen?() }
     @objc private func editPointsTapped() { onEditPoints?() }
 
@@ -178,11 +216,19 @@ final class PaletteView: NSView {
         content.subviews.forEach { $0.removeFromSuperview() }
         cursorY = 12
 
+        filterPopup()
         drawTools()
 
         // Generic primitives and shapes first, then one section per design
-        // language (Styles/ in PanelKit).
-        for section in DesignLanguage.paletteSections {
+        // language (Styles/ in PanelKit) — the filtered one, or all. The
+        // chosen style's sections come straight after Draw, so they are in
+        // view without scrolling past the primitives.
+        let languages = DesignLanguage.all.filter {
+            styleFilter == nil || $0.id == styleFilter || $0.id == Generic.language.id
+        }
+        let ordered = styleFilter == nil ? languages
+            : languages.filter { $0.id != Generic.language.id } + languages.filter { $0.id == Generic.language.id }
+        for section in ordered.flatMap(\.paletteSections) {
             items(section.title, section.entries.map { ($0.kind, $0.preset, $0.title) })
         }
 

@@ -56,8 +56,14 @@ extension CanvasView {
             let angle = (atan2(dy, dx) / (.pi / 4)).rounded() * (.pi / 4)
             let len = hypot(dx, dy)
             p = CGPoint(x: last.x + cos(angle) * len, y: last.y + sin(angle) * len)
-        } else if snapEnabled && !flags.contains(.option) {
-            p = snappedCenter(p)
+        } else if !flags.contains(.option) {
+            // A point near another element's edge or centre takes that line
+            // (per axis); the grid decides the other axis.
+            let g = snapToElements ? document.guideSnap(point: raw, threshold: guideThreshold) : GuideSnap()
+            if snapEnabled { p = snappedCenter(p) }
+            if let d = g.dx { p.x = raw.x + d }
+            if let d = g.dy { p.y = raw.y + d }
+            activeGuides = (g.dx != nil || g.dy != nil) ? g : nil
         }
         return p
     }

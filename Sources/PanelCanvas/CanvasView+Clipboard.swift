@@ -39,11 +39,20 @@ extension CanvasView {
         let els = clipboardElements
         guard !els.isEmpty else { return }
         var pasted: [PanelElement] = []
+        var newID: [UUID: UUID] = [:]
         for var e in els {
-            e.id = UUID()
+            let fresh = UUID()
+            newID[e.id] = fresh
+            e.id = fresh
             e.x += PanelMetrics.pixelsPerHP
             e.y += PanelMetrics.pixelsPerHP
             pasted.append(e)
+        }
+        // A pasted label whose control was pasted with it belongs to the
+        // copy, not the original: otherwise moving the original control drags
+        // the pasted labels along with it.
+        for i in pasted.indices {
+            if let owner = pasted[i].labelOwner, let copy = newID[owner] { pasted[i].labelOwner = copy }
         }
         // Fresh group IDs here too, or pasting a group would select/move the
         // originals along with the paste.
@@ -73,6 +82,19 @@ extension CanvasView {
         let snapped = snappedCenter(point)
         var els = StampLibrary.instance(of: stamp, at: snapped)
         guard !els.isEmpty else { return false }
+
+        // A stamp built round one control (a Paperface row unit) is placed
+        // by that control: its centre goes on the grid point, and its labels
+        // belong to it, so they keep their slot when it moves.
+        let controls = els.indices.filter { els[$0].role.isComponent }
+        if controls.count == 1 {
+            let c = els[controls[0]]
+            let ddx = snapped.x - c.center.x, ddy = snapped.y - c.center.y
+            for i in els.indices {
+                els[i].x += ddx; els[i].y += ddy
+                if els[i].kind == .text { els[i].labelOwner = c.id }
+            }
+        }
 
         // Shift the whole fragment as one, so a stamp never loses its internal
         // spacing to a clamp.

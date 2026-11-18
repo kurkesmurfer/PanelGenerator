@@ -36,7 +36,7 @@ Every direction of that diagram is implemented:
 
 `Import SVG…` resolves CSS classes, `<use>`/`<symbol>`, clip paths and hidden
 layers, and reports what it cannot draw (masks, filters, patterns); see
-`Docs/IMPORT.md`. `PanelGenerator --import-check <file|folder>` shows what a
+`Docs/Manual.html` §11. `PanelGenerator --import-check <file|folder>` shows what a
 file will import as without opening it. `Scripts/flatten-svg.py` is still
 useful for files that lean on masks or filters.
 

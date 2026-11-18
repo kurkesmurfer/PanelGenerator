@@ -17,7 +17,9 @@ extension PanelDocument {
         out.schemaVersion = Self.currentSchemaVersion
         let enc = JSONEncoder()
         enc.outputFormatting = [.prettyPrinted, .sortedKeys]
-        try enc.encode(out).write(to: url, options: [.atomic])
+        let data = try enc.encode(out)
+        FileCase.prepare(url)
+        try data.write(to: url, options: [.atomic])
     }
 
     package static func load(from url: URL) throws -> PanelDocument {

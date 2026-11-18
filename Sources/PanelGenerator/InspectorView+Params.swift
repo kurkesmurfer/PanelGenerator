@@ -23,13 +23,13 @@ extension InspectorView {
 
                 plabel("Indicator", \.params.knobStyle)
                 let style = NSPopUpButton(frame: .zero, pullsDown: false)
-                style.addItems(withTitles: ["Pointer", "Position ring", "Ring + pointer"])
-                style.selectItem(at: max(0, min(2, Int(el.params.knobStyle.rounded()))))
+                style.addItems(withTitles: ["Pointer", "Position ring", "Ring + pointer", "Scalloped (Paperface)"])
+                style.selectItem(at: max(0, min(3, Int(el.params.knobStyle.rounded()))))
                 style.font = NSFont.systemFont(ofSize: 11)
                 addControl(style, width: 150)
                 handlers.append { sender in
                     guard let p = sender as? NSPopUpButton else { return }
-                    let picked = CGFloat(max(0, min(2, p.indexOfSelectedItem)))
+                    let picked = CGFloat(max(0, min(3, p.indexOfSelectedItem)))
                     weakCanvas?.mutateSelection("Knob Indicator") { $0.params.knobStyle = picked }
                 }
 
@@ -59,6 +59,28 @@ extension InspectorView {
                 handlers.append { [weak self] sender in
                     guard let self, let sl = sender as? NSSlider else { return }
                     self.canvas?.mutateSelection("Fader Value") { $0.params.value = CGFloat(sl.doubleValue) }
+                }
+            }
+            if el.kind == .pushButton {
+                section("Push Button")
+                let weakCanvas = canvas
+                plabel("Style", \.params.switchStyle)
+                let st = NSPopUpButton(frame: .zero, pullsDown: false)
+                st.addItems(withTitles: ["Square cap", "Round (Paperface)"])
+                st.selectItem(at: max(0, min(1, Int(el.params.switchStyle.rounded()))))
+                st.font = NSFont.systemFont(ofSize: 11)
+                addControl(st, width: 150)
+                handlers.append { sender in
+                    guard let p = sender as? NSPopUpButton else { return }
+                    weakCanvas?.mutateSelection("Button Style") { $0.params.switchStyle = CGFloat(p.indexOfSelectedItem) }
+                }
+                plabel("Pressed", \.params.value)
+                let pr = NSButton(checkboxWithTitle: "Show pressed frame", target: nil, action: nil)
+                pr.state = el.params.value >= 0.5 ? .on : .off
+                addControl(pr)
+                handlers.append { sender in
+                    guard let b = sender as? NSButton else { return }
+                    weakCanvas?.mutateSelection("Button Pressed") { $0.params.value = b.state == .on ? 1 : 0 }
                 }
             }
             if el.kind == .buttonGroup {
@@ -104,6 +126,17 @@ extension InspectorView {
                     weakCanvas?.mutateSelection("Switch Position") { $0.params.value = fraction }
                 }
 
+                plabel("Style", \.params.knobStyle)
+                let st = NSPopUpButton(frame: .zero, pullsDown: false)
+                st.addItems(withTitles: ["Buttons", "Toggle (Paperface)"])
+                st.selectItem(at: max(0, min(1, Int(el.params.switchStyle.rounded()))))
+                st.font = NSFont.systemFont(ofSize: 11)
+                addControl(st, width: 150)
+                handlers.append { sender in
+                    guard let p = sender as? NSPopUpButton else { return }
+                    weakCanvas?.mutateSelection("Switch Style") { $0.params.switchStyle = CGFloat(p.indexOfSelectedItem) }
+                }
+
                 plabel("Layout", \.params.layout)
                 let lo = NSPopUpButton(frame: .zero, pullsDown: false)
                 lo.addItems(withTitles: ["Column", "Row", "Cross (4)", "Circular"])
@@ -116,6 +149,22 @@ extension InspectorView {
                         $0.params.layout = CGFloat(p.indexOfSelectedItem)
                     }
                     self?.scheduleRebuild()   // Count enables or disables with it
+                }
+            }
+            if el.kind == .jack || el.kind == .led {
+                section(el.kind == .jack ? "Jack" : "LED")
+                let weakCanvas = canvas
+                plabel("Style", \.params.knobStyle)
+                let style = NSPopUpButton(frame: .zero, pullsDown: false)
+                style.addItems(withTitles: el.kind == .jack ? ["3.5 mm (Rack)", "Banana (Paperface)"]
+                                                           : ["Dome lens", "Ring lamp (Paperface)"])
+                style.selectItem(at: max(0, min(1, Int(el.params.knobStyle.rounded()))))
+                style.font = NSFont.systemFont(ofSize: 11)
+                addControl(style, width: 170)
+                handlers.append { sender in
+                    guard let p = sender as? NSPopUpButton else { return }
+                    let picked = CGFloat(max(0, min(1, p.indexOfSelectedItem)))
+                    weakCanvas?.mutateSelection("Style") { $0.params.knobStyle = picked }
                 }
             }
             if el.kind == .led || el.kind == .jack || el.kind == .screw {
@@ -366,6 +415,30 @@ extension InspectorView {
 
             default:
                 break
+            }
+
+            if el.flipsContent && el.kind != .elbow && el.kind != .swirl {
+                label("Mirror")
+                let halfW = (contentW - labelW) / 2 - 4
+                let fx = makeCheck("Mirror ↔", on: el.params.flipX)
+                let fy = makeCheck("Flip ↕", on: el.params.flipY)
+                fx.frame = CGRect(x: pad + labelW, y: cursorY, width: halfW, height: rowH)
+                fy.frame = CGRect(x: pad + labelW + halfW + 8, y: cursorY, width: halfW, height: rowH)
+                addSubview(fx); addSubview(fy)
+                let weakCanvas = canvas
+                fx.tag = handlers.count
+                fx.target = self; fx.action = #selector(controlAction(_:))
+                handlers.append { sender in
+                    guard let b = sender as? NSButton else { return }
+                    weakCanvas?.mutateSelection("Mirror") { $0.params.flipX = b.state == .on }
+                }
+                fy.tag = handlers.count
+                fy.target = self; fy.action = #selector(controlAction(_:))
+                handlers.append { sender in
+                    guard let b = sender as? NSButton else { return }
+                    weakCanvas?.mutateSelection("Flip") { $0.params.flipY = b.state == .on }
+                }
+                cursorY += rowH + gap
             }
 
         case .text:

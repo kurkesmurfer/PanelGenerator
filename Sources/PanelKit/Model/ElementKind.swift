@@ -133,7 +133,8 @@ package enum ElementKind: String, Codable, CaseIterable {
             return ["VCVSlider", "VCVLightSlider", "BefacoSlidePot",
                     "LEDSliderGreen", "LEDSliderRed"]
         case .led:
-            return ["MediumLight<RedLight>", "SmallLight<GreenLight>",
+            return ["MediumLight<RedLight>", "SmallLight<YellowLight>", "MediumLight<YellowLight>",
+                    "LargeLight<YellowLight>", "SmallLight<GreenLight>",
                     "LargeLight<BlueLight>", "MediumLight<GreenRedLight>",
                     "TinyLight<WhiteLight>"]
         case .pushButton, .buttonGroup:

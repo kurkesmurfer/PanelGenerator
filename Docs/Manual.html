@@ -1,0 +1,668 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PanelGenerator Manual</title>
+<style>
+:root {
+  --bg: #f7f5f0; --fg: #1f1f22; --muted: #5d5d66; --line: #d9d5cc; --card: #ffffff;
+  --accent: #b5502a; --code: #efebe2; --note: #f3ead8; --warn: #f6e1dc;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #18181b; --fg: #e8e6e1; --muted: #a3a1a9; --line: #34343a; --card: #202024;
+          --accent: #f08a5d; --code: #26262b; --note: #2b2720; --warn: #33231f; }
+}
+* { box-sizing: border-box; }
+html { scroll-padding-top: 16px; }
+body { margin: 0; background: var(--bg); color: var(--fg);
+  font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif; }
+.layout { display: grid; grid-template-columns: 250px minmax(0, 1fr); max-width: 1180px; margin: 0 auto; }
+nav { position: sticky; top: 0; height: 100vh; overflow-y: auto; padding: 24px 16px 40px 20px;
+  border-right: 1px solid var(--line); font-size: 13.5px; }
+nav .brand { font-weight: 650; font-size: 15px; margin-bottom: 14px; }
+nav ol { list-style: none; margin: 0; padding: 0; counter-reset: ch; }
+nav li { margin: 2px 0; }
+nav a { color: var(--fg); text-decoration: none; display: block; padding: 3px 8px; border-radius: 5px; }
+nav a:hover { background: var(--code); }
+nav .sub a { padding-left: 22px; color: var(--muted); font-size: 12.5px; }
+main { padding: 32px 48px 80px; min-width: 0; }
+h1 { font-size: 30px; margin: 0 0 6px; letter-spacing: -0.01em; }
+h2 { font-size: 22px; margin: 48px 0 10px; padding-top: 12px; border-top: 1px solid var(--line); }
+h3 { font-size: 17px; margin: 28px 0 8px; }
+h4 { font-size: 15px; margin: 20px 0 6px; }
+p, li { max-width: 74ch; }
+a { color: var(--accent); }
+code, kbd { font: 12.5px/1.4 ui-monospace, "SF Mono", Menlo, monospace; background: var(--code);
+  padding: 1px 5px; border-radius: 4px; }
+kbd { border: 1px solid var(--line); border-bottom-width: 2px; }
+pre { background: var(--code); padding: 12px 14px; border-radius: 8px; overflow-x: auto;
+  font: 12.5px/1.5 ui-monospace, "SF Mono", Menlo, monospace; }
+pre code { background: none; padding: 0; }
+table { border-collapse: collapse; margin: 12px 0 18px; width: 100%; max-width: 860px; font-size: 14px; }
+th, td { text-align: left; vertical-align: top; padding: 7px 10px; border-bottom: 1px solid var(--line); }
+th { font-weight: 600; color: var(--muted); font-size: 12.5px; text-transform: uppercase; letter-spacing: .04em; }
+.lead { font-size: 17px; color: var(--muted); max-width: 70ch; }
+.summary { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 18px 22px; margin: 22px 0; }
+.summary h2 { border: 0; margin: 0 0 8px; padding: 0; font-size: 18px; }
+.facts { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0 0; padding: 0; list-style: none; }
+.facts li { background: var(--code); border-radius: 6px; padding: 4px 10px; font-size: 13px; }
+.note, .warn { border-radius: 8px; padding: 10px 14px; margin: 14px 0; max-width: 78ch; }
+.note { background: var(--note); }
+.warn { background: var(--warn); }
+.note b:first-child, .warn b:first-child { display: block; margin-bottom: 2px; }
+.path { white-space: nowrap; }
+@media (max-width: 860px) {
+  .layout { grid-template-columns: 1fr; }
+  nav { position: static; height: auto; border-right: 0; border-bottom: 1px solid var(--line); }
+  main { padding: 20px 16px 60px; }
+}
+@media print { nav { display: none; } .layout { display: block; } main { padding: 0; } h2 { break-before: page; } }
+</style>
+</head>
+<body>
+<div class="layout">
+<nav>
+  <div class="brand">PanelGenerator Manual</div>
+  <ol>
+    <li><a href="#summary">At a glance</a></li>
+    <li><a href="#run">1 · Install and run</a></li>
+    <li><a href="#window">2 · The window</a></li>
+    <li><a href="#panel">3 · The panel document</a></li>
+    <li><a href="#select">4 · Selecting</a></li>
+    <li><a href="#place">5 · Placing and arranging</a></li>
+    <li class="sub"><a href="#snap">Grids and snapping</a></li>
+    <li class="sub"><a href="#guides">Smart guides</a></li>
+    <li class="sub"><a href="#copy">Copy, duplicate, flip</a></li>
+    <li><a href="#draw">6 · Drawing shapes</a></li>
+    <li><a href="#text">7 · Text, labels and titles</a></li>
+    <li><a href="#components">8 · Components</a></li>
+    <li class="sub"><a href="#switches">Switches</a></li>
+    <li class="sub"><a href="#lights">Lights</a></li>
+    <li><a href="#styles">9 · Design languages</a></li>
+    <li class="sub"><a href="#paperface">Paperface</a></li>
+    <li><a href="#stamps">10 · Stamps</a></li>
+    <li><a href="#import">11 · Importing</a></li>
+    <li><a href="#emit">12 · Exporting and emitting</a></li>
+    <li class="sub"><a href="#wire">Wiring the module</a></li>
+    <li><a href="#compare">13 · Comparing</a></li>
+    <li><a href="#cli">14 · Command line</a></li>
+    <li><a href="#bites">15 · What bites, and limits</a></li>
+    <li><a href="#keys">16 · Keys</a></li>
+    <li><a href="#more">17 · Further reading</a></li>
+  </ol>
+</nav>
+<main>
+
+<h1>PanelGenerator Manual</h1>
+<p class="lead">Designing VCV Rack and MetaModule front panels, and generating the artwork and C++
+that a module compiles against, from one document.</p>
+
+<section class="summary" id="summary">
+<h2>At a glance</h2>
+<p><b>The <code>.panelgen</code> document is the only source.</b> You draw the panel, give each
+control a role and an identifier, and <em>emit</em>: PanelGenerator writes the panel SVG, the artwork
+for any custom widgets, and a C++ header that declares the parameter, input, output and light enums
+and places every control. Artwork and headers are build output: regenerate them, never edit them.
+<code>--compare</code> then proves that the code you build still matches the document.</p>
+<p>Around that loop the editor offers house styles (<b>design languages</b>: Kurkesmurfer, Serge,
+LCARS, Paperface) with their own palettes, grids and title rules; precise placement (grids with half
+positions, smart guides, label slots, numeric centre coordinates); a pen and shape operations;
+light and dark themes; and importers that read an existing panel SVG or a module's C++.</p>
+<ul class="facts">
+  <li>1 HP = 15 px = 5.08 mm</li><li>3U = 380 px = 128.5 mm</li><li>panel pixels are 75 dpi</li>
+  <li>mm → px ×2.953</li><li>SVG exported with sizes in mm</li>
+</ul>
+</section>
+
+<h2 id="run">1 · Install and run</h2>
+<p>PanelGenerator needs macOS 13 or later and the Xcode command line tools.</p>
+<pre><code>make app        # build and assemble PanelGenerator.app, then: open PanelGenerator.app
+make run        # build debug and launch
+make test       # unit tests
+make selftest   # headless render test → Docs/pg_demo.{svg,png}</code></pre>
+<p>The same binary is also the command-line tool (<a href="#cli">§14</a>):
+<code>.build/release/PanelGenerator</code> after <code>make app</code>, or
+<code>.build/debug/PanelGenerator</code>.</p>
+<div class="warn"><b>After a rebuild, quit and reopen the app.</b> A running copy keeps the old
+code. When a new menu item or palette entry is "missing", the window you are looking at was
+started before the build.</div>
+<p><code>.panelgen</code> files open from Finder, by dropping them on the Dock icon, or with
+<code>open -a PanelGenerator file.panelgen</code>. Fonts a plugin bundles in a <code>res/fonts</code>
+folder near the document (beside it, one level up, or one level into the parent) are loaded with
+it for this session, so labels set in them draw in their own face. Nothing is installed.</p>
+
+<h2 id="window">2 · The window</h2>
+<table>
+<tr><th>Area</th><th>What it does</th></tr>
+<tr><td>Palette (left, top)</td><td>Everything you can place, in sections that collapse.
+<b>Show</b> at the top limits the list to one design language's sections (plus the generic
+primitives, symbols, text and stamps that every style uses); the choice is remembered. Drag an
+item onto the panel, or double-click it to drop it in the centre. <b>Draw</b> holds the pen and
+point editing.</td></tr>
+<tr><td>Layers (left, bottom)</td><td>Every element in stacking order, with its role badge;
+select, hide, reorder.</td></tr>
+<tr><td>Canvas (centre)</td><td>The panel. Zoom with <kbd>⌘=</kbd> <kbd>⌘−</kbd>,
+<kbd>⌘0</kbd> actual size, <kbd>⌘9</kbd> fit. View ▸ Theme ▸ Preview: Dark / Light switches
+which theme the canvas shows.</td></tr>
+<tr><td>Inspector (right)</td><td>The panel's settings when nothing is selected
+(<a href="#panel">§3</a>); otherwise the selected element: centre and corner position, size,
+rotation, fill, stroke, its component binding, and the parameters of its kind. With several
+elements selected, every edit applies to all of them; a field label marked <b>≠</b> means the
+selection disagrees on that value.</td></tr>
+</table>
+<p>Position fields: <b>CX/CY</b> are the centre, <b>X/Y</b> the top-left corner, <b>W/H</b> the
+size. They are in panel pixels with two decimals, or in millimetres with three after
+View ▸ Inspector in Millimetres. Type any value; fractions are kept.</p>
+
+<h2 id="panel">3 · The panel document</h2>
+<p>File ▸ New Panel. With nothing selected the inspector shows the Panel section:</p>
+<table>
+<tr><th>Field</th><th>Meaning</th></tr>
+<tr><td>Name</td><td>The document's name, shown in reports.</td></tr>
+<tr><td>Style</td><td>The design language (<a href="#styles">§9</a>). <i>Auto</i> recognises a
+Paperface panel by its face colour, grid settings or cells; anything else is generic. The style
+decides how the module title is drawn.</td></tr>
+<tr><td>Title</td><td>The module title, drawn by the style's rules at a fixed height and centred,
+so it sits identically on every module of a series (<a href="#title">§7</a>).</td></tr>
+<tr><td>Width (HP), Height</td><td>Width in HP; height 3U or 1U.</td></tr>
+<tr><td>Background</td><td>The panel colour (the dark variant when themed).</td></tr>
+<tr><td>Theme: Light variant</td><td>Gives the panel a light background and the two ink colours:
+<b>Ink (dark)</b> for text on the dark face, <b>Ink (light)</b> on the light one. Emit then writes
+both <code>&lt;slug&gt;.svg</code> and <code>&lt;slug&gt;-light.svg</code>.</td></tr>
+<tr><td>Plugin slug</td><td>From <code>plugin.json</code>. Names the shared widget library and its
+namespace: one per repository.</td></tr>
+<tr><td>Module slug</td><td>From <code>createModel&lt;…&gt;("…")</code>. Names this panel's
+<code>res/&lt;slug&gt;.svg</code>, its <code>&lt;Slug&gt;_panel.hpp</code> and its namespace.</td></tr>
+<tr><td>Widget ns</td><td>Optional namespace for the generated custom widgets.</td></tr>
+<tr><td>SVG units</td><td>Millimetres (default) writes <code>width="…mm"</code>, which MetaModule's
+rasterisers need; Pixels writes the old form.</td></tr>
+<tr><td>Text: Export as outlines</td><td>Keep on for Rack: its SVG parser drops
+<code>&lt;text&gt;</code>. Off only to hand editable text to Illustrator or Inkscape.</td></tr>
+</table>
+<div class="note"><b>Slugs use underscores.</b> A slug names a file verbatim and the C++
+identifiers derived from it, where a hyphen is not legal. The field corrects spaces as you type and
+previews what each slug will name.</div>
+<p><b>Where to keep it:</b> in a <code>panels/</code> folder inside the plugin's own repository,
+named after the module slug: <code>panels/Muse.panelgen</code> pairs with
+<code>Muse_panel.hpp</code>. The check in <a href="#compare">§13</a> relies on that pairing.</p>
+<h3>Theme colours on elements</h3>
+<p>Each element's <b>Theme</b> row has two switches. <b>Follows panel ink</b> draws it in the
+current ink, so a label reads white on the dark face and black on the light one; for a
+stroke-only element (a line, a Paperface glyph) it is the line that follows. <b>Follows panel
+background</b> fills it with the panel colour, for a shape that masks what lies behind it; its
+line keeps its own colour. Paperface labels, titles and Paris glyphs follow the ink by default.</p>
+
+<h2 id="select">4 · Selecting</h2>
+<ul>
+<li><b>Click</b> picks what a click means, not merely what is on top: a control before a label,
+a label or glyph before a filled shape, a filled shape before an outline. An outline-only shape
+(a Paperface cell, dome or diamond, a delineation box, a line) responds only near its line, so the
+jack inside a cell is simply the jack.</li>
+<li><b>⌥-click</b> on the same spot steps through everything under the pointer.</li>
+<li><b>⇧-click</b> or <b>⌘-click</b> adds to or removes from the selection. Clicking a member of a
+group selects the whole group.</li>
+<li><b>Drag on empty canvas</b> draws a marquee. It takes everything it touches; with
+Edit ▸ Select ▸ Marquee Selects Enclosed Only it takes only what lies entirely inside.</li>
+</ul>
+<h3>Edit ▸ Select</h3>
+<table>
+<tr><th>Command</th><th>Keys</th><th>Does</th></tr>
+<tr><td>Only Controls / Only Decoration / Only Labels</td><td><kbd>⌥⌘1</kbd> <kbd>⌥⌘2</kbd> <kbd>⌥⌘3</kbd></td>
+<td>Narrows the selection (or the whole panel when nothing is selected) to that kind.</td></tr>
+<tr><td>Same Kind / Same Name / Same Style</td><td></td><td>Selects everything like what is
+selected. Style is kind, fill, stroke and line width: "every grey outline like this one".</td></tr>
+<tr><td>Select…</td><td><kbd>⌘F</kbd></td><td>By kind, role and "name or label text contains";
+within the selection, or the whole panel.</td></tr>
+</table>
+<p>Then set colours, line widths or fonts once in the inspector for all of them.</p>
+
+<h2 id="place">5 · Placing and arranging</h2>
+<p>Drag to move; arrow keys nudge by one pixel, <kbd>⇧</kbd>+arrow by the snap step. The blue ↻
+badge above a selection rotates it (<kbd>⇧</kbd> snaps 15°). A dragged selection snaps once, by
+the element you grabbed, and everything moves by that same amount: internal distances never change,
+so grab a collection by one of its controls to put that control on the grid.</p>
+
+<h3 id="snap">Grids and snapping</h3>
+<p><kbd>⇧⌘G</kbd> toggles snapping. View ▸ Snap Step chooses the grid; the grid's points are drawn
+on the canvas while snapping is on. Placement and moving snap element <em>centres</em>; resize
+handles snap edges.</p>
+<table>
+<tr><th>Grid</th><th>For</th></tr>
+<tr><td>Uniform steps (1 px … 1 HP)</td><td>Plain pixel or HP raster.</td></tr>
+<tr><td>Serge Grid</td><td>Serge's five rows (27.2, 48.2, 69.2, 90.2, 111.2 mm), 63 px columns, half
+rows and half columns between them. <b>Serge Grid: Outer Half-Step</b> adds one half row beyond
+the top and bottom rows (also used by the Paperface grid).</td></tr>
+<tr><td>Custom Grid…</td><td>An N × M division of the panel, with optional half and quarter positions.</td></tr>
+<tr><td>Paperface Grid</td><td>Six rows with half rows, columns a whole number of HP apart, quarter
+positions and frame lines (<a href="#paperface">§9</a>). Opens automatically for a Paperface panel.</td></tr>
+</table>
+<p>Half positions are offered on every row, including a half column on a main row: panels put lamps
+and small jacks there.</p>
+
+<h3 id="guides">Smart guides</h3>
+<p>The edges and centres of every other visible element, and the panel's edges and centre lines,
+are guide lines (View ▸ Snap to Elements). A dragged selection's edges or centre, a resized edge, or
+a pen point within 6 screen pixels of one locks to it on that axis, ahead of the grid; the lines
+that caught show in magenta. On a Paperface panel the frame lines are guides too.</p>
+
+<h3 id="copy">Copy, duplicate, flip</h3>
+<table>
+<tr><th>Command</th><th>Keys</th><th>Does</th></tr>
+<tr><td>Copy / Paste</td><td><kbd>⌘C</kbd> <kbd>⌘V</kbd></td><td>Pastes 1 HP right and down,
+not snapped; drag it by a control onto the grid. Labels pasted with their control belong to the copy.</td></tr>
+<tr><td>Duplicate</td><td><kbd>⌘D</kbd></td><td>A copy beside the original.</td></tr>
+<tr><td>Duplicate Down… / Right…</td><td><kbd>⇧⌘D</kbd></td><td>A copy whole rows or columns of the
+active grid away, exactly on the grid, selected. The count is remembered; on the Paperface grid the
+default is 3 rows, one section. Identifiers of the copy are cleared.</td></tr>
+<tr><td>Flip Horizontal / Vertical</td><td><kbd>⇧⌘H</kbd> <kbd>⇧⌘V</kbd></td><td>Mirrors the
+selection as one piece about its own centre. Decorations mirror their drawing (also the Mirror ↔ /
+Flip ↕ boxes in the inspector); controls keep their artwork and text stays readable.</td></tr>
+<tr><td>Replace With</td><td><kbd>⌘</kbd>-drop</td><td>Hold ⌘ while dropping a palette item onto a
+control (or Edit ▸ Replace With) to swap its kind. It keeps id, centre, rotation, identifier, role,
+label binding and group.</td></tr>
+<tr><td>Bring to Front / Send to Back</td><td></td><td>Stacking order.</td></tr>
+<tr><td>Insert Corner Screws</td><td></td><td>All four screws. Screws are decoration.</td></tr>
+<tr><td>Fit to Panel…</td><td></td><td>Brings controls back inside the edges after narrowing a panel.</td></tr>
+</table>
+<div class="note"><b>Something you can select but not move</b> is a tracing template (imported as an
+underlay, drawn faint). Select it in the layer list and use Make Editable in the inspector to turn
+it into artwork. Emit warns about templates left in a document.</div>
+
+<h2 id="draw">6 · Drawing shapes</h2>
+<p>The palette's shape sections hold boxes with per-corner radii (pills, capsules, notched
+brackets), ellipses, triangles, LCARS elbows and swirls, ring sectors, lines and symbols.</p>
+<ul>
+<li><b>Pen</b> (<kbd>P</kbd> on the canvas, or Draw ▸ Pen): click for corners, drag for curves,
+click the first point to close a filled shape, <kbd>Return</kbd> to finish an open line,
+<kbd>Esc</kbd> when done. Points snap to the grid and to smart guides; <kbd>⌥</kbd> places freely,
+<kbd>⇧</kbd> constrains to 45°.</li>
+<li><b>Edit points</b>: double-click a freeform shape, or <kbd>Return</kbd> with it selected. Drag
+points or handles, click the outline to add a point, <kbd>⌫</kbd> to delete, double-click a point
+to switch corner/smooth. It is a mode: click outside, or <kbd>Esc</kbd>, to leave it.</li>
+<li><b>Edit ▸ Shape</b>: Combine, Subtract Front from Back, Intersect and Exclude Overlap on selected shapes; Convert to
+Freeform Shape (boxes, ellipses, elbows, ring sectors, text); Outline Stroke turns a line into a
+filled outline.</li>
+</ul>
+
+<h2 id="text">7 · Text, labels and titles</h2>
+<h3>Text</h3>
+<p>A text element's inspector has <b>Content</b>, <b>Font</b> (System or any installed or
+plugin-bundled family) and <b>Style</b> (its weights), <b>Size</b>, <b>Tracking</b> (extra space
+after each letter, in panel px, as nanoVG's letter spacing), and <b>Bold</b> for the system font.
+A face the document names but this Mac lacks is shown as "(missing)" and drawn in the system font.
+<code>{ka}</code>, <code>{ru}</code>, <code>{te}</code> … inside the text place a glyph inline.</p>
+<p>Labels are artwork, not identifiers: what is drawn on the panel never reaches the code.</p>
+
+<h3>Labels that belong to a control</h3>
+<ul>
+<li><b>Label Selection…</b> <kbd>⌘L</kbd> makes a label for every selected control from its name,
+in one size; the new labels stay selected so Size resizes them together.</li>
+<li><b>Name from Labels</b> <kbd>⇧⌘L</kbd> does the reverse: each control takes the nearest label
+within 8 mm as its identifier.</li>
+<li><b>Label slots.</b> A label that belongs to a control snaps to fixed slots measured from the
+control's <em>centre</em>, so labels under a jack and a knob line up whatever their sizes: 7.1 mm
+below or above, 2.8 mm further for each extra line, 5.5 mm to the side (Edit ▸ Label Slots… to
+change). A label dragged within 3 mm of a slot locks to it; elsewhere the grid applies.</li>
+<li>Labels move with their control, when dragged and when nudged.</li>
+<li><b>Attach Labels to Controls</b> ties selected labels to their nearest control (or to the one
+control in the selection) and puts them on a slot; <b>Snap Labels to Slots</b> moves owned labels
+onto slots; <b>Detach Labels</b> unties them.</li>
+</ul>
+
+<h3 id="title">The module title</h3>
+<p>The title is a property of the panel (Panel ▸ Title), not an element you place. The design
+language draws it, centred, at a fixed height, so every module of a series has its title in the same
+place and nobody can nudge it out of line.</p>
+<table>
+<tr><th>Style</th><th>Title</th></tr>
+<tr><td>Paperface</td><td>Futura Medium capitals, cap height 2.0 mm, centre of the capitals 4.9 mm
+from the top (measured on the reference panels).</td></tr>
+<tr><td>Kurkesmurfer, Serge</td><td>SpaceTime's header: the Kurkesmurfer logo (5.2 mm tall), a 1.2 mm
+gap, the title in Fraunces SemiBold; logo and title centred together on a line 5.8 mm down.</td></tr>
+<tr><td>LCARS, Generic</td><td>A plain bold title centred 5.4 mm down.</td></tr>
+</table>
+<p>It follows the theme's ink and appears on the canvas, in PNGs and in the exported SVG.
+<b>Edit ▸ Make Module Title</b> converts a title drawn by hand: select the label (and the logo next to
+it) and the text moves into the Title field.</p>
+
+<h2 id="components">8 · Components</h2>
+<p>Every element carries a component binding: a <b>role</b>, an <b>identifier</b>, and where its
+artwork comes from.</p>
+<table>
+<tr><th>Role</th><th>Becomes</th></tr>
+<tr><td>Decoration</td><td>Artwork. Drawn into the panel SVG; never reaches the code.</td></tr>
+<tr><td>Param / Input / Output / Light</td><td>A Rack widget placed by the generated header, with an
+entry in the matching enum. Left out of the panel artwork, because Rack draws it on top.</td></tr>
+<tr><td>Custom</td><td>A widget of your own class.</td></tr>
+</table>
+<h3>Three things called "name"</h3>
+<table>
+<tr><th>Where</th><th>Field</th><th>What it is</th></tr>
+<tr><td>Component section</td><td>Identifier</td><td><code>QUANT</code> → <code>QUANT_PARAM</code> in the generated enum</td></tr>
+<tr><td>Text element</td><td>Content</td><td>the words drawn on the panel</td></tr>
+<tr><td>Layer list</td><td>layer name</td><td>organisational; feeds the identifier only when Identifier is empty</td></tr>
+</table>
+<p>A fully labelled panel can have every control unnamed. Give each control its role, then its
+identifier: by hand, with Name from Labels <kbd>⇧⌘L</kbd>, or with <b>Adopt Identifiers…</b>, which
+copies identifiers from another <code>.panelgen</code> or a module's <code>.cpp</code> by matching the
+label beside each control and its role (exact, then punctuation-insensitive, then by a shared leading
+run of at least three characters; loose matches are reported). That is what a redesign needs: the same
+controls in a new layout.</p>
+<div class="note"><b>Identifiers are numbered per enum, not per panel.</b> ParamId, InputId, OutputId
+and LightId are separate, so <code>ANIMATE_PARAM</code> and <code>ANIMATE_INPUT</code> are not a
+clash.</div>
+<h3>Rack type or your own artwork</h3>
+<ul>
+<li><b>Rack default</b> (<i>Artwork: Rack default</i>, <i>Rack type</i>): Rack draws its own widget
+and takes the size from its own SVG, so the element on the canvas is a placement guide. The importer
+sizes imported widgets from Rack's ComponentLibrary when Rack is installed.</li>
+<li><b>Custom</b> (<i>Custom struct</i>): PanelGenerator draws the widget and writes its artwork to
+<code>res/components/</code>; the size you draw is the size in Rack. Knobs get a background and a
+rotating foreground (<code>-bg</code>/<code>-fg</code>), switches one file per position, ports one file.</li>
+<li><b>Bind Primitives as Components</b> gives every jack, knob, LED and button in the selection the
+role its kind implies.</li>
+<li><b>Make Widget from Selection…</b> turns a group of shapes into one composed custom widget
+(mark the parts that turn with <i>Rotates with value</i>).</li>
+</ul>
+
+<h3 id="switches">Switches</h3>
+<p>Rack draws switches and buttons with <code>app::SvgSwitch</code>, which holds one SVG per position
+and picks one by parameter value; a button is the two-position case. A custom switch is exported
+once per position with the bat or cap moved; <b>Position</b> in the inspector shows each. Two
+things fail quietly:</p>
+<ul>
+<li><b>momentary</b> belongs only to a button. A three-way switch declared momentary snaps back to
+position 0.</li>
+<li><b>The parameter range lives in the module.</b> Three frames with the parameter still 0…1 reach
+only two of them. The generated code carries the call to place, e.g.
+<code>configSwitch(GATE_MODE_PARAM, 0.f, 2.f, 0.f, "Mode", {"DC", "AC", "MOD"});</code></li>
+</ul>
+<p>The positions you draw and the Rack type you bind must agree: a three-position group bound to
+<code>VCVButton</code> is a two-position momentary button in Rack. Check Panel for Issues warns.</p>
+
+<h3 id="lights">Lights</h3>
+<p>An LED left on the default type is exported as the Rack light nearest what you drew: size Tiny,
+Small, Medium or Large (1.1 / 2.2 / 3.2 / 5.2 mm) and colour White, Red, Green, Blue or Yellow. The
+inspector shows it as <i>Auto — MediumLight&lt;YellowLight&gt;</i>; choose a type to fix it, and
+Auto to go back.</p>
+
+<h2 id="styles">9 · Design languages</h2>
+<p>A design language is a house style: palette sections, swatches, presets, and the rules for the
+module title. The panel's <b>Style</b> picks one; the palette's <b>Show</b> lists its sections.</p>
+<table>
+<tr><th>Language</th><th>Brings</th></tr>
+<tr><td>Generic</td><td>Primitives (jacks, knobs with or without a position ring, faders, LEDs,
+buttons, button groups, screws), the shape kit, symbols, text.</td></tr>
+<tr><td>Kurkesmurfer</td><td>Delineations and line work; the logo and wordmark stamps; the logo-and-title lockup.</td></tr>
+<tr><td>Serge</td><td>Delineations, notched brackets, knob-to-jack connectors; the Serge grid; the
+Kurkesmurfer title height for now.</td></tr>
+<tr><td>LCARS</td><td>Elbows, swirls, ring sectors and the Okudagram swatches.</td></tr>
+<tr><td>Paperface</td><td>Below.</td></tr>
+</table>
+
+<h3 id="paperface">Paperface</h3>
+<p>After the Serge Paperface 50 panels (Helios, Paris Flash, Tempo di Roma), scaled to 3U. All
+measurements are in <code>Docs/PAPERFACE.md</code>.</p>
+<h4>Palette</h4>
+<ul>
+<li><b>Hardware:</b> banana jacks by signal colour (white CV, black audio, red trigger/logic, purple
+sync, grey special), the scalloped knob, lamps (Small = Paris 3.2 mm, Rack Medium; Large = Helios
+5.2 mm, Rack Large; both yellow), a plain screw, and the bat <b>toggle</b> in 3-way (DC / AC / MOD)
+and 2-way versions. The toggle is a custom switch, <code>PaperfaceToggle3</code> /
+<code>PaperfaceToggle2</code>, emitted once into the plugin's widget library with one drawing per
+position (up, end-on, down; value 0 is up). The round red <b>push button</b> (9.2 mm bezel, 5.7 mm cap, as on Tempo di Roma) is the momentary <code>PaperfacePushButton</code> with two frames, released and pressed; any push button can take the look via its Style popup.</li>
+<li><b>Cells:</b> cell, dome (attenuator), roof (pot), scale − +, label strip, funnel (input),
+diamond (output), arrow, connector. They stretch with their frame and keep their line weight; their
+default height is what each takes in one row.</li>
+<li><b>Glyphs and text:</b> the Helios glyphs (sine, saw, square; line grey) and the Paris glyphs
+(rise, fall, pulse, inverted pulse, attack/decay; ink, thin); a label and a section title.</li>
+<li><b>Row units</b> under Stamps ▸ Paperface: Pot, Attenuator, Output, Input, Trigger. A control
+with its row's decoration; dropped by the control onto the grid, labels attached.</li>
+</ul>
+<h4>Grid</h4>
+<p>Six object rows at 15.5 mm + 19.25 mm (measured), the half rows between them (where the cell
+lines fall, and where the third 1V/O jack or a START jack sits), columns a whole number of HP apart:
+4 HP (20.32 mm) by default, so an n-column module is exactly n × 4 HP. View ▸ Snap Step ▸ Paperface
+Grid Settings… sets the first row, row pitch (mm, or px with a "px" suffix), row count, column HP
+and quarter positions per document.</p>
+<h4>Rows and sections</h4>
+<p>A row's decoration ends on the half row below its control (+9.625 mm): dome −7.0…+4.6 mm, scale
++6.2…+9.625, roof −9.625…+4.6, label strip +6.0…+9.625, cell and diamond one full row. Three rows make
+one section (57.75 mm); copy a section with <kbd>⇧⌘D</kbd>, 3 rows.</p>
+<h4>Frame</h4>
+<p>The artwork runs from the top line at 8.6 mm (first row − 6.9, the title strip above) to the
+bottom line at 121.375 mm (last row + half a row); a six-row panel has the double line between its
+sections at 63.625 / 66.35 mm. The lines are drawn green with the grid and are snap targets.
+<b>Edit ▸ Fit Artwork to Frame</b> snaps cell edges within 3 mm onto them (selection or whole panel),
+and the export report warns about cells outside the frame.</p>
+
+<h2 id="stamps">10 · Stamps</h2>
+<p>Fragments every panel of yours repeats: a logo, a wordmark, a jack pair with its labels, a
+Paperface row unit. Select, then <b>Edit ▸ Add Selection to Palette…</b> and name it; it appears under
+Stamps and drops like any palette item. A stamp carries shapes, sizes and colours, never identity:
+identifiers, groups and label bindings are stripped, so two panels never claim the same enum name.
+Each drop gets fresh ids and one group. A stamp built round one control is placed by that control,
+and its labels attach to it.</p>
+<p>Stamps live in <span class="path"><code>~/Library/Application Support/PanelGenerator/Stamps</code></span>
+as plain JSON, subfolders becoming palette sections. Edit ▸ Reveal Palette Stamps in Finder, then
+Reload Palette Stamps after changes. The ones in the repository's <code>Stamps/</code> folder are
+installed on first launch and never overwrite yours.</p>
+
+<h2 id="import">11 · Importing</h2>
+<h3>A panel SVG: File ▸ Import SVG… <kbd>⌘I</kbd></h3>
+<ul>
+<li><b>As a tracing template:</b> drawn faint and locked, to draw over.</li>
+<li><b>As editable artwork:</b> paths, rectangles, circles and text become elements you own. A
+helper.py components layer brings its components (circles classified by fill, named through
+<code>data-name</code>, optional <code>#WidgetClass</code>).</li>
+</ul>
+<p>Read: CSS in <code>&lt;style&gt;</code> and class attributes, <code>&lt;use&gt;</code> and
+<code>&lt;symbol&gt;</code>, clip paths, even-odd fills, hidden layers (components often live in one).
+Gradients become their average colour. Units come from the width attribute (a Rack panel's viewBox is
+in millimetres); a file without one is assumed pixels, and the report says so. Not read: embedded
+rasters, masks; multi-line text split over positioned <code>&lt;tspan&gt;</code>s arrives as one line.
+Text arrives as outlines.</p>
+<h3>A module's C++: File ▸ Import Module Code… <kbd>⌥⌘I</kbd></h3>
+<p>Reads a <code>ModuleWidget</code> constructor and rebuilds its components (positions, identifiers,
+widget types, switch positions) and the panel SVG it names, as artwork. It follows the source's
+quoted <code>#include</code>s into the plugin (a <code>widgets/</code> folder beside <code>src/</code>
+is found), evaluates constants, arrays, locals and loops, expands the plugin's own inline helpers that
+place controls or labels, reads labels from helper calls (with their size, font and letter spacing,
+loading the plugin's font files) and from constant string arrays, handles <code>Vec.plus()</code> /
+<code>.minus()</code>, sizes widgets from Rack's ComponentLibrary or the plugin's own SVGs, and takes
+the plugin slug from <code>plugin.json</code>. Anything it skipped is reported by line number.</p>
+<div class="note"><b>Centered is not decoration.</b> <code>createParamCentered&lt;T&gt;(pos…)</code>
+takes a centre; <code>createParam&lt;T&gt;(pos…)</code> a top-left corner. The offset is the widget's
+own size; when the importer cannot find it, the control is placed at the corner and listed.</div>
+<p>Reports open in a window you can edit, copy and save; File ▸ Show Last Report reopens the last one.
+From the command line: <code>--import-check</code> reports what a file or folder would import as,
+<code>--import-module</code> builds a document from a module's C++ (<a href="#cli">§14</a>).</p>
+
+<h2 id="emit">12 · Exporting and emitting</h2>
+<h3>From the editor</h3>
+<ul>
+<li><b>File ▸ Export SVG…</b> <kbd>⌘E</kbd>: the panel artwork, plus <code>&lt;name&gt;-components.svg</code>,
+a positions file in the shape helper.py expects.</li>
+<li><b>File ▸ Export PNG…</b> <kbd>⇧⌘E</kbd>: the panel at 4×.</li>
+<li><b>File ▸ Export Widget Code…</b> <kbd>⌥⌘E</kbd>: the C++ for this panel.</li>
+<li><b>File ▸ Check Panel for Issues…</b>: the warnings an export would give (default plugin slug,
+switches whose positions do not match their Rack type, artwork outside a Paperface frame, templates
+left in, pixel units…).</li>
+</ul>
+<h3>Emit: one command for a plugin</h3>
+<pre><code>PanelGenerator --emit &lt;document|folder&gt; &lt;plugin dir&gt; [--theme dark|light|both]</code></pre>
+<p>A folder emits every panel in it. Artwork goes to <code>res/</code> under the output directory;
+headers to <code>src/</code> when it exists, else beside <code>res/</code>. Run it from the plugin root
+so nothing needs copying afterwards.</p>
+<table>
+<tr><th>File</th><th>Owner</th><th>What</th></tr>
+<tr><td><code>panels/*.panelgen</code></td><td>you</td><td>the source</td></tr>
+<tr><td><code>res/&lt;Slug&gt;.svg</code> (+ <code>-light.svg</code>)</td><td>generated</td><td>panel artwork, both themes when the panel is themed</td></tr>
+<tr><td><code>res/&lt;Slug&gt;-components.svg</code></td><td>generated</td><td>helper.py positions layer</td></tr>
+<tr><td><code>res/components/&lt;widget&gt;-*.svg</code></td><td>generated</td><td>custom widget artwork</td></tr>
+<tr><td><code>&lt;Plugin&gt;Widgets.hpp</code></td><td>generated</td><td>widget classes, aliases to Rack's stock widgets</td></tr>
+<tr><td><code>&lt;Module&gt;_panel.hpp</code></td><td>generated</td><td>the four enums, positions, <code>addComponents()</code></td></tr>
+<tr><td><code>&lt;Plugin&gt;WidgetBase.hpp</code></td><td>written once, then yours</td><td>bases every generated widget derives from (<code>KnobBase</code>, <code>PortBase</code>, <code>SwitchBase</code>, <code>SliderBase</code>, <code>PlainBase</code>): theme, shadow, hover go here. Delete it for a fresh one.</td></tr>
+<tr><td><code>&lt;Module&gt;.cpp</code>, <code>plugin.json</code></td><td>you</td><td>sound and registration</td></tr>
+</table>
+<p><b>The widget library belongs to the plugin, not the module.</b> Two modules using the same jack
+must compile to one class loading one SVG, so emit builds the library from every panel of that plugin
+it finds: those in this run plus sibling documents with the same plugin slug. File names come from the
+widget class, never the instance. A panel still on the default <code>MyPlugin</code> slug groups with
+every other panel on that default: set it.</p>
+<p>Commit the generated files with the document: a contributor without PanelGenerator can still build,
+and the header's diff records what moved. For MetaModule, the same sources compile through the SDK's
+rack adaptor; mirror <code>res/</code> into the MetaModule assets as PNGs (the component SVGs carry
+<code>width="…mm"</code>, which the scripts require).</p>
+<pre><code>PANELGEN ?= $(HOME)/Development/PanelGenerator/.build/release/PanelGenerator
+PANELS   ?= panels
+
+panels:            # regenerate artwork, widget library and headers
+	$(PANELGEN) --emit $(PANELS) .
+
+check-panels:      # fail when a panel was edited and nobody re-emitted
+	@set -e; for p in $(PANELS)/*.panelgen; do \
+		$(PANELGEN) --compare "$$p" "$$(basename "$$p" .panelgen)_panel.hpp" --no-labels; \
+	done</code></pre>
+
+<h3 id="wire">Wiring the module</h3>
+<p><b>Delete the module's own enum.</b> <code>addComponents()</code> places against the enum in
+<code>&lt;Module&gt;_panel.hpp</code>, whose order is the panel's reading order. A module that keeps
+its own <code>enum ParamId</code> compiles cleanly and binds every control to the wrong parameter.</p>
+<pre><code>#include "plugin.hpp"
+#include "Muse_ND_panel.hpp"
+using namespace Muse_NDPanel;          // ids unqualified, as Rack code expects
+
+struct MuseND : Module {
+    MuseND() {
+        config(PARAMS_LEN, INPUTS_LEN, OUTPUTS_LEN, LIGHTS_LEN);
+        configSwitch(QUANT_PARAM, 0.f, 2.f, 0.f, "Quant", {"Free", "JI", "Octave"});
+    }
+    void process(const ProcessArgs&amp; args) override { /* yours */ }
+};
+
+struct MuseNDWidget : ModuleWidget {
+    MuseNDWidget(MuseND* module) {
+        setModule(module);
+        addComponents(this, module);
+    }
+};</code></pre>
+
+<h2 id="compare">13 · Comparing</h2>
+<p>A panel exists in three forms at once: the document, the exported artwork and the module's C++,
+and nothing stops them drifting apart. <code>--compare</code> checks that two of them agree.</p>
+<pre><code>PanelGenerator --compare &lt;a&gt; &lt;b&gt; [--tolerance &lt;mm&gt;] [--no-labels]
+make compare A=&lt;file&gt; B=&lt;file&gt; [TOL=&lt;mm&gt;] [NOLABELS=1]</code></pre>
+<h3>What each side can be</h3>
+<p>Each side is reduced to its components (identifier, role, widget type, centre in mm) and, where
+the file has them, its labels. Any two can be paired.</p>
+<table>
+<tr><th>File</th><th>What is read</th><th>Labels</th></tr>
+<tr><td><code>.panelgen</code></td><td>components and text labels in the document</td><td>yes</td></tr>
+<tr><td><code>.cpp</code> / <code>.hpp</code></td><td>the <code>create…</code> calls of a generated <code>_panel.hpp</code> or a hand-written module, plus label helper calls</td><td>hand-written: yes; generated: no</td></tr>
+<tr><td><code>.svg</code></td><td>the components layer only (e.g. <code>NegativeSlew-components.svg</code>), not the artwork</td><td>no</td></tr>
+</table>
+<p>Useful pairs: <b>document ↔ generated header</b> (is the code I build current?),
+<b>document ↔ hand-written module</b> (does my redraw match the module?), <b>document ↔ components
+SVG</b>, and <b>two documents</b> (what moved between versions?).</p>
+<div class="warn"><b>Use <code>--no-labels</code> whenever one side is generated code or an SVG.</b>
+PanelGenerator draws labels into the artwork, not into the code, so otherwise every label is reported
+missing and the comparison fails on labels alone.</div>
+<h3>Reading the report</h3>
+<p>First line under the header: both files carry a provenance digest
+(<code>// PanelGenerator-Source: Muse ND · 25 components · digest 4717c5f5</code>), computed over
+identifier, role, widget type and position, not colours. If it says <b>DIFFERENT PANELS</b>, one file
+is stale or from another panel, and the differences below say nothing about a fault: re-emit and
+compare again.</p>
+<table>
+<tr><th>Difference</th><th>Means</th></tr>
+<tr><td>moved</td><td>same identifier, more than the tolerance apart (default 0.01 mm; the three forms round differently, so zero would report everything)</td></tr>
+<tr><td>role</td><td>e.g. input on one side, output on the other: the cable that will not connect</td></tr>
+<tr><td>widget</td><td>a different Rack type or custom class (e.g. a header from before a lamp's colour changed). Aliases from the generated <code>&lt;Plugin&gt;Widgets.hpp</code> are resolved and namespaces and angle brackets ignored, so <code>MediumLightYellowLight</code> equals <code>MediumLight&lt;YellowLight&gt;</code></td></tr>
+<tr><td>renamed</td><td>same position, different identifier</td></tr>
+<tr><td>missing / added</td><td>on one side only</td></tr>
+</table>
+<p>Anything a reader could not resolve is listed as a <b>note</b>, not a difference: skipped is not
+absent.</p>
+<table>
+<tr><th>Ends with</th><th>Exit</th><th>Means</th></tr>
+<tr><td><code>COMPARE OK — the two agree.</code></td><td>0</td><td>no differences</td></tr>
+<tr><td><code>COMPARE FAILED — N differences.</code></td><td>1</td><td>the comparison ran; read the list above it</td></tr>
+<tr><td><code>COMPARE FAILED: &lt;reason&gt;</code></td><td>2</td><td>a file could not be read (missing, unknown type, does not parse)</td></tr>
+</table>
+<p>For a change to PanelGenerator itself, the round trip is the strongest test:
+<code>make selftest</code>, then emit a document and compare it with its own generated header.</p>
+
+<h2 id="cli">14 · Command line</h2>
+<table>
+<tr><th>Command</th><th>Does</th></tr>
+<tr><td><code>PanelGenerator</code></td><td>the editor</td></tr>
+<tr><td><code>--emit &lt;doc|folder&gt; [dir] [--theme dark|light|both]</code></td><td>artwork, widget library and headers (<a href="#emit">§12</a>)</td></tr>
+<tr><td><code>--compare &lt;a&gt; &lt;b&gt; [--tolerance mm] [--no-labels]</code></td><td>do two forms agree (<a href="#compare">§13</a>)</td></tr>
+<tr><td><code>--png &lt;doc&gt; &lt;out.png&gt; [scale] [--theme light]</code></td><td>the panel as a PNG, in either theme (default scale 4)</td></tr>
+<tr><td><code>--icon &lt;doc&gt; &lt;out.png&gt; [size]</code></td><td>the panel as a square app icon</td></tr>
+<tr><td><code>--import-check &lt;svg|cpp|folder&gt; [png dir]</code></td><td>what each file imports as, and what is lost; optionally rendered</td></tr>
+<tr><td><code>--import-module &lt;cpp&gt; &lt;out.panelgen&gt; [--no-artwork]</code></td><td>a document from a module's C++, as Import Module Code makes it</td></tr>
+<tr><td><code>--grid &lt;doc&gt; [png] [scale]</code></td><td>the Serge, Paperface and custom grid lines of a document, in px and mm</td></tr>
+<tr><td><code>--selftest [dir]</code></td><td>headless render and checks</td></tr>
+</table>
+
+<h2 id="bites">15 · What bites, and limits</h2>
+<h3>What bites</h3>
+<ul>
+<li><b>Millimetres, not pixels.</b> Read a millimetre position as pixels and every component lands at a third of its place.</li>
+<li><b>Centered is not decoration:</b> centre versus top-left corner.</li>
+<li><b>The generated enum owns the ids:</b> reading order, not writing order; delete the module's own enum.</li>
+<li><b>Identifiers are numbered per enum.</b></li>
+<li><b>One SVG per switch position, and the range lives in the module.</b></li>
+<li><b>File names come from the class, never the instance.</b></li>
+<li><b>One document per module.</b> Two documents claiming one module slug overwrite each other; emit refuses.</li>
+<li><b>Restart the app after a rebuild.</b></li>
+<li><b>Compare against code with <code>--no-labels</code>.</b></li>
+</ul>
+<h3>What the tool cannot do</h3>
+<ul>
+<li>No gradients: fills are solid; an imported gradient becomes its average colour.</li>
+<li>No embedded rasters or masks on import.</li>
+<li>Knob rotation is not exported: Rack sweeps knobs itself, so artwork points up.</li>
+<li>Text must stay outlines for Rack (nanosvg drops <code>&lt;text&gt;</code>); live text is only for other editors.</li>
+<li>A light/dark pair comes from one document with a light variant, not from two separate files.</li>
+</ul>
+
+<h2 id="keys">16 · Keys</h2>
+<table>
+<tr><th>Keys</th><th>Does</th></tr>
+<tr><td><kbd>⌘N</kbd> <kbd>⌘O</kbd> <kbd>⌘S</kbd> <kbd>⇧⌘S</kbd></td><td>New, Open, Save, Save As</td></tr>
+<tr><td><kbd>⌘I</kbd> / <kbd>⌥⌘I</kbd></td><td>Import SVG / Import Module Code</td></tr>
+<tr><td><kbd>⌘E</kbd> / <kbd>⇧⌘E</kbd> / <kbd>⌥⌘E</kbd></td><td>Export SVG / PNG / Widget Code</td></tr>
+<tr><td><kbd>⌘Z</kbd> <kbd>⇧⌘Z</kbd></td><td>Undo, Redo</td></tr>
+<tr><td><kbd>⌘C</kbd> <kbd>⌘X</kbd> <kbd>⌘V</kbd> <kbd>⌘D</kbd></td><td>Copy, Cut, Paste, Duplicate</td></tr>
+<tr><td><kbd>⇧⌘D</kbd></td><td>Duplicate Down (whole grid rows)</td></tr>
+<tr><td><kbd>⇧⌘H</kbd> / <kbd>⇧⌘V</kbd></td><td>Flip Horizontal / Vertical</td></tr>
+<tr><td><kbd>⌫</kbd> <kbd>⌦</kbd></td><td>Delete</td></tr>
+<tr><td><kbd>⌘A</kbd> / <kbd>⇧⌘A</kbd></td><td>Select All / Deselect All</td></tr>
+<tr><td><kbd>⌥⌘1</kbd> <kbd>⌥⌘2</kbd> <kbd>⌥⌘3</kbd></td><td>Only Controls / Decoration / Labels</td></tr>
+<tr><td><kbd>⌘F</kbd></td><td>Select…</td></tr>
+<tr><td><kbd>⌥</kbd>-click</td><td>Next element under the pointer</td></tr>
+<tr><td><kbd>⌘L</kbd> / <kbd>⇧⌘L</kbd></td><td>Label Selection / Name from Labels</td></tr>
+<tr><td><kbd>⌘</kbd>-drop</td><td>Replace a control in place</td></tr>
+<tr><td><kbd>P</kbd>, <kbd>Return</kbd>, <kbd>Esc</kbd></td><td>Pen; edit points (finish a line); leave</td></tr>
+<tr><td>Arrows, <kbd>⇧</kbd>+arrows</td><td>Nudge 1 px / one snap step</td></tr>
+<tr><td><kbd>⇧⌘G</kbd></td><td>Snap to grid on/off</td></tr>
+<tr><td><kbd>⌘=</kbd> <kbd>⌘−</kbd> <kbd>⌘0</kbd> <kbd>⌘9</kbd></td><td>Zoom in, out, actual, fit</td></tr>
+<tr><td><kbd>⌘?</kbd></td><td>This manual</td></tr>
+</table>
+
+<h2 id="more">17 · Further reading</h2>
+<ul>
+<li><code>PIPELINE.md</code>: the contract between document, artwork and code, every invariant with its reasoning.</li>
+<li><code>Docs/PAPERFACE.md</code>: the Paperface measurements.</li>
+<li><code>Docs/SYMBOLS.md</code>: design rules for adding symbols to the catalogue.</li>
+<li><code>CLAUDE.md</code>: notes for working on PanelGenerator's code.</li>
+</ul>
+
+</main>
+</div>
+</body>
+</html>

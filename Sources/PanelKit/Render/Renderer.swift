@@ -16,6 +16,8 @@ package struct ShapePart {
     /// rotates one SVG over a static background, so the split has to be
     /// declared here rather than guessed from part ordering.
     package var rotates: Bool = false
+    /// Round caps and joins on the stroke (symbols); otherwise butt / miter.
+    package var round: Bool = false
 }
 
 // MARK: - Renderer
@@ -60,6 +62,7 @@ package enum Renderer {
                 ctx.addPath(part.path)
                 ctx.setStrokeColor(st.nsColor.cgColor)
                 ctx.setLineWidth(part.lineWidth)
+                if part.round { ctx.setLineCap(.round); ctx.setLineJoin(.round) }
                 ctx.strokePath()
                 ctx.restoreGState()
             }

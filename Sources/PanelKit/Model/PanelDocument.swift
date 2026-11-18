@@ -48,6 +48,17 @@ package struct PanelDocument: Codable, Hashable {
     /// interior half-row ladder alone can't reach. Opt-in because it's not
     /// part of Serge's own documented grid.
     package var sergeGridOuterHalfSteps: Bool = false
+    /// Paperface grid settings (see `PaperfaceGrid`); nil is the measured
+    /// default. Optional so documents that never set it are unchanged.
+    package var paperfaceGrid: PaperfaceGridSpec? = nil
+    /// Label slot distances (see `LabelGridSpec`); nil is the default.
+    package var labelGrid: LabelGridSpec? = nil
+    /// The module title, drawn by the design language's rules (see
+    /// `ModuleTitle.swift`); nil or empty draws none.
+    package var title: String? = nil
+    /// Design language id ("paperface", "kurkesmurfer", "serge", "lcars",
+    /// "generic"); nil means recognised from the panel itself.
+    package var designLanguage: String? = nil
     /// Panel background (dark / default variant). Defaults to the
     /// Kurkesmurfer panel colour, which Serge's dark panels share.
     package var background: ColorSpec = Kurkesmurfer.background
@@ -96,6 +107,13 @@ package struct PanelDocument: Codable, Hashable {
     package func resolved(_ element: PanelElement, for variant: ThemeVariant) -> PanelElement {
         guard element.followsPaper || element.followsInk else { return element }
         var e = element
+        // A stroke-only element (a line, a Paperface glyph) that follows the
+        // ink draws its stroke in it. Following the paper keeps the stroke and
+        // fills with the paper, as before (cells that mask what lies behind).
+        if element.followsInk && !element.followsPaper && element.isOutlineOnly {
+            e.stroke = resolvedFill(element, for: variant)
+            return e
+        }
         e.fill = resolvedFill(element, for: variant)
         return e
     }
@@ -236,6 +254,10 @@ extension PanelDocument {
         customGridHalfPositions = try c.decodeOr(.customGridHalfPositions, customGridHalfPositions)
         customGridFinerPositions = try c.decodeOr(.customGridFinerPositions, customGridFinerPositions)
         sergeGridOuterHalfSteps  = try c.decodeOr(.sergeGridOuterHalfSteps, sergeGridOuterHalfSteps)
+        paperfaceGrid            = try c.decodeIfPresent(PaperfaceGridSpec.self, forKey: .paperfaceGrid)
+        labelGrid                = try c.decodeIfPresent(LabelGridSpec.self, forKey: .labelGrid)
+        title                    = try c.decodeIfPresent(String.self, forKey: .title)
+        designLanguage           = try c.decodeIfPresent(String.self, forKey: .designLanguage)
         background    = try c.decodeOr(.background, background)
         lightBackground = try c.decodeIfPresent(ColorSpec.self, forKey: .lightBackground)
         inkDark       = try c.decodeOr(.inkDark, inkDark)

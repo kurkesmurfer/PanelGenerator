@@ -200,6 +200,12 @@ extension MainWindowController {
         suppressDirty = false
         fileURL = url
         isDirty = false
+        // A Paperface document opens on its own grid; snap mode is not
+        // stored per document, so it is recognised by what it is made of.
+        if PaperfaceGrid.isPaperface(doc) {
+            canvas.snapMode = .paperfaceGrid
+            canvas.snapEnabled = true
+        }
         reloadInspector()
         updateTitle()
         pgZoomFit(nil)

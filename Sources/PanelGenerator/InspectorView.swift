@@ -6,6 +6,13 @@ import PanelCanvas
 /// changes; controls write straight back into the canvas via `mutateSelection`.
 final class InspectorView: NSView {
 
+    /// Position and size fields in millimetres (3 decimals) instead of
+    /// panel pixels. Remembered across launches.
+    static var useMillimetres: Bool {
+        get { UserDefaults.standard.bool(forKey: "InspectorMillimetres") }
+        set { UserDefaults.standard.set(newValue, forKey: "InspectorMillimetres") }
+    }
+
     var canvas: CanvasView?
     var document = PanelDocument()
 

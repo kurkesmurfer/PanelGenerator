@@ -17,6 +17,34 @@ extension InspectorView {
             self.canvas?.mutateDocument(name: "Panel Name") { $0.name = f.stringValue.isEmpty ? "Untitled" : f.stringValue }
         }
 
+        // Design language: decides the title's font, height and lockup (and
+        // which grid a recognised Paperface panel opens on).
+        label("Style")
+        let langs: [(String, String?)] = [("Auto (\(document.effectiveLanguage))", nil), ("Paperface", "paperface"),
+                                          ("Kurkesmurfer", "kurkesmurfer"), ("Serge", "serge"),
+                                          ("LCARS", "lcars"), ("Generic", "generic")]
+        let lang = NSPopUpButton(frame: .zero, pullsDown: false)
+        lang.font = NSFont.systemFont(ofSize: 11)
+        for (t, id) in langs { lang.addItem(withTitle: t); lang.lastItem?.representedObject = id }
+        lang.selectItem(at: langs.firstIndex { $0.1 == document.designLanguage } ?? 0)
+        addControl(lang, width: 170)
+        handlers.append { [weak self] sender in
+            guard let p = sender as? NSPopUpButton else { return }
+            let id = p.selectedItem?.representedObject as? String
+            self?.canvas?.mutateDocument(name: "Design Language") { $0.designLanguage = id }
+        }
+
+        label("Title")
+        let title = makeField(value: document.title ?? "", placeholder: "Module title")
+        title.toolTip = "Drawn at the style's fixed title height and centred: identical on every module "
+            + "of the series. Kurkesmurfer and Serge put the logo in front of it."
+        addControl(title)
+        handlers.append { [weak self] sender in
+            guard let f = sender as? NSTextField else { return }
+            let t = f.stringValue.trimmingCharacters(in: .whitespaces)
+            self?.canvas?.mutateDocument(name: "Module Title") { $0.title = t.isEmpty ? nil : t }
+        }
+
         label("Width (HP)")
         let hp = makeField(value: String(document.widthHP))
         addControl(hp)

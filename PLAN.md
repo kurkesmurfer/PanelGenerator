@@ -65,7 +65,7 @@ from what you see.
 
 ## Import (in progress)
 
-`File ▸ Import SVG…` covers three of the four ways in; see `Docs/IMPORT.md`.
+`File ▸ Import SVG…` covers three of the four ways in; see `Docs/Manual.html` §11.
 
 - [x] SVG path data and transform lists → CGPath (`SVGPath.swift`), both
       directions honest against `PathSVG.d`.

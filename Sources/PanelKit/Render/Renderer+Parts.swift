@@ -9,13 +9,42 @@ extension Renderer {
 
     // MARK: Element → parts
 
+    /// Every element's parts, mirrored for a decoration whose flipX / flipY
+    /// is set (elbow and swirl mirror inside their own geometry).
     package static func parts(for el: PanelElement) -> [ShapePart] {
+        let raw = kindParts(for: el)
+        guard el.flipsContent, el.kind != .elbow, el.kind != .swirl,
+              el.params.flipX || el.params.flipY else { return raw }
+        let f = el.frame
+        var t = CGAffineTransform(translationX: f.midX, y: f.midY)
+            .scaledBy(x: el.params.flipX ? -1 : 1, y: el.params.flipY ? -1 : 1)
+            .translatedBy(x: -f.midX, y: -f.midY)
+        return raw.map { part in
+            var p = part
+            if let m = part.path.copy(using: &t) { p.path = m }
+            return p
+        }
+    }
+
+    private static func kindParts(for el: PanelElement) -> [ShapePart] {
         let f = el.frame
         let accent = el.fill
         let ink = ColorSpec.hex("#101216")
         let nearBlack = ColorSpec.hex("#050507")
 
         switch el.kind {
+
+        case .jack where Int(el.params.jackStyle.rounded()) == 1:
+            // Paperface banana: a solid disc in the signal colour, a hairline
+            // edge (so a white jack still reads on ivory), a grey socket.
+            let holeR = f.width * 0.18
+            let hole = CGRect(x: f.midX - holeR, y: f.midY - holeR, width: holeR * 2, height: holeR * 2)
+            return [
+                ShapePart(path: ellipsePath(f), fill: accent,
+                          stroke: accent.darkened(0.16), lineWidth: max(0.5, f.width * 0.03)),
+                ShapePart(path: ellipsePath(hole), fill: ColorSpec.hex("#575756"),
+                          stroke: ColorSpec.hex("#6E6E6C"), lineWidth: max(0.3, f.width * 0.015)),
+            ]
 
         case .jack:
             let ringW = max(1.4, f.width * 0.08)
@@ -27,6 +56,11 @@ extension Renderer {
                 ShapePart(path: ellipsePath(face), fill: accent.darkened(0.62)),
                 ShapePart(path: ellipsePath(hole), fill: nearBlack),
             ]
+
+        case _ where el.kind.isKnob && Int(el.params.knobStyle.rounded()) == 3:
+            // Paperface scalloped knob: eight rounded lobes with sharp
+            // notches, a white line from the centre. The whole cap turns.
+            return scallopedKnob(el)
 
         case .knobLarge, .knobMedium, .knobSmall:
             var out: [ShapePart] = []
@@ -120,6 +154,8 @@ extension Renderer {
                           fill: ColorSpec.hex("#111318")),
             ]
 
+        case .pushButton where Int(el.params.switchStyle.rounded()) == 1:
+            return paperfaceButtonParts(el)
         case .pushButton:
             // Value drives the pressed state, the same way it selects a button
             // group's position: a button exports as two frames and Rack swaps
@@ -142,6 +178,9 @@ extension Renderer {
                     tl: 1, tr: 1, br: 1, bl: 1), fill: el.fill.lightened(0.35)))
             }
             return ps
+        case .buttonGroup where Int(el.params.switchStyle.rounded()) == 1:
+            return toggleParts(el)
+
         case .buttonGroup:
             let n = max(2, min(12, Int(el.params.segments.rounded())))
             // Radius and end-cap insets hug the frame, so the art stays inside
@@ -198,6 +237,17 @@ extension Renderer {
                 }
             }
             return gs
+        case .led where Int(el.params.ledStyle.rounded()) == 1:
+            // Paperface lamp: a flat amber lens with concentric moulding rings.
+            var out = [ShapePart(path: ellipsePath(f), fill: accent,
+                                 stroke: accent.darkened(0.12), lineWidth: max(0.4, f.width * 0.03))]
+            for k in [0.74, 0.5, 0.26] as [CGFloat] {
+                let r = f.insetBy(dx: f.width * (1 - k) / 2, dy: f.height * (1 - k) / 2)
+                out.append(ShapePart(path: ellipsePath(r), stroke: accent.darkened(0.2),
+                                     lineWidth: max(0.3, f.width * 0.035)))
+            }
+            return out
+
         case .led:
             // Dome-shaped lens: a dark bezel (shares the jack body's
             // "ink" tone) holds a lens that fills most of the frame,
@@ -224,6 +274,10 @@ extension Renderer {
                 ShapePart(path: ellipsePath(shadow), fill: accent.darkened(0.28)),
                 ShapePart(path: ellipsePath(highlight), fill: accent.lightened(0.55)),
             ]
+
+        case .screw where Int(el.params.knobStyle.rounded()) == 1:
+            // Paperface: a plain dark head, no slot.
+            return [ShapePart(path: ellipsePath(f), fill: accent)]
 
         case .screw:
             let slot = CGMutablePath()
@@ -305,8 +359,14 @@ extension Renderer {
                 fill: accent, stroke: el.stroke, lineWidth: el.strokeWidth)]
 
         case .symbol:
-            return [ShapePart(path: SymbolCatalogue.path(for: el), fill: accent,
-                              stroke: el.stroke, lineWidth: el.strokeWidth)]
+            // A real stroke in the symbol's colour. Only a symbol given an
+            // outline of its own keeps the filled-outline form it needs.
+            if let outline = el.stroke {
+                return [ShapePart(path: SymbolCatalogue.path(for: el), fill: accent,
+                                  stroke: outline, lineWidth: el.strokeWidth)]
+            }
+            let (line, width) = SymbolCatalogue.centreline(for: el)
+            return [ShapePart(path: line, stroke: accent, lineWidth: width, round: true)]
 
         case .path:
             return importedParts(for: el)
@@ -314,6 +374,110 @@ extension Renderer {
         case .text:
             return textParts(for: el)
         }
+    }
+
+    // MARK: Paperface toggle
+
+    /// A bat toggle on a hex nut, as on the Paperface 50 Dual Gates (DC / AC /
+    /// MOD) and Filter. Measured at 3U: nut 6.58 × 5.79 mm, bushing 4.4 mm,
+    /// bat 2.26 mm wide ending in a 2.45 mm ball 3.14 mm off centre. Position
+    /// 0 is up, the last down, a middle one end-on — one SVG per position,
+    /// which is how Rack's SvgSwitch shows it.
+    package static let toggleSizeMM = CGSize(width: 6.58, height: 8.72)
+
+    /// Paperface push button, measured on the Tempo di Roma panel: a grey
+    /// bezel 9.2 mm across with a dark rim and a lighter collar, round a red
+    /// cap 5.7 mm across. Pressed, the cap sinks and darkens — two frames,
+    /// as Rack's momentary buttons want.
+    package static let paperfaceButtonMM: CGFloat = 9.2
+
+    static func paperfaceButtonParts(_ el: PanelElement) -> [ShapePart] {
+        let f = el.frame
+        let d = min(f.width, f.height)
+        let c = CGPoint(x: f.midX, y: f.midY)
+        func disc(_ ratio: CGFloat) -> CGRect {
+            let r = d * ratio / 2
+            return CGRect(x: c.x - r, y: c.y - r, width: r * 2, height: r * 2)
+        }
+        let down = el.params.value >= 0.5
+        let rim = 0.12 / PanelMetrics.mmPerPixel
+        let cap = el.fill
+        return [
+            ShapePart(path: ellipsePath(disc(1).insetBy(dx: rim / 2, dy: rim / 2)),
+                      fill: .hex("#BBBBBA"), stroke: .hex("#8C8C8C"), lineWidth: rim),
+            ShapePart(path: ellipsePath(disc(0.74)), fill: .hex("#C6C6C5")),
+            ShapePart(path: ellipsePath(disc(down ? 0.58 : 0.62)),
+                      fill: down ? cap.darkened(0.25) : cap,
+                      stroke: cap.darkened(0.2), lineWidth: rim),
+        ]
+    }
+
+    static func toggleParts(_ el: PanelElement) -> [ShapePart] {
+        let f = el.frame
+        let mmPx = 1 / PanelMetrics.mmPerPixel
+        let s = min(f.width / (toggleSizeMM.width * mmPx), f.height / (toggleSizeMM.height * mmPx)) * mmPx
+        let c = CGPoint(x: f.midX, y: f.midY)
+        func p(_ x: CGFloat, _ y: CGFloat) -> CGPoint { CGPoint(x: c.x + x * s, y: c.y + y * s) }
+
+        let nut = CGMutablePath()
+        nut.addLines(between: [p(-3.29, 0), p(-1.82, -2.9), p(1.82, -2.9), p(3.29, 0), p(1.82, 2.9), p(-1.82, 2.9)])
+        nut.closeSubpath()
+        let bushR = 2.2 * s
+        var out = [
+            ShapePart(path: nut, fill: .hex("#999898")),
+            ShapePart(path: ellipsePath(CGRect(x: c.x - bushR, y: c.y - bushR, width: bushR * 2, height: bushR * 2)),
+                      fill: .hex("#575756"), stroke: .hex("#D6D6D4"), lineWidth: max(0.3, 0.14 * s)),
+        ]
+
+        let n = max(2, min(12, Int(el.params.segments.rounded())))
+        let index = Int((el.params.value * CGFloat(n - 1)).rounded())
+        // −1 up … +1 down; a middle position looks straight at you.
+        let dir = n > 1 ? CGFloat(index) / CGFloat(n - 1) * 2 - 1 : -1
+        let ballR = 1.22 * s
+        let ballLine = ColorSpec.hex("#636361")
+        if abs(dir) < 0.01 {
+            let r = ballR * 1.12
+            out.append(ShapePart(path: ellipsePath(CGRect(x: c.x - r, y: c.y - r, width: r * 2, height: r * 2)),
+                                 fill: .hex("#C6C6C5"), stroke: ballLine, lineWidth: max(0.3, 0.1 * s)))
+            return out
+        }
+        let reach = 3.14 * dir, tail = -1.27 * dir
+        let half = 1.13 * s
+        let top = min(c.y + reach * s, c.y + tail * s), bottom = max(c.y + reach * s, c.y + tail * s)
+        let stem = CGPath(roundedRect: CGRect(x: c.x - half, y: top - half, width: half * 2, height: bottom - top + half * 2),
+                          cornerWidth: half, cornerHeight: half, transform: nil)
+        out.append(ShapePart(path: stem, fill: .hex("#9C9B9B")))
+        let b = p(0, reach)
+        out.append(ShapePart(path: ellipsePath(CGRect(x: b.x - ballR, y: b.y - ballR, width: ballR * 2, height: ballR * 2)),
+                             fill: .hex("#C6C6C5"), stroke: ballLine, lineWidth: max(0.3, 0.1 * s)))
+        return out
+    }
+
+    // MARK: Scalloped knob
+
+    static func scallopedKnob(_ el: PanelElement) -> [ShapePart] {
+        let f = el.frame
+        let c = CGPoint(x: f.midX, y: f.midY)
+        let R = min(f.width, f.height) / 2
+        let body = CGMutablePath()
+        let steps = 192
+        for i in 0...steps {
+            let t = CGFloat(i) / CGFloat(steps) * 2 * .pi
+            // |cos 4t|: rounded lobes, a cusp at each of the eight notches.
+            let r = R * (0.86 + 0.14 * abs(cos(4 * t)))
+            let p = CGPoint(x: c.x + cos(t) * r, y: c.y + sin(t) * r)
+            if i == 0 { body.move(to: p) } else { body.addLine(to: p) }
+        }
+        body.closeSubpath()
+        let a = Geo.deg2rad(el.params.pointerAngle - 90)
+        let pointer = CGMutablePath()
+        pointer.move(to: CGPoint(x: c.x + cos(a) * R * 0.08, y: c.y + sin(a) * R * 0.08))
+        pointer.addLine(to: CGPoint(x: c.x + cos(a) * R * 0.74, y: c.y + sin(a) * R * 0.74))
+        return [
+            ShapePart(path: body, fill: el.fill, rotates: true),
+            ShapePart(path: pointer, stroke: ColorSpec.hex("#F4F2EE"),
+                      lineWidth: max(0.6, R * 0.075), rotates: true),
+        ]
     }
 
     // MARK: Imported paths

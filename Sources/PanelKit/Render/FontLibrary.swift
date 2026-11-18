@@ -67,6 +67,21 @@ package enum FontLibrary {
 
     package static func isAvailable(_ name: String) -> Bool { NSFont(name: name, size: 12) != nil }
 
+    /// `name` if installed or registered; otherwise a face of the same family
+    /// (the part before the hyphen), preferring the same style. Plugin font
+    /// files are not always named inside as their file name says —
+    /// SpaceTime's Fraunces-SemiBold.ttf calls itself Fraunces-9ptBlack.
+    package static func resolve(_ name: String) -> String? {
+        if isAvailable(name) { return name }
+        let parts = name.split(separator: "-", maxSplits: 1).map(String.init)
+        guard let family = parts.first else { return nil }
+        let style = parts.count > 1 ? parts[1].lowercased() : ""
+        let candidates = families().filter { $0.replacingOccurrences(of: " ", with: "").lowercased()
+            == family.lowercased() }.flatMap { members(of: $0) }
+        return (candidates.first { $0.style.replacingOccurrences(of: " ", with: "").lowercased() == style }
+            ?? candidates.first)?.postScriptName
+    }
+
     /// Family and style of a PostScript name, for showing it in the inspector.
     package static func familyAndStyle(of name: String) -> (family: String, style: String)? {
         guard let f = NSFont(name: name, size: 12), let family = f.familyName else { return nil }

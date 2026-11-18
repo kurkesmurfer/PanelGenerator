@@ -79,9 +79,35 @@ package struct PanelElement: Codable, Hashable, Identifiable {
     /// Widget type to instantiate: the custom struct name when there is one,
     /// otherwise the chosen Rack type.
     package var widgetClass: String {
-        widgetSource == .custom
-            ? (customWidgetName.isEmpty ? "SvgKnob" : customWidgetName)
-            : stockWidget
+        if widgetSource == .custom { return customWidgetName.isEmpty ? "SvgKnob" : customWidgetName }
+        // An LED left on the default type is emitted as the Rack light that
+        // matches what is drawn — a yellow 3.2 mm lamp is MediumLight<
+        // YellowLight>, not the red default. Choosing a type keeps it.
+        if kind == .led, stockWidget.isEmpty || stockWidget == ElementKind.led.defaultStockWidget {
+            return matchingRackLight
+        }
+        return stockWidget
+    }
+
+    /// Rack's ComponentLibrary light nearest this LED's drawn size and fill.
+    package var matchingRackLight: String {
+        let sizes: [(String, CGFloat)] = [("TinyLight", 1.088), ("SmallLight", 2.176),
+                                         ("MediumLight", 3.176), ("LargeLight", 5.179)]
+        let d = PanelMetrics.mm(min(w, h))
+        let size = sizes.min { abs($0.1 - d) < abs($1.1 - d) }!.0
+        // Rack's scheme colours (componentlibrary.hpp).
+        let colours: [(String, Double, Double, Double)] = [
+            ("WhiteLight", 1, 1, 1), ("RedLight", 0xED / 255.0, 0x2C / 255.0, 0x24 / 255.0),
+            ("GreenLight", 0x90 / 255.0, 0xC7 / 255.0, 0x3E / 255.0),
+            ("BlueLight", 0x29 / 255.0, 0xB2 / 255.0, 0xEF / 255.0),
+            ("YellowLight", 1, 0xD7 / 255.0, 0x14 / 255.0),
+        ]
+        let f = fill
+        let colour = colours.min {
+            pow($0.1 - f.r, 2) + pow($0.2 - f.g, 2) + pow($0.3 - f.b, 2)
+                < pow($1.1 - f.r, 2) + pow($1.2 - f.g, 2) + pow($1.3 - f.b, 2)
+        }!.0
+        return "\(size)<\(colour)>"
     }
 
     /// `enumName` if set, otherwise something usable derived from the layer
@@ -107,7 +133,9 @@ package struct PanelElement: Codable, Hashable, Identifiable {
     /// as the preset; everything else is owned by a design language (Styles/).
     package mutating func applyPreset(_ id: String) {
         if kind == .symbol {
-            applySymbol(id)
+            // A style's own symbol preset (Paperface's ink-coloured glyphs)
+            // first; otherwise the id is a catalogue symbol.
+            if !DesignLanguage.applyPreset(id, to: &self) { applySymbol(id) }
         } else {
             DesignLanguage.applyPreset(id, to: &self)
         }

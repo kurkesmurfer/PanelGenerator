@@ -10,18 +10,30 @@ extension InspectorView {
         section("Element — \(el.kind.displayName)")
 
         func posSizeFields() {
-            let fields: [(String, WritableKeyPath<PanelElement, CGFloat>)] = [
-                ("X", \.x), ("Y", \.y), ("W", \.w), ("H", \.h),
+            // Centre first: a control is placed by its centre (that is what
+            // the grids snap and what Rack's *Centered calls take); the
+            // corner is still there for decoration. Units per View ▸
+            // Inspector in Millimetres.
+            let mmUnits = InspectorView.useMillimetres
+            let k: CGFloat = mmUnits ? PanelMetrics.mmPerPixel : 1
+            let u = mmUnits ? " mm" : ""
+            typealias Field = (String, (PanelElement) -> CGFloat, (inout PanelElement, CGFloat) -> Void)
+            let fields: [Field] = [
+                ("CX" + u, { $0.x + $0.w / 2 }, { e, v in e.x = v - e.w / 2 }),
+                ("CY" + u, { $0.y + $0.h / 2 }, { e, v in e.y = v - e.h / 2 }),
+                ("X" + u, { $0.x }, { e, v in e.x = v }),
+                ("Y" + u, { $0.y }, { e, v in e.y = v }),
+                ("W" + u, { $0.w }, { e, v in e.w = max(0.5, v) }),
+                ("H" + u, { $0.h }, { e, v in e.h = max(0.5, v) }),
             ]
             // Two per row
             for pair in stride(from: 0, to: fields.count, by: 2) {
                 let rowViews: [NSView] = []
                 _ = rowViews
-                var built: [(NSTextField, WritableKeyPath<PanelElement, CGFloat>)] = []
                 for j in pair..<min(pair + 2, fields.count) {
-                    let (title, kp) = fields[j]
+                    let (title, get, set) = fields[j]
                     label(title, xOffset: j % 2 == 1 ? (contentW - labelW) / 2 : 0)
-                    let f = makeField(value: Geo.fmt(el[keyPath: kp]))
+                    let f = makeField(value: mmUnits ? String(format: "%.3f", Double(get(el) * k)) : Geo.fmt(get(el)))
                     f.frame = CGRect(x: pad + labelW + (j % 2 == 1 ? (contentW - labelW) / 2 + 4 : 0),
                                      y: cursorY, width: (contentW - labelW) / 2 - 4, height: rowH)
                     f.tag = handlers.count
@@ -33,11 +45,10 @@ extension InspectorView {
                         if let v = (sender as? NSTextField)?.stringValue,
                            let d = Double(v.replacingOccurrences(of: ",", with: ".")) {
                             weakCanvas?.mutateSelection("Position/Size") { e in
-                                e[keyPath: kp] = CGFloat(d)
+                                set(&e, CGFloat(d) / k)
                             }
                         }
                     }
-                    built.append((f, kp))
                 }
                 cursorY += rowH + gap
             }

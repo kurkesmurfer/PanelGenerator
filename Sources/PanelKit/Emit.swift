@@ -112,6 +112,7 @@ package enum Emit {
             let headers = headerDirectory(out)
             let name = CodeGen.widgetsHeaderName(first)
             do {
+                FileCase.prepare(headers.appendingPathComponent(name))
                 try CodeGen.widgetsHeader(for: family)
                     .write(to: headers.appendingPathComponent(name), atomically: true, encoding: .utf8)
                 print("  → \(headers.appendingPathComponent(name).path)")
@@ -203,6 +204,7 @@ package enum Emit {
 
             var written: [String] = []
             func write(_ text: String, to url: URL) throws {
+                FileCase.prepare(url)
                 try text.write(to: url, atomically: true, encoding: .utf8)
                 written.append(url.path)
             }

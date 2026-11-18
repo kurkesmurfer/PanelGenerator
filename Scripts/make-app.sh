@@ -30,6 +30,15 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
     <key>LSMinimumSystemVersion</key><string>13.0</string>
     <key>NSHighResolutionCapable</key><true/>
     <key>NSPrincipalClass</key><string>NSApplication</string>
+    <key>CFBundleDocumentTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleTypeName</key><string>PanelGenerator Document</string>
+            <key>CFBundleTypeRole</key><string>Editor</string>
+            <key>LSHandlerRank</key><string>Owner</string>
+            <key>CFBundleTypeExtensions</key><array><string>panelgen</string></array>
+        </dict>
+    </array>
 </dict>
 </plist>
 PLIST
@@ -63,12 +72,12 @@ else
 fi
 
 # --- Documentation ----------------------------------------------------------
-# Help > Workflow Manual opens this in the browser. Copied in rather than
-# fetched at runtime, so an installed app is not tied to the source tree.
-if [ -f "Docs/Workflow.html" ]; then
-    cp "Docs/Workflow.html" "$APP/Contents/Resources/Workflow.html"
+# Help > PanelGenerator Manual opens this in the browser. Copied in rather
+# than fetched at runtime, so an installed app is not tied to the source tree.
+if [ -f "Docs/Manual.html" ]; then
+    cp "Docs/Manual.html" "$APP/Contents/Resources/Manual.html"
 else
-    echo "No Docs/Workflow.html — Help > Workflow Manual will report it missing"
+    echo "No Docs/Manual.html — Help > PanelGenerator Manual will report it missing"
 fi
 
 # --- Shipped stamps ---------------------------------------------------------

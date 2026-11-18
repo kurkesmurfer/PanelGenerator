@@ -31,9 +31,10 @@ extension CanvasView {
         Renderer.drawBackground(document, in: ctx, variant: themePreview)
         drawGrid(in: ctx)
         if snapEnabled && snapMode == .sergeGrid { drawSergeGrid(in: ctx) }
+        if snapEnabled && snapMode == .paperfaceGrid { drawPaperfaceGrid(in: ctx) }
         if snapEnabled && snapMode == .customGrid { drawCustomGrid(in: ctx) }
 
-        for el in document.elements where el.isHidden != true {
+        for el in document.artwork where el.isHidden != true {
             // A tracing template is drawn faintly and behind your own work in
             // spirit — it is reference, not artwork. It is still visible enough
             // to trace, and the layer list is where you select or delete it.
@@ -49,6 +50,7 @@ extension CanvasView {
 
         drawSelectionOverlay(in: ctx)
         drawMarqueeOverlay(in: ctx)
+        drawGuides(in: ctx)
         drawDropReplaceOverlay(in: ctx)
         drawPointEditOverlay(in: ctx)
         drawPenOverlay(in: ctx)
@@ -91,8 +93,53 @@ extension CanvasView {
     /// half-lane column offers on a main row -- confirmed against the real
     /// GTS panel, where status LEDs sit at half-lane column x's but at the
     /// full height of the main row 1 jacks either side of them).
-    private func drawSergeGrid(in ctx: CGContext) {
-        let l = SergeGrid.lines(for: document)
+    /// Paperface: blue dots on main positions, amber on the half (phase-
+    /// shifted) positions, and faint hairlines on the column centres and
+    /// row centre-lines, so the cell raster reads at a glance and is not
+    /// mistaken for the Serge grid. Works on light and dark faces alike.
+    private func drawPaperfaceGrid(in ctx: CGContext) {
+        let l = PaperfaceGrid.lines(for: document)
+        let size = document.pixelSize
+        ctx.saveGState()
+        ctx.clip(to: CGRect(origin: .zero, size: size))
+        let main = NSColor(calibratedRed: 0.0, green: 0.62, blue: 0.86, alpha: 1)
+        let half = NSColor(calibratedRed: 0.92, green: 0.55, blue: 0.0, alpha: 1)
+
+        ctx.setLineWidth(0.6 / zoom)
+        ctx.setStrokeColor(main.withAlphaComponent(0.28).cgColor)
+        for x in l.mainCols { ctx.move(to: CGPoint(x: x, y: 0)); ctx.addLine(to: CGPoint(x: x, y: size.height)) }
+        for y in l.mainRows { ctx.move(to: CGPoint(x: 0, y: y)); ctx.addLine(to: CGPoint(x: size.width, y: y)) }
+        ctx.strokePath()
+
+        func dots(rows: [CGFloat], cols: [CGFloat], radius: CGFloat, color: NSColor) {
+            ctx.setFillColor(color.cgColor)
+            for y in rows {
+                for x in cols {
+                    ctx.fillEllipse(in: CGRect(x: x - radius, y: y - radius, width: radius * 2, height: radius * 2))
+                }
+            }
+        }
+        // Frame: where the artwork starts and ends (and the double line
+        // between two sections), in green so it is not taken for a row.
+        if let fr = PaperfaceGrid.frame(for: document) {
+            ctx.setStrokeColor(NSColor.systemGreen.withAlphaComponent(0.75).cgColor)
+            ctx.setLineWidth(1 / zoom)
+            for (i, y) in fr.all.map({ $0 / PanelMetrics.mmPerPixel }).enumerated() {
+                let dashed = i > 0 && i < fr.all.count - 1 && !fr.sectionMM.isEmpty
+                ctx.setLineDash(phase: 0, lengths: dashed ? [4 / zoom, 3 / zoom] : [])
+                ctx.move(to: CGPoint(x: 0, y: y)); ctx.addLine(to: CGPoint(x: size.width, y: y))
+                ctx.strokePath()
+            }
+            ctx.setLineDash(phase: 0, lengths: [])
+        }
+        dots(rows: l.mainRows, cols: l.mainCols, radius: 2.6 / zoom, color: main.withAlphaComponent(0.9))
+        dots(rows: l.mainRows, cols: l.halfCols, radius: 1.8 / zoom, color: half.withAlphaComponent(0.8))
+        dots(rows: l.halfRows, cols: l.mainCols + l.halfCols, radius: 1.8 / zoom, color: half.withAlphaComponent(0.8))
+        ctx.restoreGState()
+    }
+
+    private func drawSergeGrid(in ctx: CGContext, lines: SergeGrid.Lines? = nil) {
+        let l = lines ?? SergeGrid.lines(for: document)
         guard !l.mainRows.isEmpty || !l.halfRows.isEmpty else { return }
         ctx.saveGState()
         ctx.clip(to: CGRect(origin: .zero, size: document.pixelSize))
@@ -231,6 +278,20 @@ extension CanvasView {
         let size = (glyph as NSString).size(withAttributes: attrs)
         (glyph as NSString).draw(at: CGPoint(x: c.x - size.width / 2, y: c.y - size.height / 2),
                                  withAttributes: attrs)
+    }
+
+    /// Smart-guide lines that caught in the current gesture: thin magenta,
+    /// across the whole panel.
+    private func drawGuides(in ctx: CGContext) {
+        guard let g = activeGuides else { return }
+        let size = document.pixelSize
+        ctx.saveGState()
+        ctx.setStrokeColor(NSColor.systemPink.withAlphaComponent(0.9).cgColor)
+        ctx.setLineWidth(1 / zoom)
+        for x in g.xs { ctx.move(to: CGPoint(x: x, y: 0)); ctx.addLine(to: CGPoint(x: x, y: size.height)) }
+        for y in g.ys { ctx.move(to: CGPoint(x: 0, y: y)); ctx.addLine(to: CGPoint(x: size.width, y: y)) }
+        ctx.strokePath()
+        ctx.restoreGState()
     }
 
     private func drawMarqueeOverlay(in ctx: CGContext) {
