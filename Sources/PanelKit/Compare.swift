@@ -144,14 +144,13 @@ package enum Compare {
         return name
     }
 
-    /// One spelling per type: namespace prefixes, angle brackets and spaces go,
+    /// One spelling per type: namespaces, angle brackets and spaces go,
     /// so `rack::componentlibrary::MediumLight<YellowLight>` and
     /// `MediumLightYellowLight` compare equal.
     package static func canonicalWidget(_ widget: String) -> String {
-        var s = widget
-        for prefix in ["rack::componentlibrary::", "componentlibrary::", "rack::"] {
-            s = s.replacingOccurrences(of: prefix, with: "")
-        }
+        // Any namespace goes — Rack's and the plugin's own (`headui::`): the
+        // components layer and the panel name the class bare.
+        let s = widget.replacingOccurrences(of: #"[A-Za-z_]\w*::"#, with: "", options: .regularExpression)
         return s.filter { !"<> \t".contains($0) }
     }
 

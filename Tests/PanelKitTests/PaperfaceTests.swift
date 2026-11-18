@@ -477,3 +477,18 @@ final class FileCaseTests: XCTestCase {
         XCTAssertEqual(try PanelDocument.load(from: dir.appendingPathComponent("OscPlus.panelgen")).moduleSlug, "OscPlus")
     }
 }
+
+final class PanelHeightTests: XCTestCase {
+    /// A 3U panel in millimetres is 128.5 mm tall, scaled uniformly.
+    func testThreeUPanelIs128_5mm() {
+        var doc = PanelDocument(); doc.widthHP = 12; doc.svgUnits = .millimetres
+        let svg = SVGExporter.documentSVG(doc)
+        XCTAssertTrue(svg.contains(#"width="60.96mm" height="128.5mm""#), String(svg.prefix(300)))
+        let m = svg.range(of: #"viewBox="0 0 180(\.00)? ([0-9.]+)""#, options: .regularExpression)
+        XCTAssertNotNil(m)
+        let vb = String(svg[m!]).split(separator: " ").last!.dropLast()
+        let vh = Double(vb)!
+        XCTAssertEqual(180 / 60.96, vh / 128.5, accuracy: 0.0005)   // same scale both ways
+        XCTAssertTrue(SVGExporter.componentsSVG(doc).contains(#"height="128.5mm""#))
+    }
+}
